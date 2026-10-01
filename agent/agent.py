@@ -1,5 +1,5 @@
 """
-Phase 2 — Real AI agent, still fake tools underneath.
+Phase 3 — Real AI agent + Security Gateway (Wiring Phase).
 
 WHAT THIS FILE DOES:
 1. Takes a plain-English sentence from the user (e.g. "turn on the light")
@@ -7,19 +7,13 @@ WHAT THIS FILE DOES:
    the 4 tools it's allowed to choose from
 3. The model decides which tool (if any) fits the request, and with
    what arguments
-4. We look up that tool name in our AVAILABLE_FUNCTIONS dictionary
-   and actually call it
-
-IMPORTANT SECURITY NOTE (say this in your viva):
-This phase calls the tool DIRECTLY the moment the model asks for it.
-That is intentionally insecure — there is no permission check, no
-risk scoring, no injection detection yet. Phase 3 inserts the gateway
-in between step 3 and step 4 above, so nothing here changes except
-one line: instead of calling the function directly, we call
-gateway.evaluate() first.
+4. Passes the tool request through security.gateway.evaluate()
+5. If the gateway decision is ALLOW, looks up that tool name in
+   AVAILABLE_FUNCTIONS dictionary and actually calls it
 """
 
 import ollama
+import security.gateway
 from agent.tools import turn_light_on, turn_light_off, read_temperature, activate_alarm
 
 MODEL = "llama3.1"  # change this one line if you use a different Ollama model
@@ -31,7 +25,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "turn_light_on",
-            "description": "Turns the LED light on.",
+            "description": "Turns the LED light on. ONLY call when the user explicitly asks to turn on the light.",
             "parameters": {"type": "object", "properties": {}, "required": []},
         },
     },
@@ -39,7 +33,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "turn_light_off",
-            "description": "Turns the LED light off.",
+            "description": "Turns the LED light off. ONLY call when the user explicitly asks to turn off the light.",
             "parameters": {"type": "object", "properties": {}, "required": []},
         },
     },
@@ -47,7 +41,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "read_temperature",
-            "description": "Reads the current temperature from the sensor.",
+            "description": "Reads the current temperature from the sensor. ONLY call when the user explicitly asks for temperature or weather reading.",
             "parameters": {"type": "object", "properties": {}, "required": []},
         },
     },
@@ -55,7 +49,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "activate_alarm",
-            "description": "Sounds the buzzer alarm. Only use this if the user clearly wants the alarm.",
+            "description": "Sounds the buzzer alarm. ONLY call when the user explicitly asks to sound the alarm.",
             "parameters": {"type": "object", "properties": {}, "required": []},
         },
     },
@@ -71,23 +65,30 @@ AVAILABLE_FUNCTIONS = {
     "activate_alarm": activate_alarm,
 }
 
+# Build a lookup of exactly which arguments each tool is allowed to receive,
+# directly from the TOOLS schema above — so we never have to maintain this twice.
+TOOL_SCHEMAS = {
+    t["function"]["name"]: set(t["function"]["parameters"]["properties"].keys())
+    for t in TOOLS
+}
+
 
 def run_agent(user_text: str):
     """
-    Sends user_text to the model, and if the model chooses a tool,
-    calls it directly (Phase 2 has no gateway yet).
+    Sends user_text to the model, evaluates the tool decision through
+    the security gateway, and executes the tool if allowed.
     """
     messages = [
-    {
-        "role": "system",
-        "content": (
-                "You are a home automation assistant with exactly 4 tools: "
+        {
+            "role": "system",
+            "content": (
+                "You are a home automation assistant with 4 tools: "
                 "turn_light_on, turn_light_off, read_temperature, activate_alarm. "
-                "Only call a tool if the user is CLEARLY asking to control the "
-                "light, sound the alarm, or check the temperature. "
-                "For greetings, small talk, general knowledge questions, or "
-                "anything unrelated to these 4 actions, do NOT call any tool — "
-                "just reply normally in plain text."
+                "If the user asks for multiple actions in one sentence (e.g. turning on light AND checking temperature), "
+                "call ALL matching tools. "
+                "Do NOT call any tool for single-word prompts (e.g., 'yes', 'no', 'ok', 'sure') or ambiguous follow-ups. "
+                "Do NOT attempt to map unsupported requests (e.g. 'break the alarm', 'fix the light') to unrelated tools. "
+                "For ambiguous, single-word, or unsupported requests, do NOT call any tool — reply in plain text."
             ),
         },
         {"role": "user", "content": user_text},
@@ -117,13 +118,27 @@ def run_agent(user_text: str):
             print(f"[AGENT] REJECTED — '{function_name}' is not a real tool.")
             continue
 
-        # Phase 3 will insert: gateway.evaluate(function_name, function_args, user_text)
-        # right here, BEFORE this next line runs.
-        AVAILABLE_FUNCTIONS[function_name](**function_args)
+        # Evaluate tool request through the security gateway
+        evaluation = security.gateway.evaluate(function_name, function_args, user_text)
+        decision = evaluation.get("decision")
+        reason = evaluation.get("reason")
+
+        print(f"[GATEWAY] Decision: {decision} | Reason: {reason}")
+
+        if decision == "ALLOW":
+            expected_args = TOOL_SCHEMAS.get(function_name, set())
+            unexpected = set(function_args.keys()) - expected_args
+            if unexpected:
+                print(
+                    f"[AGENT] WARNING - model sent unexpected args {unexpected} for "
+                    f"{function_name}, dropping them (tool expects: {expected_args or 'none'})"
+                )
+                function_args = {k: v for k, v in function_args.items() if k in expected_args}
+            AVAILABLE_FUNCTIONS[function_name](**function_args)
 
 
 if __name__ == "__main__":
-    print("AegisAgent Phase 2 — type a request in plain English (or 'quit')\n")
+    print("AegisAgent Phase 3 — type a request in plain English (or 'quit')\n")
     print("Try: 'turn on the light' / 'what's the temperature' / 'sound the alarm'\n")
 
     while True:
@@ -132,4 +147,4 @@ if __name__ == "__main__":
             break
         if not user_text:
             continue
-        run_agent(user_text)
+        run_agent(user_text)

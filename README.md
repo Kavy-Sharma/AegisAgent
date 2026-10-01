@@ -62,7 +62,7 @@ git push               # after working
 
 \- \[x] Phase 2 — real Ollama tool-calling (`agent/agent.py`)
 
-\- \[ ] Phase 3 — gateway inserted
+\- \[x] Phase 3 — gateway inserted
 
 \- \[ ] Phase 4 — risk levels + permissions
 
