@@ -78,3 +78,82 @@ def log_decision(
         f.write(json.dumps(log_entry) + "\n")
 
     return log_entry
+
+
+def log_injection_check(
+    session_id: str,
+    source: str,
+    decision: str,
+    score: float,
+    rule_ids: list[str],
+    text: str,
+) -> dict:
+    """
+    Constructs a tamper-evident audit log entry for prompt injection check.
+    """
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+
+    timestamp_str = datetime.now(timezone.utc).isoformat()
+    prev_hash = _get_last_entry_hash()
+
+    entry_without_hash_fields = {
+        "decision": decision,
+        "event": "injection_check",
+        "rule_ids": rule_ids,
+        "score": score,
+        "session_id": session_id,
+        "source": source,
+        "text": text[:200],
+        "timestamp": timestamp_str,
+    }
+
+    serialized_data = json.dumps(entry_without_hash_fields, sort_keys=True)
+    payload = serialized_data + prev_hash
+    entry_hash = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+    log_entry = dict(entry_without_hash_fields)
+    log_entry["prev_hash"] = prev_hash
+    log_entry["entry_hash"] = entry_hash
+
+    with open(LOG_FILE, "a", encoding="utf-8") as f:
+        f.write(json.dumps(log_entry) + "\n")
+
+    return log_entry
+
+
+def log_engine_error(
+    session_id: str,
+    source: str,
+    error: str,
+    text: str,
+) -> dict:
+    """
+    Constructs a tamper-evident audit log entry for detection engine error.
+    """
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+
+    timestamp_str = datetime.now(timezone.utc).isoformat()
+    prev_hash = _get_last_entry_hash()
+
+    entry_without_hash_fields = {
+        "error": error,
+        "event": "engine_error",
+        "session_id": session_id,
+        "source": source,
+        "text": text[:200],
+        "timestamp": timestamp_str,
+    }
+
+    serialized_data = json.dumps(entry_without_hash_fields, sort_keys=True)
+    payload = serialized_data + prev_hash
+    entry_hash = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+    log_entry = dict(entry_without_hash_fields)
+    log_entry["prev_hash"] = prev_hash
+    log_entry["entry_hash"] = entry_hash
+
+    with open(LOG_FILE, "a", encoding="utf-8") as f:
+        f.write(json.dumps(log_entry) + "\n")
+
+    return log_entry
+

@@ -14,6 +14,7 @@ WHAT THIS FILE DOES:
 
 import ollama
 import security.gateway
+import security.policy_loader
 from agent.tools import turn_light_on, turn_light_off, read_temperature, activate_alarm
 
 MODEL = "llama3.1"  # change this one line if you use a different Ollama model
@@ -73,11 +74,29 @@ TOOL_SCHEMAS = {
 }
 
 
-def run_agent(user_text: str):
+def run_agent(user_text: str, session_id: str = "default"):
     """
-    Sends user_text to the model, evaluates the tool decision through
-    the security gateway, and executes the tool if allowed.
+    Sends user_text to the model, evaluates prompt injection security checks,
+    evaluates the tool decision through the security gateway, and executes the tool if allowed.
     """
+    # 1. Prompt Injection Detection Check on user input
+    verdict = security.gateway.inspect_user_message(session_id, user_text)
+    detection_mode = security.policy_loader.POLICY.get("detection", {}).get("mode", "monitor")
+
+    if verdict.decision == "BLOCK":
+        top_reason = "Prompt injection detected"
+        for res in verdict.results:
+            if res.reasons:
+                top_reason = res.reasons[0]
+                break
+        if detection_mode == "enforce":
+            print(f"Request blocked by AegisAgent: {top_reason}")
+            return
+        else:
+            print(f"[GATEWAY MONITOR] Injection detected (score {verdict.score:.2f}): {top_reason}")
+    elif verdict.decision == "REVIEW":
+        security.gateway.handle_review(session_id, verdict)
+
     messages = [
         {
             "role": "system",
@@ -104,6 +123,8 @@ def run_agent(user_text: str):
         # The model didn't think any tool fit this request
         print(f"[AGENT] No tool matched. Model said: {message.get('content')}")
         return
+
+    scan_tool_outputs = security.policy_loader.POLICY.get("detection", {}).get("scan_tool_outputs", True)
 
     for call in tool_calls:
         function_name = call["function"]["name"]
@@ -135,7 +156,17 @@ def run_agent(user_text: str):
                     f"{function_name}, dropping them (tool expects: {expected_args or 'none'})"
                 )
                 function_args = {k: v for k, v in function_args.items() if k in expected_args}
-            AVAILABLE_FUNCTIONS[function_name](**function_args)
+            
+            tool_result = AVAILABLE_FUNCTIONS[function_name](**function_args)
+
+            # Scan tool output if enabled in policy
+            if scan_tool_outputs:
+                tool_verdict = security.gateway.inspect_tool_output(session_id, str(tool_result))
+                if tool_verdict.decision == "BLOCK" and detection_mode == "enforce":
+                    print("[GATEWAY] [tool output withheld by AegisAgent]")
+                elif tool_verdict.decision == "REVIEW":
+                    security.gateway.handle_review(session_id, tool_verdict)
+
 
 
 if __name__ == "__main__":

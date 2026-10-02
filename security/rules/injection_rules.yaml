@@ -1,0 +1,12 @@
+rules:
+  - {id: INJ-001, category: instruction_override, weight: 0.9, description: "Tells the agent to ignore its instructions", pattern: '\b(ignore|disregard|forget|override)\b.{0,20}\b(previous|prior|above|earlier|all|your)\b.{0,20}\b(instructions?|rules?|prompts?|guidelines?)\b'}
+  - {id: INJ-002, category: role_hijack, weight: 0.8, description: "Tries to reassign the agent's role", pattern: '\b(you are now|from now on you are|act as|pretend (to be|you are)|behave as)\b.{0,30}\b(admin|administrator|root|developer|unrestricted|jailbroken|dan)\b'}
+  - {id: INJ-003, category: jailbreak, weight: 0.8, description: "Known jailbreak vocabulary", pattern: '\b(dan mode|developer mode|jailbreak|jailbroken|no restrictions|without restrictions)\b'}
+  - {id: INJ-004, category: prompt_leak, weight: 0.7, description: "Attempts to extract system prompt/config", pattern: '\b(reveal|show|print|repeat|display|leak)\b.{0,30}\b(system prompt|your (instructions|rules|prompt|configuration))\b'}
+  - {id: INJ-005, category: privilege_claim, weight: 0.6, description: "Claims elevated identity in-chat", pattern: '\b(i am|i''m|this is)\b.{0,10}\b(the )?(admin|administrator|root|owner)\b'}
+  - {id: INJ-006, category: security_bypass, weight: 0.9, description: "Asks to bypass security controls", pattern: '\b(bypass|disable|turn off|skip|circumvent|deactivate)\b.{0,25}\b(security|gateway|policy|approval|safety|authentication|audit|logging|rate limit)\b'}
+  - {id: INJ-007, category: fake_authority, weight: 0.6, description: "Fake system/admin message markers", pattern: '(\[(system|admin|root)\]|\b(system|admin|root) (override|message|command|notice)\b)'}
+  - {id: INJ-008, category: exfiltration, weight: 0.8, description: "Asks to send out secrets", pattern: '\b(send|exfiltrate|leak|forward|transmit)\b.{0,30}\b(password|credential|token|api key|secret)s?\b'}
+  - {id: INJ-009, category: social_engineering, weight: 0.3, description: "Weak pressure/trust phrases", pattern: '\b(trust me|just this once|it''?s (fine|ok|okay)|no one will (know|notice)|nobody will (know|notice))\b'}
+  - {id: INJ-010, category: evade_logging, weight: 0.4, description: "Asks to avoid logging/reporting", pattern: '\b(do not|don''?t|never)\b.{0,10}\b(log|record|report|tell anyone|alert)\b'}
+  - {id: INJ-011, category: unauthorized_physical, weight: 0.7, description: "Physical action while skipping authorization", pattern: '\b(unlock|open|disarm)\b.{0,20}\b(door|lock|gate)\b.{0,30}\b(without|no|skip)\b.{0,15}\b(auth|authentication|approval|permission|check|verification)'}

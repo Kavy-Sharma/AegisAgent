@@ -25,3 +25,14 @@ rate_limits:
   default:
     max_calls: 5
     window_seconds: 60
+
+detection:
+  enabled: true
+  mode: monitor            # monitor = log only | enforce = BLOCK actually stops the request
+  review_threshold: 0.5
+  block_threshold: 0.8
+  context_window: 4
+  detectors: [rules, context]
+  scan_tool_outputs: true
+  rules_file: security/rules/injection_rules.yaml
+

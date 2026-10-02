@@ -68,3 +68,92 @@ def evaluate(tool_name: str, tool_args: dict, user_text: str, role: str = "guest
 
     # g. Return {"decision": decision, "reason": reason}
     return {"decision": decision, "reason": reason}
+
+
+from security.detection.engine import DetectionEngine, Verdict
+
+_detection_engine = None
+
+
+def get_detection_engine() -> DetectionEngine:
+    global _detection_engine
+    if _detection_engine is None:
+        _detection_engine = DetectionEngine()
+    return _detection_engine
+
+
+def handle_review(session_id: str, verdict: Verdict) -> str:
+    # Phase 6: human-in-the-loop approval plugs in here
+    print(f"[GATEWAY WARNING] Prompt injection review required for session '{session_id}' (score: {verdict.score:.2f})")
+    return "allow"
+
+
+def inspect_user_message(session_id: str, text: str) -> Verdict:
+    engine = get_detection_engine()
+    try:
+        verdict = engine.inspect(session_id, text, source="user")
+        rule_ids = [r for res in verdict.results for r in res.rule_ids]
+        logger.log_injection_check(
+            session_id=session_id,
+            source="user",
+            decision=verdict.decision,
+            score=verdict.score,
+            rule_ids=rule_ids,
+            text=text,
+        )
+        return verdict
+    except Exception as e:
+        logger.log_engine_error(
+            session_id=session_id,
+            source="user",
+            error=str(e),
+            text=text,
+        )
+        mode = getattr(engine, "mode", "enforce")
+        if mode == "enforce":
+            return Verdict(
+                decision="BLOCK",
+                score=1.0,
+                results=[],
+                session_id=session_id,
+                source="user",
+            )
+        else:
+            return Verdict(
+                decision="ALLOW",
+                score=0.0,
+                results=[],
+                session_id=session_id,
+                source="user",
+            )
+
+
+def inspect_tool_output(session_id: str, text: str) -> Verdict:
+    engine = get_detection_engine()
+    try:
+        verdict = engine.inspect(session_id, text, source="tool_output")
+        rule_ids = [r for res in verdict.results for r in res.rule_ids]
+        logger.log_injection_check(
+            session_id=session_id,
+            source="tool_output",
+            decision=verdict.decision,
+            score=verdict.score,
+            rule_ids=rule_ids,
+            text=text,
+        )
+        return verdict
+    except Exception as e:
+        logger.log_engine_error(
+            session_id=session_id,
+            source="tool_output",
+            error=str(e),
+            text=text,
+        )
+        return Verdict(
+            decision="BLOCK",
+            score=1.0,
+            results=[],
+            session_id=session_id,
+            source="tool_output",
+        )
+

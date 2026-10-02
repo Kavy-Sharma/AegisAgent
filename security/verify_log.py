@@ -47,15 +47,8 @@ def verify_audit_log() -> bool:
             )
             return False
 
-        entry_without_hash_fields = {
-            "args": entry.get("args"),
-            "decision": entry.get("decision"),
-            "reason": entry.get("reason"),
-            "risk": entry.get("risk"),
-            "role": entry.get("role"),
-            "timestamp": entry.get("timestamp"),
-            "tool": entry.get("tool"),
-        }
+        entry_without_hash_fields = {k: v for k, v in entry.items() if k not in ("prev_hash", "entry_hash")}
+
 
         serialized_data = json.dumps(entry_without_hash_fields, sort_keys=True)
         payload = serialized_data + stored_prev_hash
