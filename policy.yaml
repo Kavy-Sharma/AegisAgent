@@ -1,0 +1,27 @@
+tools:
+  turn_light_on:
+    risk: LOW
+  turn_light_off:
+    risk: LOW
+  read_temperature:
+    risk: LOW
+  activate_alarm:
+    risk: HIGH
+
+roles:
+  guest:
+    allowed_tools:
+      - turn_light_on
+      - turn_light_off
+      - read_temperature
+  admin:
+    allowed_tools:
+      - turn_light_on
+      - turn_light_off
+      - read_temperature
+      - activate_alarm
+
+rate_limits:
+  default:
+    max_calls: 5
+    window_seconds: 60

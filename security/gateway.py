@@ -1,26 +1,70 @@
 """
-Phase 3 — Security Gateway (Wiring Phase)
+Phase 4 — Security Gateway (Permissions, Risk & Rate Limiting)
 
 WHAT THIS FILE DOES:
-Acts as the security gateway intercepting tool execution requests from the AI agent.
-Currently operates in 'allow everything' monitor-only mode to prove the agent-gateway-tool
-wiring works before any real security logic is added in later phases.
+Intercepts tool execution requests from the agent and applies policy checks:
+1. Tool existence check
+2. Role-Based Access Control (RBAC)
+3. Sliding window rate limiting
+4. Risk-level assessment (LOW auto-allowed, HIGH blocked pending Phase 6 approval)
+5. Tamper-evident audit logging
 """
 
+from security import logger, policy_loader, rate_limiter
 
-def evaluate(tool_name: str, tool_args: dict, user_text: str) -> dict:
+
+def evaluate(tool_name: str, tool_args: dict, user_text: str, role: str = "guest") -> dict:
     """
-    Evaluates a tool execution request against security policies.
+    Evaluates a tool execution request against active policy rules.
 
     Args:
-        tool_name: The name of the tool requested by the model.
-        tool_args: Arguments passed to the tool.
-        user_text: Raw user prompt text.
+        tool_name: Name of tool requested.
+        tool_args: Dictionary of arguments.
+        user_text: Original prompt text from user.
+        role: User role ('guest' or 'admin'). Default is 'guest'.
 
     Returns:
-        dict: Security evaluation decision and reason.
+        dict: {"decision": "ALLOW" | "BLOCK", "reason": str}
     """
-    return {
-        "decision": "ALLOW",
-        "reason": "monitor-only mode, all actions currently allowed",
-    }
+    risk = policy_loader.get_risk(tool_name)
+
+    # a. If tool_name not in policy -> decision BLOCK, reason "unknown tool"
+    if risk is None:
+        decision = "BLOCK"
+        reason = "unknown tool"
+        logger.log_decision(tool_name, tool_args, role, risk, decision, reason)
+        return {"decision": decision, "reason": reason}
+
+    # b. If NOT is_tool_allowed_for_role(tool_name, role) -> decision BLOCK
+    if not policy_loader.is_tool_allowed_for_role(tool_name, role):
+        decision = "BLOCK"
+        reason = f"permission denied: role '{role}' cannot use '{tool_name}'"
+        logger.log_decision(tool_name, tool_args, role, risk, decision, reason)
+        return {"decision": decision, "reason": reason}
+
+    # c. If NOT rate_limiter.check_rate_limit(tool_name) -> decision BLOCK
+    if not rate_limiter.check_rate_limit(tool_name):
+        decision = "BLOCK"
+        reason = f"rate limit exceeded for '{tool_name}'"
+        logger.log_decision(tool_name, tool_args, role, risk, decision, reason)
+        return {"decision": decision, "reason": reason}
+
+    # e. Call rate_limiter.record_call(tool_name) ONLY if we got past step (c)
+    rate_limiter.record_call(tool_name)
+
+    # d. Otherwise look up risk = get_risk(tool_name)
+    if risk == "LOW":
+        decision = "ALLOW"
+        reason = "low risk, auto-allowed"
+    elif risk == "HIGH":
+        decision = "BLOCK"
+        reason = "high risk, blocked pending human-approval flow (Phase 6)"
+    else:
+        decision = "BLOCK"
+        reason = f"unrecognized risk level '{risk}'"
+
+    # f. Call logger.log_decision(...) for EVERY call
+    logger.log_decision(tool_name, tool_args, role, risk, decision, reason)
+
+    # g. Return {"decision": decision, "reason": reason}
+    return {"decision": decision, "reason": reason}

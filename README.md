@@ -64,7 +64,7 @@ git push               # after working
 
 \- \[x] Phase 3 — gateway inserted
 
-\- \[ ] Phase 4 — risk levels + permissions
+\- \[x] Phase 4 — risk levels + permissions
 
 \- \[ ] Phase 5 — injection detection
 

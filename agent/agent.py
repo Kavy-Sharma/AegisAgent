@@ -1,5 +1,5 @@
 """
-Phase 3 — Real AI agent + Security Gateway (Wiring Phase).
+Phase 4 — Security Policy Enforcement (Permissions, Risk & Rate Limiting).
 
 WHAT THIS FILE DOES:
 1. Takes a plain-English sentence from the user (e.g. "turn on the light")
@@ -7,7 +7,7 @@ WHAT THIS FILE DOES:
    the 4 tools it's allowed to choose from
 3. The model decides which tool (if any) fits the request, and with
    what arguments
-4. Passes the tool request through security.gateway.evaluate()
+4. Passes the tool request through security.gateway.evaluate(..., role="guest")
 5. If the gateway decision is ALLOW, looks up that tool name in
    AVAILABLE_FUNCTIONS dictionary and actually calls it
 """
@@ -119,7 +119,8 @@ def run_agent(user_text: str):
             continue
 
         # Evaluate tool request through the security gateway
-        evaluation = security.gateway.evaluate(function_name, function_args, user_text)
+        # Hardcoding role="guest" for now; Phase 8's dashboard will introduce real admin login later
+        evaluation = security.gateway.evaluate(function_name, function_args, user_text, role="guest")
         decision = evaluation.get("decision")
         reason = evaluation.get("reason")
 
