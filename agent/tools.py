@@ -46,15 +46,25 @@ def activate_alarm():
     return {"status": "success", "action": "alarm_activated"}
 
 
+def unlock_door():
+    """
+    Unlocks the door lock. HIGH-risk tool.
+    No arguments needed.
+    """
+    print("[TOOL] unlock_door() called -> door unlocked (fake)")
+    return {"status": "success", "action": "door_unlocked"}
+
+
 # --- Manual test block ---
 # This only runs if you execute THIS file directly
 # (python agent/tools.py), not if another file imports these
-# functions. It's a quick way to prove all 4 functions work
+# functions. It's a quick way to prove all functions work
 # before we wire anything else on top of them.
 if __name__ == "__main__":
-    print("Testing all 4 tools manually:\n")
+    print("Testing all tools manually:\n")
     turn_light_on()
     turn_light_off()
     read_temperature()
     activate_alarm()
-    print("\nAll 4 tools ran without errors. Phase 1 complete.")
+    unlock_door()
+    print("\nAll tools ran without errors.")

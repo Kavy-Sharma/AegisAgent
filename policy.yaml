@@ -7,6 +7,8 @@ tools:
     risk: LOW
   activate_alarm:
     risk: HIGH
+  unlock_door:
+    risk: HIGH
 
 roles:
   guest:
@@ -20,6 +22,8 @@ roles:
       - turn_light_off
       - read_temperature
       - activate_alarm
+      - unlock_door
+
 
 rate_limits:
   default:
@@ -28,11 +32,18 @@ rate_limits:
 
 detection:
   enabled: true
-  mode: monitor            # monitor = log only | enforce = BLOCK actually stops the request
+  mode: enforce            # monitor = log only | enforce = BLOCK actually stops the request
   review_threshold: 0.5
   block_threshold: 0.8
   context_window: 4
   detectors: [rules, context]
   scan_tool_outputs: true
   rules_file: security/rules/injection_rules.yaml
+
+approval:
+  enabled: true
+  timeout_seconds: 10
+  require_for_risk: [HIGH]    # use whatever risk label names the existing tool policy already uses
+  require_for_review_verdict: true
+
 

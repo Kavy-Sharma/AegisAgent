@@ -157,3 +157,134 @@ def log_engine_error(
 
     return log_entry
 
+
+def log_approval_request(req) -> dict:
+    """
+    Constructs a tamper-evident audit log entry for an approval request.
+    """
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+    timestamp_str = datetime.now(timezone.utc).isoformat()
+    prev_hash = _get_last_entry_hash()
+
+    entry_without_hash_fields = {
+        "args": req.args,
+        "event": "approval_request",
+        "kind": req.kind,
+        "reasons": req.reasons,
+        "request_hash": req.request_hash,
+        "request_id": req.request_id,
+        "risk": req.risk,
+        "session_id": req.session_id,
+        "timestamp": timestamp_str,
+        "tool": req.tool,
+    }
+
+    serialized_data = json.dumps(entry_without_hash_fields, sort_keys=True)
+    payload = serialized_data + prev_hash
+    entry_hash = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+    log_entry = dict(entry_without_hash_fields)
+    log_entry["prev_hash"] = prev_hash
+    log_entry["entry_hash"] = entry_hash
+
+    with open(LOG_FILE, "a", encoding="utf-8") as f:
+        f.write(json.dumps(log_entry) + "\n")
+
+    return log_entry
+
+
+def log_approval_decision(req, result) -> dict:
+    """
+    Constructs a tamper-evident audit log entry for an approval decision.
+    """
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+    timestamp_str = datetime.now(timezone.utc).isoformat()
+    prev_hash = _get_last_entry_hash()
+
+    entry_without_hash_fields = {
+        "approved": result.approved,
+        "decided_by": result.decided_by,
+        "event": "approval_decision",
+        "reason": result.reason,
+        "request_hash": req.request_hash,
+        "request_id": req.request_id,
+        "session_id": req.session_id,
+        "timed_out": result.timed_out,
+        "timestamp": timestamp_str,
+    }
+
+    serialized_data = json.dumps(entry_without_hash_fields, sort_keys=True)
+    payload = serialized_data + prev_hash
+    entry_hash = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+    log_entry = dict(entry_without_hash_fields)
+    log_entry["prev_hash"] = prev_hash
+    log_entry["entry_hash"] = entry_hash
+
+    with open(LOG_FILE, "a", encoding="utf-8") as f:
+        f.write(json.dumps(log_entry) + "\n")
+
+    return log_entry
+
+
+def log_approval_error(req, error_str: str) -> dict:
+    """
+    Constructs a tamper-evident audit log entry for an approval error.
+    """
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+    timestamp_str = datetime.now(timezone.utc).isoformat()
+    prev_hash = _get_last_entry_hash()
+
+    entry_without_hash_fields = {
+        "error": error_str,
+        "event": "approval_error",
+        "request_hash": req.request_hash,
+        "request_id": req.request_id,
+        "session_id": req.session_id,
+        "timestamp": timestamp_str,
+    }
+
+    serialized_data = json.dumps(entry_without_hash_fields, sort_keys=True)
+    payload = serialized_data + prev_hash
+    entry_hash = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+    log_entry = dict(entry_without_hash_fields)
+    log_entry["prev_hash"] = prev_hash
+    log_entry["entry_hash"] = entry_hash
+
+    with open(LOG_FILE, "a", encoding="utf-8") as f:
+        f.write(json.dumps(log_entry) + "\n")
+
+    return log_entry
+
+
+def log_role_change(old_role: str, new_role: str) -> dict:
+    """
+    Constructs a tamper-evident audit log entry for a role change.
+    """
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+    timestamp_str = datetime.now(timezone.utc).isoformat()
+    prev_hash = _get_last_entry_hash()
+
+    entry_without_hash_fields = {
+        "event": "role_change",
+        "new_role": new_role,
+        "old_role": old_role,
+        "timestamp": timestamp_str,
+    }
+
+    serialized_data = json.dumps(entry_without_hash_fields, sort_keys=True)
+    payload = serialized_data + prev_hash
+    entry_hash = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+    log_entry = dict(entry_without_hash_fields)
+    log_entry["prev_hash"] = prev_hash
+    log_entry["entry_hash"] = entry_hash
+
+    with open(LOG_FILE, "a", encoding="utf-8") as f:
+        f.write(json.dumps(log_entry) + "\n")
+
+    return log_entry
+
+
+
