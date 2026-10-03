@@ -13,6 +13,7 @@ Intercepts tool execution requests from the agent and applies policy checks:
 from security import logger, policy_loader, rate_limiter
 from security.approval import ApprovalManager, ApprovalRequest
 from security.detection.engine import DetectionEngine, Verdict
+import security.hardware
 
 
 
@@ -34,6 +35,7 @@ def evaluate(tool_name: str, tool_args: dict, user_text: str, role: str = "guest
         decision = "BLOCK"
         reason = "unknown tool"
         logger.log_decision(tool_name, tool_args, role, risk, decision, reason)
+        security.hardware.trigger_block_alert()
         return {"decision": decision, "reason": reason}
 
     # b. If NOT is_tool_allowed_for_role(tool_name, role) -> decision BLOCK (human operator NEVER asked)
@@ -41,6 +43,7 @@ def evaluate(tool_name: str, tool_args: dict, user_text: str, role: str = "guest
         decision = "BLOCK"
         reason = f"permission denied: role '{role}' cannot use '{tool_name}'"
         logger.log_decision(tool_name, tool_args, role, risk, decision, reason)
+        security.hardware.trigger_block_alert()
         return {"decision": decision, "reason": reason}
 
     # c. If NOT rate_limiter.check_rate_limit(tool_name) -> decision BLOCK (human operator NEVER asked)
@@ -48,6 +51,7 @@ def evaluate(tool_name: str, tool_args: dict, user_text: str, role: str = "guest
         decision = "BLOCK"
         reason = f"rate limit exceeded for '{tool_name}'"
         logger.log_decision(tool_name, tool_args, role, risk, decision, reason)
+        security.hardware.trigger_block_alert()
         return {"decision": decision, "reason": reason}
 
     # e. Call rate_limiter.record_call(tool_name) ONLY if we got past step (c)
@@ -59,13 +63,21 @@ def evaluate(tool_name: str, tool_args: dict, user_text: str, role: str = "guest
     require_for_risk = approval_cfg.get("require_for_risk", ["HIGH"])
 
     if approval_enabled and risk in require_for_risk:
+        reasons = [f"Tool '{tool_name}' with risk '{risk}' requires operator approval"]
+        
+        # Check if current session triggered injection detection (even in monitor mode)
+        engine = get_detection_engine()
+        last_v = engine.get_last_verdict(session_id)
+        if last_v and last_v.decision in ("REVIEW", "BLOCK"):
+            reasons.append(f"WARNING: this session triggered injection detection (score {last_v.score:.2f})")
+
         req = ApprovalRequest(
             session_id=session_id,
             kind="tool_call",
             tool=tool_name,
             args=tool_args,
             risk=risk,
-            reasons=[f"Tool '{tool_name}' with risk '{risk}' requires operator approval"],
+            reasons=reasons,
         )
         mgr = get_approval_manager()
         app_result = mgr.request(req)
@@ -79,6 +91,9 @@ def evaluate(tool_name: str, tool_args: dict, user_text: str, role: str = "guest
                 reason = "Approval timed out, action denied"
             else:
                 reason = "Action denied by human operator"
+            # Note: Human operator denial or approval timeout is NOT an attack-type block;
+            # trigger_block_alert() must fire ONLY for attack-type blocks (unknown tool, RBAC denial,
+            # rate-limit exceeded, detection BLOCK). It must NOT fire for human operator denial or timeout.
     else:
         if risk == "LOW":
             decision = "ALLOW"
@@ -86,9 +101,11 @@ def evaluate(tool_name: str, tool_args: dict, user_text: str, role: str = "guest
         elif risk == "HIGH":
             decision = "BLOCK"
             reason = "high risk, blocked pending human-approval flow (Phase 6)"
+            security.hardware.trigger_block_alert()
         else:
             decision = "BLOCK"
             reason = f"unrecognized risk level '{risk}'"
+            security.hardware.trigger_block_alert()
 
     # f. Call logger.log_decision(...) for EVERY call
     logger.log_decision(tool_name, tool_args, role, risk, decision, reason)
@@ -99,7 +116,6 @@ def evaluate(tool_name: str, tool_args: dict, user_text: str, role: str = "guest
 
 _detection_engine = None
 _approval_manager = None
-
 
 
 def get_detection_engine() -> DetectionEngine:
@@ -133,6 +149,14 @@ def handle_review(session_id: str, verdict: Verdict, text: str = "") -> bool:
 
     if enabled and require_for_review:
         reasons = [r for res in verdict.results for r in res.reasons]
+        
+        engine = get_detection_engine()
+        last_v = engine.get_last_verdict(session_id)
+        if last_v and last_v.decision in ("REVIEW", "BLOCK"):
+            warn_msg = f"WARNING: this session triggered injection detection (score {last_v.score:.2f})"
+            if warn_msg not in reasons:
+                reasons.append(warn_msg)
+
         req = ApprovalRequest(
             session_id=session_id,
             kind="message_review",
@@ -162,6 +186,9 @@ def inspect_user_message(session_id: str, text: str) -> Verdict:
             rule_ids=rule_ids,
             text=text,
         )
+        mode = getattr(engine, "mode", "enforce")
+        if verdict.decision == "BLOCK" and mode == "enforce":
+            security.hardware.trigger_block_alert()
         return verdict
     except Exception as e:
         logger.log_engine_error(
@@ -172,6 +199,7 @@ def inspect_user_message(session_id: str, text: str) -> Verdict:
         )
         mode = getattr(engine, "mode", "enforce")
         if mode == "enforce":
+            security.hardware.trigger_block_alert()
             return Verdict(
                 decision="BLOCK",
                 score=1.0,
@@ -202,6 +230,9 @@ def inspect_tool_output(session_id: str, text: str) -> Verdict:
             rule_ids=rule_ids,
             text=text,
         )
+        mode = getattr(engine, "mode", "enforce")
+        if verdict.decision == "BLOCK" and mode == "enforce":
+            security.hardware.trigger_block_alert()
         return verdict
     except Exception as e:
         logger.log_engine_error(
@@ -210,6 +241,7 @@ def inspect_tool_output(session_id: str, text: str) -> Verdict:
             error=str(e),
             text=text,
         )
+        security.hardware.trigger_block_alert()
         return Verdict(
             decision="BLOCK",
             score=1.0,
@@ -217,5 +249,6 @@ def inspect_tool_output(session_id: str, text: str) -> Verdict:
             session_id=session_id,
             source="tool_output",
         )
+
 
 

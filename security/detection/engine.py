@@ -54,6 +54,7 @@ class DetectionEngine:
         self.sessions: dict[str, deque[HistoryEntry]] = defaultdict(
             lambda: deque(maxlen=self.context_window)
         )
+        self.last_verdicts: dict[str, Verdict] = {}
 
         # Build detectors from policy in listed order
         self.detectors = []
@@ -114,14 +115,21 @@ class DetectionEngine:
             message_level_score = rule_res.score if rule_res else 0.0
             self.sessions[session_id].append(HistoryEntry(text=text, score=message_level_score))
 
-        return Verdict(
+        v = Verdict(
             decision=decision,
             score=final_score,
             results=ctx.prior_results,
             session_id=session_id,
             source=source,
         )
+        self.last_verdicts[session_id] = v
+        return v
+
+    def get_last_verdict(self, session_id: str) -> Verdict | None:
+        return self.last_verdicts.get(session_id)
 
     def reset_session(self, session_id: str):
         if session_id in self.sessions:
             self.sessions[session_id].clear()
+        self.last_verdicts.pop(session_id, None)
+

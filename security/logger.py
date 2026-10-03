@@ -287,4 +287,35 @@ def log_role_change(old_role: str, new_role: str) -> dict:
     return log_entry
 
 
+def log_hardware_command(command: str, ok: bool, error: str | None) -> dict:
+    """
+    Constructs a tamper-evident audit log entry for a hardware command.
+    """
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+    timestamp_str = datetime.now(timezone.utc).isoformat()
+    prev_hash = _get_last_entry_hash()
+
+    entry_without_hash_fields = {
+        "command": command,
+        "error": error,
+        "event": "hardware_command",
+        "ok": ok,
+        "timestamp": timestamp_str,
+    }
+
+    serialized_data = json.dumps(entry_without_hash_fields, sort_keys=True)
+    payload = serialized_data + prev_hash
+    entry_hash = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+    log_entry = dict(entry_without_hash_fields)
+    log_entry["prev_hash"] = prev_hash
+    log_entry["entry_hash"] = entry_hash
+
+    with open(LOG_FILE, "a", encoding="utf-8") as f:
+        f.write(json.dumps(log_entry) + "\n")
+
+    return log_entry
+
+
+
 

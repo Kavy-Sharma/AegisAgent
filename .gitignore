@@ -6,6 +6,10 @@ venv/
 env/
 .env
 
+# Secrets & Credentials
+mosquitto/passwd
+esp32/secrets.h
+
 # Logs — everyone generates their own locally, don't sync them
 logs/*.jsonl
 
@@ -15,4 +19,4 @@ Thumbs.db
 
 # Editor junk
 .vscode/
-.idea/
+.idea/

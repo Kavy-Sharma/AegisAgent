@@ -1,35 +1,46 @@
 """
-Phase 1 — Fake tool functions.
+Phase 7 — Hardware-Integrated IoT Tools
 
-These represent the 4 real-world actions our IoT device can do.
-Right now they just print what they WOULD do — no AI, no gateway,
-no hardware yet. This lets us test the "shape" of each function
-(what arguments it takes, what it returns) before anything else
-depends on it.
-
-Later phases replace the print() lines with real MQTT publishes —
-but the function names and arguments stay exactly the same, so
-nothing above this layer (the AI, the gateway) has to change.
+WHAT THIS FILE DOES:
+Provides tool functions for AegisAgent. When hardware.mode == "mqtt" in policy.yaml,
+commands are published through security.hardware.get_bridge() to the MQTT broker.
+In fake mode, commands use the FakeBridge for simulation.
 """
+
+import security.hardware
+import security.policy_loader
+
+
+def _dispatch_command(command: str, action_name: str, fake_log: str) -> dict:
+    mode = security.policy_loader.POLICY.get("hardware", {}).get("mode", "fake")
+    bridge = security.hardware.get_bridge()
+    result = bridge.publish(command)
+    if result.ok:
+        if mode == "fake":
+            print(fake_log)
+        else:
+            print(f"[TOOL] {action_name} -> sent to device")
+        return {"status": "success", "action": action_name}
+    else:
+        print(f"[TOOL] {action_name} FAILED: {result.error}")
+        return {"status": "failed", "error": result.error, "action": action_name}
 
 
 def turn_light_on():
-    """Turns the LED on. No arguments needed."""
-    print("[TOOL] turn_light_on() called -> LED would turn ON")
-    return {"status": "success", "action": "light_on"}
+    """Turns the LED light on."""
+    return _dispatch_command("light_on", "light_on", "[TOOL] turn_light_on() called -> LED would turn ON")
 
 
 def turn_light_off():
-    """Turns the LED off. No arguments needed."""
-    print("[TOOL] turn_light_off() called -> LED would turn OFF")
-    return {"status": "success", "action": "light_off"}
+    """Turns the LED light off."""
+    return _dispatch_command("light_off", "light_off", "[TOOL] turn_light_off() called -> LED would turn OFF")
 
 
 def read_temperature():
     """
     Reads the temperature sensor. No arguments needed.
-    Right now it returns a fake number — Phase 7 replaces this
-    with a real reading published by the ESP32 over MQTT.
+    Note: read_temperature stays fake for now because sensor telemetry reading
+    is handled in local mock mode without hardware ADC wiring.
     """
     fake_temp_celsius = 28.5
     print(f"[TOOL] read_temperature() called -> {fake_temp_celsius}°C (fake reading)")
@@ -37,29 +48,15 @@ def read_temperature():
 
 
 def activate_alarm():
-    """
-    Activates the buzzer alarm. This is our HIGH-risk tool —
-    later phases will make this require human approval before
-    it's ever actually allowed to run.
-    """
-    print("[TOOL] activate_alarm() called -> BUZZER would sound")
-    return {"status": "success", "action": "alarm_activated"}
+    """Activates the buzzer alarm. HIGH-risk tool."""
+    return _dispatch_command("alarm_on", "alarm_activated", "[TOOL] activate_alarm() called -> BUZZER would sound")
 
 
 def unlock_door():
-    """
-    Unlocks the door lock. HIGH-risk tool.
-    No arguments needed.
-    """
-    print("[TOOL] unlock_door() called -> door unlocked (fake)")
-    return {"status": "success", "action": "door_unlocked"}
+    """Unlocks the door lock. HIGH-risk tool."""
+    return _dispatch_command("unlock_door", "door_unlocked", "[TOOL] unlock_door() called -> door unlocked (fake)")
 
 
-# --- Manual test block ---
-# This only runs if you execute THIS file directly
-# (python agent/tools.py), not if another file imports these
-# functions. It's a quick way to prove all functions work
-# before we wire anything else on top of them.
 if __name__ == "__main__":
     print("Testing all tools manually:\n")
     turn_light_on()
@@ -67,4 +64,4 @@ if __name__ == "__main__":
     read_temperature()
     activate_alarm()
     unlock_door()
-    print("\nAll tools ran without errors.")
+    print("\nAll tools ran without errors.")

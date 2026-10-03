@@ -120,6 +120,11 @@ def run_agent(user_text: str, session_id: str = "default", role: str = "guest"):
                 top_reason = res.reasons[0]
                 break
         if detection_mode == "enforce":
+            try:
+                import security.hardware
+                security.hardware.trigger_block_alert()
+            except Exception:
+                pass
             print(f"Request blocked by AegisAgent: {top_reason}")
             return
         else:
@@ -190,6 +195,11 @@ def run_agent(user_text: str, session_id: str = "default", role: str = "guest"):
             if scan_tool_outputs:
                 tool_verdict = security.gateway.inspect_tool_output(session_id, str(tool_result))
                 if tool_verdict.decision == "BLOCK" and detection_mode == "enforce":
+                    try:
+                        import security.hardware
+                        security.hardware.trigger_block_alert()
+                    except Exception:
+                        pass
                     print("[GATEWAY] [tool output withheld by AegisAgent]")
                 elif tool_verdict.decision == "REVIEW":
                     allowed_output = security.gateway.handle_review(session_id, tool_verdict, text=str(tool_result))

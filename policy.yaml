@@ -46,4 +46,13 @@ approval:
   require_for_risk: [HIGH]    # use whatever risk label names the existing tool policy already uses
   require_for_review_verdict: true
 
+hardware:
+  mode: fake                # fake | mqtt
+  broker_host: 127.0.0.1
+  broker_port: 1883
+  device_id: esp32-01
+  publish_timeout_seconds: 3
+  alert_on_block: true
+
+
 
