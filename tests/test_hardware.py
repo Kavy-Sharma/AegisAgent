@@ -220,6 +220,10 @@ def test_hardware_bridge_publish_ack_timeout():
 
     def fake_connect(host, port, keepalive):
         bridge._on_connect(mock_client, None, {}, 0)
+        mock_msg = MagicMock()
+        mock_msg.topic = bridge.status_topic
+        mock_msg.payload = b"online"
+        bridge._on_message(mock_client, None, mock_msg)
 
     mock_client.connect.side_effect = fake_connect
 
@@ -232,22 +236,68 @@ def test_hardware_bridge_publish_ack_timeout():
     mock_client.disconnect.assert_called_once()
 
 
-def test_hardware_bridge_broker_connection_refused():
+def test_hardware_bridge_device_offline_fails_closed():
     from unittest.mock import MagicMock, patch
     from security.hardware import HardwareBridge
 
     bridge = HardwareBridge()
     mock_client = MagicMock()
-    mock_client.connect.side_effect = ConnectionRefusedError("Broker port unreachable")
+
+    def fake_connect(host, port, keepalive):
+        bridge._on_connect(mock_client, None, {}, 0)
+        # Retained message payload is "offline"
+        mock_msg = MagicMock()
+        mock_msg.topic = bridge.status_topic
+        mock_msg.payload = b"offline"
+        bridge._on_message(mock_client, None, mock_msg)
+
+    mock_client.connect.side_effect = fake_connect
 
     with patch.object(bridge, "_create_client", return_value=mock_client):
-        res = bridge.publish("alarm_on")
+        res = bridge.publish("light_on")
 
     assert res.ok is False
-    assert "MQTT connection error" in res.error
+    assert res.error == "Device offline - command not delivered"
+    assert bridge.is_device_online() is False
     mock_client.publish.assert_not_called()
     mock_client.loop_stop.assert_called_once()
     mock_client.disconnect.assert_called_once()
+
+
+def test_hardware_bridge_no_status_received_fails_closed():
+    from unittest.mock import MagicMock, patch
+    from security.hardware import HardwareBridge
+
+    bridge = HardwareBridge()
+    mock_client = MagicMock()
+
+    def fake_connect(host, port, keepalive):
+        # Connected successfully, but no retained status message arrives
+        bridge._on_connect(mock_client, None, {}, 0)
+
+    mock_client.connect.side_effect = fake_connect
+
+    with patch.object(bridge, "_create_client", return_value=mock_client), \
+         patch.object(bridge._status_event, "wait", return_value=False):
+        res = bridge.publish("light_on")
+
+    assert res.ok is False
+    assert res.error == "Device offline - command not delivered"
+    assert bridge.is_device_online() is False
+    mock_client.publish.assert_not_called()
+    mock_client.loop_stop.assert_called_once()
+    mock_client.disconnect.assert_called_once()
+
+
+def test_fake_bridge_device_offline_fails_closed(setup_fake_bridge):
+    fake = setup_fake_bridge
+    fake.device_online_status = False
+
+    res = fake.publish("light_on")
+    assert res.ok is False
+    assert res.error == "Device offline - command not delivered"
+    assert len(fake.command_history) == 0
+
 
 
 

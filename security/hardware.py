@@ -149,24 +149,28 @@ class HardwareBridge:
                     client.subscribe(self.status_topic, qos=1)
                     self._status_event.wait(timeout=3.0)
 
-                    payload_dict = {
-                        "command": command,
-                        "ts": time.time(),
-                        "nonce": str(uuid.uuid4()),
-                    }
-                    payload_str = json.dumps(payload_dict)
-
-                    try:
-                        info = client.publish(self.cmd_topic, payload_str, qos=1)
-                        info.wait_for_publish(timeout=self.timeout)
-                        if info.is_published():
-                            ok = True
-                        else:
-                            ok = False
-                            error_msg = "MQTT publish acknowledgement timed out"
-                    except Exception as e:
+                    if not self.device_online:
                         ok = False
-                        error_msg = f"MQTT publish failed: {e}"
+                        error_msg = "Device offline - command not delivered"
+                    else:
+                        payload_dict = {
+                            "command": command,
+                            "ts": time.time(),
+                            "nonce": str(uuid.uuid4()),
+                        }
+                        payload_str = json.dumps(payload_dict)
+
+                        try:
+                            info = client.publish(self.cmd_topic, payload_str, qos=1)
+                            info.wait_for_publish(timeout=self.timeout)
+                            if info.is_published():
+                                ok = True
+                            else:
+                                ok = False
+                                error_msg = "MQTT publish acknowledgement timed out"
+                        except Exception as e:
+                            ok = False
+                            error_msg = f"MQTT publish failed: {e}"
 
         except Exception as e:
             ok = False
@@ -201,6 +205,9 @@ class FakeBridge:
         if not self.connected:
             ok = False
             error_msg = "Broker unreachable (simulated)"
+        elif not self.device_online_status:
+            ok = False
+            error_msg = "Device offline - command not delivered"
         else:
             self.command_history.append(command)
             ok = True
