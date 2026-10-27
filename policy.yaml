@@ -52,5 +52,6 @@ hardware:
   broker_host: 10.115.143.146
   broker_port: 1883
   device_id: esp32-01
+  mosquitto_exe: "C:\\Program Files\\mosquitto\\mosquitto.exe"
 
 

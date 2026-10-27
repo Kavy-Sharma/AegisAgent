@@ -17,6 +17,7 @@ import uuid
 
 import security.logger
 import security.policy_loader
+import security.signing
 
 
 def sanitize_for_console(val: Any, max_len: int = 200) -> str:
@@ -251,7 +252,12 @@ class DashboardApprovalProvider(ApprovalProvider):
         self.timeout_seconds = timeout_seconds
         self.poll_interval = poll_interval
         if base_dir is None:
-            self.base_dir = Path(__file__).resolve().parent.parent / "data" / "approvals"
+            if os.environ.get("AEGIS_APPROVALS_DIR"):
+                self.base_dir = Path(os.environ["AEGIS_APPROVALS_DIR"])
+            elif os.environ.get("AEGIS_DATA_DIR"):
+                self.base_dir = Path(os.environ["AEGIS_DATA_DIR"]) / "approvals"
+            else:
+                self.base_dir = Path(__file__).resolve().parent.parent / "data" / "approvals"
         else:
             self.base_dir = Path(base_dir)
 
@@ -319,9 +325,26 @@ class DashboardApprovalProvider(ApprovalProvider):
                             timed_out=False,
                         )
 
-                    # Verify request_hash
+                    # Verify HMAC signature over {request_id, request_hash, approved, decided_at}
+                    sig_payload = {
+                        "approved": dec_data.get("approved"),
+                        "decided_at": dec_data.get("decided_at"),
+                        "request_hash": dec_data.get("request_hash"),
+                        "request_id": dec_data.get("request_id"),
+                    }
+                    sig = dec_data.get("signature")
+                    if not sig or not security.signing.verify(sig_payload, sig):
+                        return ApprovalResult(
+                            approved=False,
+                            decided_by="dashboard_operator",
+                            reason="bad signature",
+                            timed_out=False,
+                        )
+
+                    # Verify request_hash and request_id match this request
                     decision_hash = dec_data.get("request_hash")
-                    if decision_hash != req.request_hash:
+                    dec_req_id = dec_data.get("request_id")
+                    if decision_hash != req.request_hash or (dec_req_id is not None and dec_req_id != req.request_id):
                         return ApprovalResult(
                             approved=False,
                             decided_by="dashboard_operator",

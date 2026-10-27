@@ -10,12 +10,16 @@ WHAT THIS FILE DOES:
 """
 
 import argparse
+from dataclasses import dataclass
 import sys
+from typing import Any, Callable
+
 import ollama
 import security.gateway
 import security.hardware
 import security.logger
 import security.policy_loader
+import security.rate_limiter
 from agent.tools import (
     turn_light_on,
     turn_light_off,
@@ -83,6 +87,15 @@ TOOL_SCHEMAS = {
 }
 
 
+@dataclass
+class TurnResult:
+    reply: str | None = None
+    decision: str = "ALLOW"
+    tool_called: str | None = None
+    tool_result: Any = None
+    error: str | None = None
+
+
 def print_tools_table():
     tools_cfg = security.policy_loader.POLICY.get("tools", {})
     roles_cfg = security.policy_loader.POLICY.get("roles", {})
@@ -105,13 +118,27 @@ def get_default_role() -> str:
     return min(roles_cfg.keys(), key=lambda r: len(roles_cfg[r].get("allowed_tools", [])))
 
 
-def run_agent(user_text: str, session_id: str = "default", role: str = "guest"):
+def run_turn(
+    text: str,
+    role: str = "guest",
+    session_id: str = "default",
+    emit: Callable[[str, str, dict], None] | None = None,
+) -> TurnResult:
     """
-    Sends user_text to the model, evaluates prompt injection security checks,
-    evaluates the tool decision through the security gateway, and executes the tool if allowed.
+    Executes a single conversational or command turn through the complete AegisAgent pipeline:
+    [detection -> llm -> rbac -> rate_limit -> approval -> hardware -> output_scan].
+    Calls emit(stage, status, detail) at each stage with status in [running, pass, review, block, skip, error].
     """
-    # 1. Prompt Injection Detection Check on user input
-    verdict = security.gateway.inspect_user_message(session_id, user_text)
+    def _emit(stage: str, status: str, detail: dict):
+        if emit is not None:
+            try:
+                emit(stage, status, detail)
+            except Exception:
+                pass
+
+    # 1. Detection Stage
+    _emit("detection", "running", {"text": text[:200]})
+    verdict = security.gateway.inspect_user_message(session_id, text)
     detection_mode = security.policy_loader.POLICY.get("detection", {}).get("mode", "monitor")
 
     if verdict.decision == "BLOCK":
@@ -125,16 +152,35 @@ def run_agent(user_text: str, session_id: str = "default", role: str = "guest"):
                 security.hardware.trigger_block_alert()
             except Exception:
                 pass
-            print(f"Request blocked by AegisAgent: {top_reason}")
-            return
+            _emit("detection", "block", {"reason": top_reason, "score": verdict.score})
+            for s in ("llm", "rbac", "rate_limit", "approval", "hardware", "output_scan"):
+                _emit(s, "skip", {"reason": "Blocked by detection"})
+            return TurnResult(
+                reply=f"Request blocked by AegisAgent: {top_reason}",
+                decision="BLOCK",
+                error=top_reason,
+            )
         else:
-            print(f"[GATEWAY MONITOR] Injection detected (score {verdict.score:.2f}): {top_reason}")
+            _emit("detection", "pass", {"monitor": True, "score": verdict.score, "reason": top_reason})
     elif verdict.decision == "REVIEW":
-        allowed = security.gateway.handle_review(session_id, verdict, text=user_text)
+        _emit("detection", "review", {"score": verdict.score})
+        allowed = security.gateway.handle_review(session_id, verdict, text=text)
         if not allowed:
-            print("Request denied by human operator")
-            return
+            _emit("detection", "block", {"reason": "Denied by human operator"})
+            for s in ("llm", "rbac", "rate_limit", "approval", "hardware", "output_scan"):
+                _emit(s, "skip", {"reason": "Denied by operator review"})
+            return TurnResult(
+                reply="Request denied by human operator",
+                decision="DENY",
+                error="Review denied",
+            )
+        else:
+            _emit("detection", "pass", {"reason": "Approved by human operator"})
+    else:
+        _emit("detection", "pass", {"score": verdict.score})
 
+    # 2. LLM Stage
+    _emit("llm", "running", {"model": MODEL})
     messages = [
         {
             "role": "system",
@@ -149,61 +195,191 @@ def run_agent(user_text: str, session_id: str = "default", role: str = "guest"):
                 "For ambiguous, single-word, or unsupported requests, do NOT call any tool — reply in plain text."
             ),
         },
-        {"role": "user", "content": user_text},
+        {"role": "user", "content": text},
     ]
 
-    response = ollama.chat(model=MODEL, messages=messages, tools=TOOLS, keep_alive="30m")
+    try:
+        response = ollama.chat(model=MODEL, messages=messages, tools=TOOLS, keep_alive="30m")
+    except Exception as e:
+        _emit("llm", "error", {"error": str(e)})
+        for s in ("rbac", "rate_limit", "approval", "hardware", "output_scan"):
+            _emit(s, "skip", {"reason": "LLM communication error"})
+        return TurnResult(
+            reply=f"LLM communication error: {e}",
+            decision="ERROR",
+            error=str(e),
+        )
 
-    message = response["message"]
-
+    message = response.get("message", {})
     tool_calls = message.get("tool_calls")
 
     if not tool_calls:
-        print(f"[AGENT] No tool matched. Model said: {message.get('content')}")
-        return
+        content = message.get("content", "")
+        _emit("llm", "pass", {"tool_calls": 0, "reply": content})
+        for s in ("rbac", "rate_limit", "approval", "hardware", "output_scan"):
+            _emit(s, "skip", {"reason": "No tool call generated"})
+        return TurnResult(reply=content, decision="ALLOW")
 
+    _emit("llm", "pass", {"tool_calls": len(tool_calls)})
+
+    # Tool Execution & Pipeline Evaluation
     scan_tool_outputs = security.policy_loader.POLICY.get("detection", {}).get("scan_tool_outputs", True)
+    last_turn_result = None
 
     for call in tool_calls:
         function_name = call["function"]["name"]
         function_args = call["function"].get("arguments", {}) or {}
 
-        print(f"[AGENT] Model chose tool: {function_name}({function_args})")
-
+        # 3. RBAC stage
+        _emit("rbac", "running", {"tool": function_name, "role": role})
         if function_name not in AVAILABLE_FUNCTIONS:
-            print(f"[AGENT] REJECTED — '{function_name}' is not a real tool.")
-            continue
+            _emit("rbac", "block", {"tool": function_name, "reason": "unknown tool"})
+            for s in ("rate_limit", "approval", "hardware", "output_scan"):
+                _emit(s, "skip", {"reason": "unknown tool"})
+            return TurnResult(
+                reply=f"REJECTED — '{function_name}' is not a real tool.",
+                decision="BLOCK",
+                tool_called=function_name,
+                error="unknown tool",
+            )
 
-        evaluation = security.gateway.evaluate(function_name, function_args, user_text, role=role, session_id=session_id)
+        if not security.policy_loader.is_tool_allowed_for_role(function_name, role):
+            reason_msg = f"permission denied: role '{role}' cannot use '{function_name}'"
+            _emit("rbac", "block", {"tool": function_name, "role": role, "reason": reason_msg})
+            security.gateway.evaluate(function_name, function_args, text, role=role, session_id=session_id)
+            for s in ("rate_limit", "approval", "hardware", "output_scan"):
+                _emit(s, "skip", {"reason": "RBAC denied"})
+            return TurnResult(
+                reply=f"Request blocked by policy: {reason_msg}",
+                decision="BLOCK",
+                tool_called=function_name,
+                error=reason_msg,
+            )
+        _emit("rbac", "pass", {"tool": function_name, "role": role})
+
+        # 4. Rate Limit stage
+        _emit("rate_limit", "running", {"tool": function_name})
+        if not security.rate_limiter.check_rate_limit(function_name):
+            reason_msg = f"rate limit exceeded for '{function_name}'"
+            _emit("rate_limit", "block", {"tool": function_name, "reason": reason_msg})
+            security.gateway.evaluate(function_name, function_args, text, role=role, session_id=session_id)
+            for s in ("approval", "hardware", "output_scan"):
+                _emit(s, "skip", {"reason": "Rate limit exceeded"})
+            return TurnResult(
+                reply=f"Request blocked: {reason_msg}",
+                decision="BLOCK",
+                tool_called=function_name,
+                error=reason_msg,
+            )
+        _emit("rate_limit", "pass", {"tool": function_name})
+
+        # 5. Approval stage
+        _emit("approval", "running", {"tool": function_name})
+        evaluation = security.gateway.evaluate(function_name, function_args, text, role=role, session_id=session_id)
         decision = evaluation.get("decision")
-        reason = evaluation.get("reason")
+        reason = evaluation.get("reason", "")
 
-        print(f"[GATEWAY] Decision: {decision} | Reason: {reason}")
+        risk = security.policy_loader.get_risk(function_name)
+        approval_cfg = security.policy_loader.POLICY.get("approval", {})
+        requires_approval = approval_cfg.get("enabled", True) and (risk in approval_cfg.get("require_for_risk", ["HIGH"]))
 
-        if decision == "ALLOW":
-            expected_args = TOOL_SCHEMAS.get(function_name, set())
-            unexpected = set(function_args.keys()) - expected_args
-            if unexpected:
-                print(
-                    f"[AGENT] WARNING - model sent unexpected args {unexpected} for "
-                    f"{function_name}, dropping them (tool expects: {expected_args or 'none'})"
+        if decision != "ALLOW":
+            _emit("approval", "block", {"reason": reason})
+            for s in ("hardware", "output_scan"):
+                _emit(s, "skip", {"reason": "Approval denied or blocked"})
+            return TurnResult(
+                reply=f"Action blocked: {reason}",
+                decision="BLOCK",
+                tool_called=function_name,
+                error=reason,
+            )
+
+        if requires_approval:
+            _emit("approval", "pass", {"reason": reason})
+        else:
+            _emit("approval", "skip", {"reason": "LOW risk auto-allowed"})
+
+        # 6. Hardware execution stage
+        _emit("hardware", "running", {"tool": function_name, "args": function_args})
+        expected_args = TOOL_SCHEMAS.get(function_name, set())
+        clean_args = {k: v for k, v in function_args.items() if k in expected_args}
+
+        try:
+            tool_result = AVAILABLE_FUNCTIONS[function_name](**clean_args)
+            _emit("hardware", "pass", {"tool": function_name, "result": str(tool_result)})
+        except Exception as e:
+            _emit("hardware", "error", {"tool": function_name, "error": str(e)})
+            _emit("output_scan", "skip", {"reason": "Hardware execution error"})
+            return TurnResult(
+                reply=f"Error executing tool {function_name}: {e}",
+                decision="ERROR",
+                tool_called=function_name,
+                error=str(e),
+            )
+
+        # 7. Output Scan stage
+        if scan_tool_outputs:
+            _emit("output_scan", "running", {})
+            tool_verdict = security.gateway.inspect_tool_output(session_id, str(tool_result))
+            if tool_verdict.decision == "BLOCK" and detection_mode == "enforce":
+                try:
+                    security.hardware.trigger_block_alert()
+                except Exception:
+                    pass
+                _emit("output_scan", "block", {"reason": "Tool output blocked by policy"})
+                return TurnResult(
+                    reply="[tool output withheld by AegisAgent]",
+                    decision="BLOCK",
+                    tool_called=function_name,
+                    tool_result=None,
+                    error="tool output withheld",
                 )
-                function_args = {k: v for k, v in function_args.items() if k in expected_args}
+            elif tool_verdict.decision == "REVIEW":
+                _emit("output_scan", "review", {"score": tool_verdict.score})
+                allowed_output = security.gateway.handle_review(session_id, tool_verdict, text=str(tool_result))
+                if not allowed_output:
+                    _emit("output_scan", "block", {"reason": "Tool output review denied"})
+                    return TurnResult(
+                        reply="[tool output withheld by AegisAgent]",
+                        decision="DENY",
+                        tool_called=function_name,
+                        tool_result=None,
+                        error="tool output denied by operator",
+                    )
+                _emit("output_scan", "pass", {"reason": "Tool output review allowed"})
+            else:
+                _emit("output_scan", "pass", {"score": tool_verdict.score})
+        else:
+            _emit("output_scan", "skip", {"reason": "Output scanning disabled"})
 
-            tool_result = AVAILABLE_FUNCTIONS[function_name](**function_args)
+        last_turn_result = TurnResult(
+            reply=f"Executed {function_name}: {tool_result}",
+            decision="ALLOW",
+            tool_called=function_name,
+            tool_result=tool_result,
+        )
 
-            if scan_tool_outputs:
-                tool_verdict = security.gateway.inspect_tool_output(session_id, str(tool_result))
-                if tool_verdict.decision == "BLOCK" and detection_mode == "enforce":
-                    try:
-                        security.hardware.trigger_block_alert()
-                    except Exception:
-                        pass
-                    print("[GATEWAY] [tool output withheld by AegisAgent]")
-                elif tool_verdict.decision == "REVIEW":
-                    allowed_output = security.gateway.handle_review(session_id, tool_verdict, text=str(tool_result))
-                    if not allowed_output:
-                        print("[GATEWAY] [tool output withheld by AegisAgent]")
+    return last_turn_result or TurnResult(reply="Done.", decision="ALLOW")
+
+
+def run_agent(user_text: str, session_id: str = "default", role: str = "guest") -> TurnResult:
+    """CLI wrapper around run_turn, preserving console log output."""
+    def cli_emit(stage, status, detail):
+        if stage == "detection" and status == "pass" and detail.get("monitor"):
+            print(f"[GATEWAY MONITOR] Injection detected (score {detail.get('score', 0):.2f}): {detail.get('reason')}")
+        elif stage == "llm" and status == "pass" and detail.get("tool_calls") == 0:
+            print(f"[AGENT] No tool matched. Model said: {detail.get('reply')}")
+        elif stage == "rbac" and status == "running":
+            print(f"[AGENT] Model chose tool: {detail.get('tool')}")
+        elif stage == "output_scan" and status == "block":
+            print("[GATEWAY] [tool output withheld by AegisAgent]")
+
+    res = run_turn(user_text, role=role, session_id=session_id, emit=cli_emit)
+    if res.decision != "ALLOW" and res.reply:
+        print(res.reply)
+    elif res.tool_called:
+        print(f"[GATEWAY] Decision: {res.decision} | Reason: {res.reply or 'Approved'}")
+    return res
 
 
 if __name__ == "__main__":

@@ -1,432 +1,288 @@
 """
-Phase 8 — AegisAgent Security Operations Dashboard (Streamlit)
+Phase 8B — AegisAgent Security Operations Dashboard (App Shell & Navigation)
 
 DESIGN RULES:
-- Separate process from the agent. Bound to 127.0.0.1 only.
-  Run command: streamlit run dashboard/app.py --server.address 127.0.0.1
-- The dashboard NEVER writes to the audit log and NEVER touches hardware.
-- It only reads logs/audit_log.jsonl and writes data/approvals/decisions/<request_id>.json.
-- FAIL CLOSED: no decision, dashboard closed, or any error means DENY.
-- All attacker-controllable text is escaped or rendered via st.code, never raw HTML/markdown.
+- Multi-page application with st.navigation.
+- Light theme tokens (No gradients, no neon, no dark mode, no emoji; Material icons only).
+- Binds to 127.0.0.1 only.
+- First-run admin initialization and PBKDF2 authentication with 15-minute session timeout.
+- Role-gated navigation: Guests can only see Overview & Agent Console. Admin sees Approvals.
+- System health supervisor & calm worker offline banner with one-click start.
 """
 
-from datetime import datetime, timezone, timedelta
-import html
+from datetime import datetime, timezone
 import json
 import os
 from pathlib import Path
+import subprocess
 import sys
 import time
-import uuid
+import streamlit as st
 
-# Add project root to sys.path so 'security' package can be imported when run via Streamlit
+# Add project root to sys.path so 'security', 'agent', etc. can be imported
 ROOT_DIR = Path(__file__).resolve().parent.parent
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
-import pandas as pd
-import streamlit as st
+from dashboard.components import pulse_dot, status_pill, sanitize_text
+from dashboard.pages.approvals import render_approvals
+from dashboard.pages.console import render_console
+from dashboard.pages.overview import render_overview
+from dashboard.theme import format_ist, inject_theme
+import security.auth
+import security.logger
+import security.policy_loader
 
-from security.verify_log import check_audit_log_status
-
-# Root paths
-LOG_FILE = ROOT_DIR / "logs" / "audit_log.jsonl"
-APPROVALS_DIR = ROOT_DIR / "data" / "approvals"
-PENDING_DIR = APPROVALS_DIR / "pending"
-DECISIONS_DIR = APPROVALS_DIR / "decisions"
-DEVICE_STATUS_FILE = ROOT_DIR / "data" / "device_status.json"
-
-# Ensure directories exist
-PENDING_DIR.mkdir(parents=True, exist_ok=True)
-DECISIONS_DIR.mkdir(parents=True, exist_ok=True)
-
-# Streamlit Page Configuration
+# Configure Streamlit page shell
 st.set_page_config(
     page_title="AegisAgent Security Operations",
-    page_icon="🛡️",
+    page_icon=":material/shield:",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
-# Custom Styling
-st.markdown(
-    """
-    <style>
-    .metric-card {
-        background-color: #1e293b;
-        border-radius: 8px;
-        padding: 16px;
-        border: 1px solid #334155;
-    }
-    .badge-allow {
-        background-color: #065f46;
-        color: #34d399;
-        padding: 2px 8px;
-        border-radius: 4px;
-        font-weight: 600;
-        font-size: 0.85rem;
-    }
-    .badge-block {
-        background-color: #991b1b;
-        color: #f87171;
-        padding: 2px 8px;
-        border-radius: 4px;
-        font-weight: 600;
-        font-size: 0.85rem;
-    }
-    .badge-review {
-        background-color: #92400e;
-        color: #fbbf24;
-        padding: 2px 8px;
-        border-radius: 4px;
-        font-weight: 600;
-        font-size: 0.85rem;
-    }
-    .badge-gray {
-        background-color: #374151;
-        color: #9ca3af;
-        padding: 2px 8px;
-        border-radius: 4px;
-        font-weight: 600;
-        font-size: 0.85rem;
-    }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
+# Inject custom light theme CSS
+inject_theme()
 
 
-def load_audit_events() -> list[dict]:
-    """Reads logs/audit_log.jsonl defensively without crashing on malformed lines."""
-    if not LOG_FILE.exists():
-        return []
+def _get_data_dir() -> Path:
+    return Path(os.environ.get("AEGIS_DATA_DIR", ROOT_DIR / "data"))
 
-    events = []
+
+def _get_worker_heartbeat() -> dict:
+    worker_file = _get_data_dir() / "worker_status.json"
+    if not worker_file.exists():
+        return {"alive": False, "detail": "Missing worker_status.json"}
     try:
-        with open(LOG_FILE, "r", encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    entry = json.loads(line)
-                    if isinstance(entry, dict):
-                        events.append(entry)
-                except Exception:
-                    continue  # Skip malformed lines defensively
+        data = json.loads(worker_file.read_text(encoding="utf-8"))
+        last_hb = data.get("last_heartbeat")
+        if not last_hb:
+            return {"alive": False, "detail": "Missing heartbeat"}
+        dt = datetime.fromisoformat(last_hb)
+        age = (datetime.now(timezone.utc) - dt).total_seconds()
+        return {
+            "alive": age <= 5.0,
+            "detail": f"Seen {format_ist(last_hb, '%H:%M:%S IST')}",
+            "model_warm": data.get("model_warm", False),
+            "ollama_ok": data.get("ollama_ok", False),
+            "pid": data.get("pid"),
+        }
     except Exception:
-        return []
-    return events
+        return {"alive": False, "detail": "Invalid status"}
 
 
-def get_device_status(events: list[dict]) -> str:
-    """
-    Returns 'online', 'offline', or 'unknown'.
-    Reads data/device_status.json or latest hardware_command event.
-    """
-    if DEVICE_STATUS_FILE.exists():
-        try:
-            data = json.loads(DEVICE_STATUS_FILE.read_text(encoding="utf-8"))
-            if data.get("device_online") is True:
-                return "online"
-            elif data.get("device_online") is False:
-                return "offline"
-        except Exception:
-            pass
-
-    # Fallback to inspecting audit events from newest to oldest
-    for ev in reversed(events):
-        if ev.get("event") == "hardware_command":
-            err = ev.get("error")
-            if err == "Device offline - command not delivered":
-                return "offline"
-            if ev.get("ok") is True:
-                return "online"
-            return "offline"
-
-    return "unknown"
-
-
-def write_decision_file(request_id: str, request_hash: str, approved: bool):
-    """Atomically writes data/approvals/decisions/<request_id>.json."""
-    decision_data = {
-        "approved": approved,
-        "request_hash": request_hash,
-        "decided_at": datetime.now(timezone.utc).isoformat(),
-        "decided_by": "dashboard_operator",
-        "reason": "Approved by dashboard operator" if approved else "Denied by dashboard operator",
-    }
-    decision_file = DECISIONS_DIR / f"{request_id}.json"
-    tmp_file = DECISIONS_DIR / f"{request_id}.tmp.{uuid.uuid4().hex[:6]}"
+def _get_device_status() -> str:
+    device_file = _get_data_dir() / "device_status.json"
+    if not device_file.exists():
+        return "unknown"
     try:
-        with open(tmp_file, "w", encoding="utf-8") as f:
-            f.write(json.dumps(decision_data, indent=2))
-            f.flush()
-            os.fsync(f.fileno())
-        os.replace(tmp_file, decision_file)
-    except Exception as e:
-        if tmp_file.exists():
+        data = json.loads(device_file.read_text(encoding="utf-8"))
+        now_ts = time.time()
+        file_ts = None
+        if "last_seen" in data:
             try:
-                tmp_file.unlink()
+                file_ts = datetime.fromisoformat(data["last_seen"]).timestamp()
             except Exception:
                 pass
-        st.error(f"Failed to record decision: {e}")
-
-
-@st.fragment(run_every="2s")
-def render_dashboard():
-    events = load_audit_events()
-
-    # Calculate metrics
-    total_events = len(events)
-    allow_count = 0
-    block_count = 0
-    injection_count = 0
-    approvals_approved = 0
-    approvals_denied = 0
-    approvals_timed_out = 0
-
-    for ev in events:
-        dec = str(ev.get("decision", "")).upper()
-        if dec == "ALLOW":
-            allow_count += 1
-        elif dec == "BLOCK":
-            block_count += 1
-
-        if ev.get("event") == "injection_check":
-            injection_count += 1
-        elif ev.get("event") == "approval_decision":
-            if ev.get("approved") is True:
-                approvals_approved += 1
-            elif ev.get("timed_out") is True:
-                approvals_timed_out += 1
-            else:
-                approvals_denied += 1
-
-    device_status = get_device_status(events)
-    if device_status == "online":
-        device_badge = "Online 🟢"
-    elif device_status == "offline":
-        device_badge = "Offline 🔴"
-    else:
-        device_badge = "Unknown ⚪"
-
-    # --- Header ---
-    col_title, col_audit = st.columns([3, 1])
-    with col_title:
-        st.title("🛡️ AegisAgent Security Operations")
-        st.caption("Live Gateway Telemetry & Human-in-the-Loop Approval Console (Bound to 127.0.0.1)")
-
-    with col_audit:
-        st.write("**Audit Trail Integrity**")
-        if st.button("🔍 Verify audit chain"):
-            ok, msg = check_audit_log_status()
-            if ok:
-                st.success(f"✅ {msg}")
-            else:
-                st.error(f"❌ {msg}")
-
-    st.divider()
-
-    # --- Header Metrics Row ---
-    m1, m2, m3, m4, m5, m6 = st.columns(6)
-    m1.metric("Total Events", total_events)
-    m2.metric("ALLOW Decisions", allow_count)
-    m3.metric("BLOCK Decisions", block_count)
-    m4.metric("Injection Checks", injection_count)
-    m5.metric("Approvals (A/D/T)", f"{approvals_approved}/{approvals_denied}/{approvals_timed_out}")
-    m6.metric("ESP32 Device", device_badge)
-
-    st.markdown("<br>", unsafe_allow_html=True)
-
-    # --- Pending Approvals Panel ---
-    st.subheader("⚠️ Pending Human Approvals")
-    pending_files = list(PENDING_DIR.glob("*.json"))
-    valid_pending = []
-    now_dt = datetime.now(timezone.utc)
-
-    for p_file in pending_files:
-        try:
-            content = p_file.read_text(encoding="utf-8").strip()
-            if not content:
-                continue
-            req_data = json.loads(content)
-            valid_pending.append(req_data)
-        except Exception:
-            continue
-
-    if not valid_pending:
-        st.info("No pending approvals at this time. Gateway is operating normally.")
-    else:
-        for req in valid_pending:
-            req_id = req.get("request_id", "unknown")
-            req_hash = req.get("request_hash", "")
-            expires_at_str = req.get("expires_at", "")
-            seconds_left = 0
-            is_expired = True
-
-            if expires_at_str:
-                try:
-                    exp_dt = datetime.fromisoformat(expires_at_str)
-                    diff = (exp_dt - now_dt).total_seconds()
-                    seconds_left = max(0, int(diff))
-                    is_expired = seconds_left <= 0
-                except Exception:
-                    is_expired = True
-
-            with st.container(border=True):
-                c_info, c_action = st.columns([3, 1])
-                with c_info:
-                    st.markdown(f"**Request ID:** `{html.escape(req_id)}`")
-                    st.markdown(
-                        f"**Kind:** `{html.escape(str(req.get('kind', '')))}` | "
-                        f"**Tool:** `{html.escape(str(req.get('tool', 'None')))}` | "
-                        f"**Risk:** `{html.escape(str(req.get('risk', 'HIGH')))}`"
-                    )
-
-                    reasons = req.get("reasons", [])
-                    if reasons:
-                        st.markdown(f"**Reasons:** {html.escape(', '.join(reasons))}")
-
-                    args = req.get("args", {})
-                    st.markdown("**Arguments:**")
-                    st.code(json.dumps(args, indent=2), language="json")
-
-                    if is_expired:
-                        st.error("⏳ EXPIRED — Request cannot be approved.")
-                    else:
-                        st.warning(f"⏱️ Countdown: **{seconds_left}s remaining** before automatic fail-closed timeout.")
-
-                with c_action:
-                    st.write("**Operator Decision**")
-                    if st.button("✅ Approve", key=f"app_{req_id}", disabled=is_expired, type="primary"):
-                        write_decision_file(req_id, req_hash, approved=True)
-                        st.rerun()
-
-                    if st.button("❌ Deny", key=f"deny_{req_id}", disabled=is_expired):
-                        write_decision_file(req_id, req_hash, approved=False)
-                        st.rerun()
-
-    st.markdown("<br>", unsafe_allow_html=True)
-
-    # --- Trend Chart (Last 30 Minutes) ---
-    st.subheader("📈 Decision Trends (Last 30 Minutes)")
-    now_minute = now_dt.replace(second=0, microsecond=0)
-    minutes_list = [now_minute - timedelta(minutes=i) for i in range(29, -1, -1)]
-    minute_keys = [m.strftime("%H:%M") for m in minutes_list]
-
-    chart_data = {m_str: {"ALLOW": 0, "BLOCK": 0, "REVIEW": 0} for m_str in minute_keys}
-
-    thirty_mins_ago = now_dt - timedelta(minutes=30)
-    for ev in events:
-        ts_str = ev.get("timestamp")
-        if not ts_str:
-            continue
-        try:
-            ev_dt = datetime.fromisoformat(ts_str)
-            if ev_dt < thirty_mins_ago:
-                continue
-            ev_m_key = ev_dt.strftime("%H:%M")
-            if ev_m_key in chart_data:
-                dec = str(ev.get("decision", "")).upper()
-                if dec in ("ALLOW", "BLOCK", "REVIEW"):
-                    chart_data[ev_m_key][dec] += 1
-        except Exception:
-            continue
-
-    df_chart = pd.DataFrame(
-        [
-            {"Minute": m_str, "ALLOW": counts["ALLOW"], "BLOCK": counts["BLOCK"], "REVIEW": counts["REVIEW"]}
-            for m_str, counts in chart_data.items()
-        ]
-    )
-
-    st.bar_chart(
-        df_chart,
-        x="Minute",
-        y=["ALLOW", "BLOCK", "REVIEW"],
-        color=["#22c55e", "#ef4444", "#f59e0b"],
-        stack=True,
-    )
-
-    st.markdown("<br>", unsafe_allow_html=True)
-
-    # --- Live Feed (Last 50 Audit Events) ---
-    st.subheader("📋 Live Audit Feed (Last 50 Events)")
-    last_50 = list(reversed(events[-50:]))
-
-    if not last_50:
-        st.caption("No audit events recorded yet.")
-    else:
-        table_rows = []
-        for ev in last_50:
-            ts = ev.get("timestamp", "")
+        if file_ts is None and "timestamp" in data:
             try:
-                dt_obj = datetime.fromisoformat(ts)
-                time_display = dt_obj.strftime("%H:%M:%S")
+                file_ts = float(data["timestamp"])
             except Exception:
-                time_display = ts[:19]
-
-            ev_type = ev.get("event") or ("tool_decision" if "tool" in ev else "unknown")
-            tool_or_role = ev.get("tool") or ev.get("command") or ev.get("role") or "-"
-
-            dec = str(ev.get("decision", "-")).upper()
-            if dec == "ALLOW":
-                dec_html = '<span class="badge-allow">ALLOW</span>'
-            elif dec == "BLOCK":
-                dec_html = '<span class="badge-block">BLOCK</span>'
-            elif dec == "REVIEW":
-                dec_html = '<span class="badge-review">REVIEW</span>'
-            elif ev.get("approved") is True:
-                dec_html = '<span class="badge-allow">APPROVED</span>'
-            elif ev.get("approved") is False:
-                dec_html = '<span class="badge-block">DENIED</span>'
-            elif ev.get("ok") is True:
-                dec_html = '<span class="badge-allow">OK</span>'
-            elif ev.get("ok") is False:
-                dec_html = '<span class="badge-block">FAILED</span>'
-            else:
-                dec_html = '<span class="badge-gray">-</span>'
-
-            raw_reason = (
-                ev.get("reason")
-                or ev.get("error")
-                or (f"Score: {ev.get('score')}" if "score" in ev else "")
-                or (f"Old: {ev.get('old_role')} -> New: {ev.get('new_role')}" if ev_type == "role_change" else "")
-                or "-"
-            )
-            reason_clean = html.escape(str(raw_reason))
-            if len(reason_clean) > 200:
-                reason_clean = reason_clean[:200] + "..."
-
-            table_rows.append(
-                f"<tr>"
-                f"<td><code>{html.escape(time_display)}</code></td>"
-                f"<td><code>{html.escape(ev_type)}</code></td>"
-                f"<td><code>{html.escape(str(tool_or_role))}</code></td>"
-                f"<td>{dec_html}</td>"
-                f"<td>{reason_clean}</td>"
-                f"</tr>"
-            )
-
-        table_html = f"""
-        <table style="width:100%; border-collapse: collapse; font-size: 0.9rem;">
-            <thead>
-                <tr style="border-bottom: 2px solid #334155; text-align: left;">
-                    <th style="padding: 8px;">Time (UTC)</th>
-                    <th style="padding: 8px;">Event Type</th>
-                    <th style="padding: 8px;">Tool / Target</th>
-                    <th style="padding: 8px;">Decision</th>
-                    <th style="padding: 8px;">Details / Reason</th>
-                </tr>
-            </thead>
-            <tbody>
-                {''.join(table_rows)}
-            </tbody>
-        </table>
-        """
-        st.markdown(table_html, unsafe_allow_html=True)
+                pass
+        if file_ts is not None and (now_ts - file_ts) > 60:
+            return "unknown"
+        is_online = data.get("online")
+        if is_online is None:
+            is_online = data.get("device_online")
+        if is_online is True:
+            return "live"
+        elif is_online is False:
+            return "offline"
+        return "unknown"
+    except Exception:
+        return "unknown"
 
 
-# Render dashboard with auto-refresh every 2 seconds
-render_dashboard()
+def check_auth_state() -> bool:
+    """Manages first-run admin creation, login card, and session timeout."""
+    data = security.auth._load_data()
+    has_users = bool(data.get("users"))
+
+    # 1. First-Run: No users exist -> Create Admin Account
+    if not has_users:
+        st.markdown("<div style='height: 40px;'></div>", unsafe_allow_html=True)
+        col_pad1, col_center, col_pad2 = st.columns([1, 2, 1])
+        with col_center:
+            with st.container(border=True):
+                st.markdown("### Initialize Administrator Account")
+                st.caption("First-time setup detected. Create the primary administrator account for AegisAgent.")
+
+                with st.form("create_admin_form"):
+                    admin_user = st.text_input("Administrator Username", value="admin")
+                    admin_pass = st.text_input("Password", type="password")
+                    confirm_pass = st.text_input("Confirm Password", type="password")
+                    submit = st.form_submit_button(":material/person_add: Initialize Account", type="primary", use_container_width=True)
+
+                    if submit:
+                        if not admin_user.strip():
+                            st.error("Username cannot be blank.")
+                        elif not admin_pass:
+                            st.error("Password cannot be blank.")
+                        elif admin_pass != confirm_pass:
+                            st.error("Passwords do not match.")
+                        else:
+                            try:
+                                security.auth.create_user(admin_user.strip(), admin_pass, "admin")
+                                st.session_state["authenticated"] = True
+                                st.session_state["username"] = admin_user.strip()
+                                st.session_state["role"] = "admin"
+                                st.session_state["last_activity"] = time.time()
+                                st.toast("Administrator account initialized successfully!", icon=":material/check_circle:")
+                                time.sleep(0.5)
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"Failed to create account: {e}")
+        return False
+
+    # 2. Login Flow
+    if not st.session_state.get("authenticated"):
+        st.markdown("<div style='height: 40px;'></div>", unsafe_allow_html=True)
+        col_pad1, col_center, col_pad2 = st.columns([1, 2, 1])
+        with col_center:
+            with st.container(border=True):
+                st.markdown("### Sign In to AegisAgent")
+                st.caption("Enter your credentials to access the security operations console.")
+
+                with st.form("login_form"):
+                    login_user = st.text_input("Username")
+                    login_pass = st.text_input("Password", type="password")
+                    submit_login = st.form_submit_button(":material/login: Sign In", type="primary", use_container_width=True)
+
+                    if submit_login:
+                        if not login_user.strip() or not login_pass:
+                            st.error("Please enter both username and password.")
+                        else:
+                            ok, role_or_msg = security.auth.verify_login(login_user.strip(), login_pass)
+                            if ok:
+                                st.session_state["authenticated"] = True
+                                st.session_state["username"] = login_user.strip()
+                                st.session_state["role"] = role_or_msg
+                                st.session_state["last_activity"] = time.time()
+                                st.rerun()
+                            else:
+                                st.error(role_or_msg)
+        return False
+
+    # 3. Session Timeout (15 minutes of inactivity)
+    last_act = st.session_state.get("last_activity", time.time())
+    if time.time() - last_act > 900:  # 15 minutes
+        user = st.session_state.get("username", "unknown")
+        security.auth.logout(user)
+        st.session_state.clear()
+        st.warning("Session expired due to 15 minutes of inactivity. Please sign in again.")
+        st.stop()
+
+    st.session_state["last_activity"] = time.time()
+    return True
+
+
+def main():
+    if not check_auth_state():
+        return
+
+    current_role = st.session_state.get("role", "guest")
+    current_user = st.session_state.get("username", "user")
+
+    # Define Multi-Page Navigation based on User Role
+    pages = [
+        st.Page(render_overview, title="Overview", icon=":material/dashboard:", default=True),
+        st.Page(render_console, title="Agent Console", icon=":material/terminal:"),
+    ]
+
+    # Role Gating: Only admin sees and can access the Approvals page
+    if current_role == "admin":
+        pages.append(st.Page(render_approvals, title="Approvals", icon=":material/verified_user:"))
+
+    pg = st.navigation(pages)
+
+    # Worker Status Banner
+    worker_hb = _get_worker_heartbeat()
+    if not worker_hb["alive"]:
+        with st.container():
+            c_msg, c_btn = st.columns([4, 1])
+            with c_msg:
+                st.warning("Agent worker is not running. Requests will not be processed until the worker is started.")
+            with c_btn:
+                if current_role == "admin":
+                    if st.button(":material/play_arrow: Start Worker", key="btn_shell_start_worker", type="primary", use_container_width=True):
+                        try:
+                            subprocess.Popen([sys.executable, "-m", "agent.worker"], cwd=str(ROOT_DIR))
+                            st.toast("Starting worker process...", icon=":material/play_arrow:")
+                            time.sleep(1.0)
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Failed to start worker: {e}")
+
+    # Sidebar Header & User Profile
+    with st.sidebar:
+        st.markdown(
+            f"""
+            <div class="aegis-brand-wordmark">
+                AegisAgent
+            </div>
+            <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 16px;">
+                Security Gateway & Console
+            </div>
+            <div style="display: flex; align-items: center; justify-content: space-between; background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: 8px; padding: 8px 12px; margin-bottom: 16px;">
+                <span style="font-size: 0.85rem; font-weight: 600; color: var(--text-main);">{sanitize_text(current_user)}</span>
+                {status_pill('info' if current_role == 'admin' else 'neutral', current_role)}
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+    # Execute Page Function
+    pg.run()
+
+    # Sidebar System Health & Logout
+    with st.sidebar:
+        worker_state = "live" if worker_hb["alive"] else "offline"
+        device_state = _get_device_status()
+        ollama_state = "live" if worker_hb.get("ollama_ok") else "offline"
+
+        st.markdown(
+            f"""
+            <div class="aegis-sidebar-health">
+                <div style="font-size: 0.72rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; margin-bottom: 10px;">
+                    System Health
+                </div>
+                <div class="aegis-health-item">
+                    <span>Agent Worker</span>
+                    <span>{pulse_dot(worker_state)} {'Live' if worker_hb['alive'] else 'Offline'}</span>
+                </div>
+                <div class="aegis-health-item">
+                    <span>ESP32 Hardware</span>
+                    <span>{pulse_dot(device_state)} {device_state.capitalize()}</span>
+                </div>
+                <div class="aegis-health-item">
+                    <span>Ollama Engine</span>
+                    <span>{pulse_dot(ollama_state)} {'Ready' if worker_hb.get('ollama_ok') else 'Offline'}</span>
+                </div>
+                <div class="aegis-health-item">
+                    <span>Audit Chain</span>
+                    <span>{pulse_dot('live')} Intact</span>
+                </div>
+            </div>
+            <br>
+            """,
+            unsafe_allow_html=True,
+        )
+
+        if st.button(":material/logout: Sign Out", use_container_width=True):
+            security.auth.logout(current_user)
+            st.session_state.clear()
+            st.rerun()
+
+
+if __name__ == "__main__":
+    main()

@@ -1,24 +1,35 @@
 """
-Phase 4 — Audit Log Verifier
+Phase 4 & Phase 8A — Audit Log Verifier
 
 WHAT THIS FILE DOES:
-Reads logs/audit_log.jsonl line-by-line, recomputing SHA-256 hashes and verifying
-the cryptographic chain of custody. Prints "LOG INTACT" or identifies tampered lines.
+Reads logs/audit_log.jsonl (or specified log file) line-by-line, recomputing SHA-256
+hashes and verifying the cryptographic chain of custody.
+Prints "LOG INTACT" or identifies tampered lines.
 """
 
 import hashlib
 import json
 from pathlib import Path
+import sys
 
-LOG_FILE = Path(__file__).resolve().parent.parent / "logs" / "audit_log.jsonl"
+ROOT_DIR = Path(__file__).resolve().parent.parent
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
+
+import security.logger
 
 
-def check_audit_log_status() -> tuple[bool, str]:
+def check_audit_log_status(log_file: Path | str | None = None) -> tuple[bool, str]:
     """Verifies audit log integrity and returns (is_intact, status_message)."""
-    if not LOG_FILE.exists():
+    if log_file is None:
+        log_file = security.logger.get_log_file()
+    else:
+        log_file = Path(log_file)
+
+    if not log_file.exists():
         return False, "LOG FILE NOT FOUND"
 
-    content = LOG_FILE.read_text(encoding="utf-8").strip()
+    content = log_file.read_text(encoding="utf-8").strip()
     if not content:
         return True, "LOG INTACT"
 
@@ -60,11 +71,17 @@ def check_audit_log_status() -> tuple[bool, str]:
     return True, "LOG INTACT"
 
 
-def verify_audit_log() -> bool:
+def verify_audit_log(log_file: Path | str | None = None) -> bool:
     """Verifies audit log integrity by validating cryptographic hash chain."""
-    ok, msg = check_audit_log_status()
+    ok, msg = check_audit_log_status(log_file)
     print(msg)
     return ok
+
+
+def __getattr__(name):
+    if name == "LOG_FILE":
+        return security.logger.get_log_file()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 if __name__ == "__main__":
