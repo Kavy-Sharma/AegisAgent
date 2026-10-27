@@ -42,6 +42,7 @@ detection:
 
 approval:
   enabled: true
+  provider: dashboard       # console | dashboard (default: console)
   timeout_seconds: 10
   require_for_risk: [HIGH]    # use whatever risk label names the existing tool policy already uses
   require_for_review_verdict: true

@@ -6,14 +6,14 @@ This guide details how to initialize, configure, and verify the Mosquitto MQTT b
 
 ## 1. Create User Passwords
 
-Open a command prompt in the project root directory and create the `passwd` file:
+Open a command prompt in the project root directory and create the `passwd.txt` file:
 
 ```cmd
 # Create password file with first user (aegis_gateway) - prompts for password interactively
-mosquitto_passwd -c mosquitto/passwd aegis_gateway
+mosquitto_passwd -c mosquitto/passwd.txt aegis_gateway
 
 # Add second user (esp32_device) - prompts for password interactively (without -b flag)
-mosquitto_passwd mosquitto/passwd esp32_device
+mosquitto_passwd mosquitto/passwd.txt esp32_device
 ```
 
 ---

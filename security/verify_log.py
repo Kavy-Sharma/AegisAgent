@@ -13,16 +13,14 @@ from pathlib import Path
 LOG_FILE = Path(__file__).resolve().parent.parent / "logs" / "audit_log.jsonl"
 
 
-def verify_audit_log() -> bool:
-    """Verifies audit log integrity by validating cryptographic hash chain."""
+def check_audit_log_status() -> tuple[bool, str]:
+    """Verifies audit log integrity and returns (is_intact, status_message)."""
     if not LOG_FILE.exists():
-        print("LOG FILE NOT FOUND")
-        return False
+        return False, "LOG FILE NOT FOUND"
 
     content = LOG_FILE.read_text(encoding="utf-8").strip()
     if not content:
-        print("LOG INTACT")
-        return True
+        return True, "LOG INTACT"
 
     lines = content.splitlines()
     expected_prev_hash = "0" * 64
@@ -34,37 +32,39 @@ def verify_audit_log() -> bool:
         try:
             entry = json.loads(line)
         except json.JSONDecodeError:
-            print(f"LOG TAMPERED AT LINE {line_num}: Invalid JSON syntax")
-            return False
+            return False, f"LOG TAMPERED AT LINE {line_num}: Invalid JSON syntax"
 
         stored_prev_hash = entry.get("prev_hash")
         stored_entry_hash = entry.get("entry_hash")
 
         if stored_prev_hash != expected_prev_hash:
-            print(
+            return False, (
                 f"LOG TAMPERED AT LINE {line_num}: prev_hash mismatch. "
                 f"Expected '{expected_prev_hash}', got '{stored_prev_hash}'"
             )
-            return False
 
         entry_without_hash_fields = {k: v for k, v in entry.items() if k not in ("prev_hash", "entry_hash")}
-
 
         serialized_data = json.dumps(entry_without_hash_fields, sort_keys=True)
         payload = serialized_data + stored_prev_hash
         computed_hash = hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
         if computed_hash != stored_entry_hash:
-            print(
+            return False, (
                 f"LOG TAMPERED AT LINE {line_num}: entry_hash mismatch. "
                 f"Computed '{computed_hash}', got '{stored_entry_hash}'"
             )
-            return False
 
         expected_prev_hash = stored_entry_hash
 
-    print("LOG INTACT")
-    return True
+    return True, "LOG INTACT"
+
+
+def verify_audit_log() -> bool:
+    """Verifies audit log integrity by validating cryptographic hash chain."""
+    ok, msg = check_audit_log_status()
+    print(msg)
+    return ok
 
 
 if __name__ == "__main__":

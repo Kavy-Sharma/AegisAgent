@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 import hashlib
 import json
 import os
+from pathlib import Path
 import re
 import sys
 import time
@@ -240,6 +241,134 @@ class ScriptedApprovalProvider(ApprovalProvider):
             )
 
 
+class DashboardApprovalProvider(ApprovalProvider):
+    def __init__(
+        self,
+        timeout_seconds: float = 30.0,
+        poll_interval: float = 0.3,
+        base_dir: Path | str | None = None,
+    ):
+        self.timeout_seconds = timeout_seconds
+        self.poll_interval = poll_interval
+        if base_dir is None:
+            self.base_dir = Path(__file__).resolve().parent.parent / "data" / "approvals"
+        else:
+            self.base_dir = Path(base_dir)
+
+        self.pending_dir = self.base_dir / "pending"
+        self.decisions_dir = self.base_dir / "decisions"
+        self.pending_dir.mkdir(parents=True, exist_ok=True)
+        self.decisions_dir.mkdir(parents=True, exist_ok=True)
+
+    def request_approval(self, req: ApprovalRequest) -> ApprovalResult:
+        created_at_iso = req.created_at or datetime.now(timezone.utc).isoformat()
+        now_ts = time.time()
+        expires_at_iso = datetime.fromtimestamp(now_ts + self.timeout_seconds, tz=timezone.utc).isoformat()
+
+        pending_data = {
+            "request_id": req.request_id,
+            "kind": req.kind,
+            "tool": req.tool,
+            "args": req.args,
+            "risk": req.risk,
+            "reasons": req.reasons,
+            "request_hash": req.request_hash,
+            "created_at": created_at_iso,
+            "expires_at": expires_at_iso,
+        }
+
+        pending_file = self.pending_dir / f"{req.request_id}.json"
+        tmp_pending_file = self.pending_dir / f"{req.request_id}.tmp.{uuid.uuid4().hex[:6]}"
+        decision_file = self.decisions_dir / f"{req.request_id}.json"
+
+        try:
+            # Write atomically (temp file then os.replace)
+            with open(tmp_pending_file, "w", encoding="utf-8") as f:
+                f.write(json.dumps(pending_data, indent=2))
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(tmp_pending_file, pending_file)
+        except Exception as e:
+            if tmp_pending_file.exists():
+                try:
+                    tmp_pending_file.unlink()
+                except Exception:
+                    pass
+            return ApprovalResult(
+                approved=False,
+                decided_by="system",
+                reason=f"Failed to create pending approval file: {e}",
+                timed_out=False,
+            )
+
+        start_time = time.time()
+        try:
+            while (time.time() - start_time) < self.timeout_seconds:
+                if decision_file.exists():
+                    try:
+                        content = decision_file.read_text(encoding="utf-8").strip()
+                        if not content:
+                            time.sleep(self.poll_interval)
+                            continue
+                        dec_data = json.loads(content)
+                    except Exception as e:
+                        return ApprovalResult(
+                            approved=False,
+                            decided_by="system",
+                            reason=f"Malformed decision file: {e}",
+                            timed_out=False,
+                        )
+
+                    # Verify request_hash
+                    decision_hash = dec_data.get("request_hash")
+                    if decision_hash != req.request_hash:
+                        return ApprovalResult(
+                            approved=False,
+                            decided_by="dashboard_operator",
+                            reason="hash mismatch",
+                            timed_out=False,
+                        )
+
+                    approved = bool(dec_data.get("approved", False))
+                    default_reason = (
+                        "Approved by operator via dashboard"
+                        if approved
+                        else "Denied by operator via dashboard"
+                    )
+                    reason = dec_data.get("reason") or default_reason
+
+                    return ApprovalResult(
+                        approved=approved,
+                        decided_by="dashboard_operator",
+                        reason=reason,
+                        timed_out=False,
+                    )
+
+                time.sleep(self.poll_interval)
+
+            return ApprovalResult(
+                approved=False,
+                decided_by="timeout",
+                reason="Approval timed out",
+                timed_out=True,
+            )
+
+        except Exception as e:
+            return ApprovalResult(
+                approved=False,
+                decided_by="system",
+                reason=f"Dashboard approval error: {e}",
+                timed_out=False,
+            )
+        finally:
+            for fpath in (pending_file, decision_file, tmp_pending_file):
+                try:
+                    if fpath.exists():
+                        fpath.unlink()
+                except Exception:
+                    pass
+
+
 class ApprovalManager:
     def __init__(
         self,
@@ -254,9 +383,13 @@ class ApprovalManager:
         approval_cfg = policy_dict.get("approval", {})
         self.enabled = approval_cfg.get("enabled", True)
         self.timeout_seconds = float(approval_cfg.get("timeout_seconds", 30.0))
+        self.provider_type = str(approval_cfg.get("provider", "console")).lower().strip()
 
         if provider is None:
-            provider = ConsoleApprovalProvider(timeout_seconds=self.timeout_seconds)
+            if self.provider_type == "dashboard":
+                provider = DashboardApprovalProvider(timeout_seconds=self.timeout_seconds)
+            else:
+                provider = ConsoleApprovalProvider(timeout_seconds=self.timeout_seconds)
         self.provider = provider
 
         if audit_logger is None:

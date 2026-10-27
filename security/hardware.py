@@ -99,11 +99,29 @@ class HardwareBridge:
         self._connect_error = "MQTT broker connection failed"
         self._connect_event.set()
 
+    def _save_device_status(self):
+        try:
+            status_dir = Path(__file__).resolve().parent.parent / "data"
+            status_dir.mkdir(parents=True, exist_ok=True)
+            status_file = status_dir / "device_status.json"
+            tmp_file = status_dir / f"device_status.tmp.{uuid.uuid4().hex[:6]}"
+            data = {
+                "device_online": self.device_online,
+                "device_id": self.device_id,
+                "timestamp": time.time(),
+            }
+            with open(tmp_file, "w", encoding="utf-8") as f:
+                f.write(json.dumps(data, indent=2))
+            os.replace(tmp_file, status_file)
+        except Exception:
+            pass
+
     def _on_message(self, client, userdata, msg):
         try:
             if msg.topic == self.status_topic:
                 payload = msg.payload.decode("utf-8").strip()
                 self.device_online = (payload == "online")
+                self._save_device_status()
                 self._status_event.set()
         except Exception:
             pass
@@ -148,6 +166,7 @@ class HardwareBridge:
                     # Subscribe to status topic and wait up to about 3 s for retained message
                     client.subscribe(self.status_topic, qos=1)
                     self._status_event.wait(timeout=3.0)
+                    self._save_device_status()
 
                     if not self.device_online:
                         ok = False
