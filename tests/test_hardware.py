@@ -149,3 +149,105 @@ def test_detection_block_triggers_alert(setup_fake_bridge):
     assert len(fake.command_history) == 1
     assert fake.command_history[0] == "alert_blocked"
 
+
+# 9. HardwareBridge unit tests with mocked MQTT client
+def test_hardware_bridge_success_with_online_status():
+    from unittest.mock import MagicMock, patch
+    from security.hardware import HardwareBridge
+
+    bridge = HardwareBridge()
+    mock_client = MagicMock()
+    mock_info = MagicMock()
+    mock_info.is_published.return_value = True
+    mock_client.publish.return_value = mock_info
+
+    def fake_connect(host, port, keepalive):
+        # Simulate CONNACK with reason_code 0
+        bridge._on_connect(mock_client, None, {}, 0)
+        # Simulate retained "online" status message
+        mock_msg = MagicMock()
+        mock_msg.topic = bridge.status_topic
+        mock_msg.payload = b"online"
+        bridge._on_message(mock_client, None, mock_msg)
+
+    mock_client.connect.side_effect = fake_connect
+
+    with patch.object(bridge, "_create_client", return_value=mock_client):
+        res = bridge.publish("light_on")
+
+    assert res.ok is True
+    assert res.error is None
+    assert bridge.is_device_online() is True
+    mock_client.loop_start.assert_called_once()
+    mock_client.loop_stop.assert_called_once()
+    mock_client.disconnect.assert_called_once()
+    args, kwargs = mock_client.publish.call_args
+    assert kwargs.get("qos") == 1
+
+
+def test_hardware_bridge_auth_failure_returns_clean_error():
+    from unittest.mock import MagicMock, patch
+    from security.hardware import HardwareBridge
+
+    bridge = HardwareBridge()
+    mock_client = MagicMock()
+
+    def fake_connect(host, port, keepalive):
+        # Simulate CONNACK with reason_code 134 (bad credentials)
+        bridge._on_connect(mock_client, None, {}, 134)
+
+    mock_client.connect.side_effect = fake_connect
+
+    with patch.object(bridge, "_create_client", return_value=mock_client):
+        res = bridge.publish("light_on")
+
+    assert res.ok is False
+    assert "rejected" in res.error
+    mock_client.publish.assert_not_called()
+    mock_client.loop_stop.assert_called_once()
+    mock_client.disconnect.assert_called_once()
+
+
+def test_hardware_bridge_publish_ack_timeout():
+    from unittest.mock import MagicMock, patch
+    from security.hardware import HardwareBridge
+
+    bridge = HardwareBridge()
+    mock_client = MagicMock()
+    mock_info = MagicMock()
+    mock_info.is_published.return_value = False  # Timed out waiting for PUBACK
+    mock_client.publish.return_value = mock_info
+
+    def fake_connect(host, port, keepalive):
+        bridge._on_connect(mock_client, None, {}, 0)
+
+    mock_client.connect.side_effect = fake_connect
+
+    with patch.object(bridge, "_create_client", return_value=mock_client):
+        res = bridge.publish("unlock_door")
+
+    assert res.ok is False
+    assert "acknowledgement timed out" in res.error
+    mock_client.loop_stop.assert_called_once()
+    mock_client.disconnect.assert_called_once()
+
+
+def test_hardware_bridge_broker_connection_refused():
+    from unittest.mock import MagicMock, patch
+    from security.hardware import HardwareBridge
+
+    bridge = HardwareBridge()
+    mock_client = MagicMock()
+    mock_client.connect.side_effect = ConnectionRefusedError("Broker port unreachable")
+
+    with patch.object(bridge, "_create_client", return_value=mock_client):
+        res = bridge.publish("alarm_on")
+
+    assert res.ok is False
+    assert "MQTT connection error" in res.error
+    mock_client.publish.assert_not_called()
+    mock_client.loop_stop.assert_called_once()
+    mock_client.disconnect.assert_called_once()
+
+
+

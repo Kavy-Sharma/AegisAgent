@@ -13,6 +13,7 @@ import argparse
 import sys
 import ollama
 import security.gateway
+import security.hardware
 import security.logger
 import security.policy_loader
 from agent.tools import (
@@ -121,7 +122,6 @@ def run_agent(user_text: str, session_id: str = "default", role: str = "guest"):
                 break
         if detection_mode == "enforce":
             try:
-                import security.hardware
                 security.hardware.trigger_block_alert()
             except Exception:
                 pass
@@ -196,7 +196,6 @@ def run_agent(user_text: str, session_id: str = "default", role: str = "guest"):
                 tool_verdict = security.gateway.inspect_tool_output(session_id, str(tool_result))
                 if tool_verdict.decision == "BLOCK" and detection_mode == "enforce":
                     try:
-                        import security.hardware
                         security.hardware.trigger_block_alert()
                     except Exception:
                         pass
