@@ -1,5 +1,5 @@
 """
-Phase 4 — Policy Loader
+Phase 4 -- Policy Loader
 
 WHAT THIS FILE DOES:
 Loads policy.yaml configuration once at import time and provides lookup helper

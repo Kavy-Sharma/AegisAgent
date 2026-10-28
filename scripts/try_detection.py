@@ -1,5 +1,5 @@
 """
-AegisAgent Phase 5 — Interactive Test Harness (No Ollama needed)
+AegisAgent Phase 5 -- Interactive Test Harness (No Ollama needed)
 """
 
 import argparse

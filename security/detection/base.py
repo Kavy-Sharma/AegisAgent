@@ -1,5 +1,5 @@
 """
-Phase 5 — Base Data Structures and Interface for Prompt Injection Detection
+Phase 5 -- Base Data Structures and Interface for Prompt Injection Detection
 """
 
 from abc import ABC, abstractmethod

@@ -1,5 +1,5 @@
 """
-Phase 4 — In-Memory Rate Limiter
+Phase 4 -- In-Memory Rate Limiter
 
 WHAT THIS FILE DOES:
 Tracks tool execution call timestamps in memory and enforces sliding window rate limits.

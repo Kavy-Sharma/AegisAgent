@@ -1,0 +1,135 @@
+/*
+  AegisAgent Design System Tokens
+  Light is the default; Dark is selectable.
+*/
+
+:root {
+  /* Common typography */
+  --font-sans: "Segoe UI Variable", "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "Cascadia Code", "Segoe UI Mono", Menlo, Consolas, monospace;
+
+  /* Typography scale */
+  --text-xs: 0.75rem;    /* 12px */
+  --text-sm: 0.8125rem;  /* 13px */
+  --text-base: 0.875rem; /* 14px */
+  --text-md: 1rem;       /* 16px */
+  --text-lg: 1.25rem;    /* 20px */
+  --text-xl: 1.75rem;    /* 28px */
+
+  /* Spacing (8px grid) */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+
+  /* Border radius */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-pill: 999px;
+
+  /* Transitions */
+  --transition-fast: 150ms ease;
+  --transition-normal: 200ms ease;
+  --transition-slow: 250ms ease;
+
+  /* Layout dimensions */
+  --sidebar-width: 248px;
+  --sidebar-collapsed-width: 72px;
+  --topbar-height: 56px;
+  --content-max-width: 1280px;
+}
+
+/* Light Theme (Default) */
+html[data-theme="light"],
+html:not([data-theme="dark"]) {
+  color-scheme: light;
+
+  --bg: #F5F6F8;
+  --surface: #FFFFFF;
+  --surface-2: #FAFAFB;
+  --border: #E4E7EC;
+  --border-subtle: #EEF0F3;
+  --text: #101828;
+  --text-secondary: #344054;
+  --muted: #667085;
+
+  --accent: #0E7C72;
+  --accent-hover: #0B6A62;
+  --accent-soft: #E6F4F1;
+  --accent-text: #0E7C72;
+
+  --ok-text: #067647;
+  --ok-bg: #ECFDF3;
+  --ok-border: #A6F4C5;
+
+  --warn-text: #B54708;
+  --warn-bg: #FFFAEB;
+  --warn-border: #FEDF89;
+
+  --danger-text: #B42318;
+  --danger-bg: #FEF3F2;
+  --danger-border: #FECDCA;
+
+  --info-text: #175CD3;
+  --info-bg: #EFF8FF;
+  --info-border: #B2DDFF;
+
+  --shadow-card: 0 1px 2px rgba(16, 24, 40, 0.06);
+  --shadow-dropdown: 0 4px 16px rgba(16, 24, 40, 0.10);
+  --shadow-modal: 0 12px 32px rgba(16, 24, 40, 0.16);
+
+  --chart-grid: #E4E7EC;
+  --chart-tooltip-bg: #FFFFFF;
+  --chart-tooltip-border: #E4E7EC;
+  --chart-tooltip-text: #101828;
+}
+
+/* Dark Theme (Soft Charcoal) */
+html[data-theme="dark"] {
+  color-scheme: dark;
+
+  --bg: #0F1215;
+  --surface: #171B20;
+  --surface-2: #1D2228;
+  --border: #2A3038;
+  --border-subtle: #22272E;
+  --text: #E8EAED;
+  --text-secondary: #C4C9D0;
+  --muted: #98A2B3;
+
+  --accent: #34B3A5;
+  --accent-hover: #2DA093;
+  --accent-soft: rgba(52, 179, 165, 0.14);
+  --accent-text: #5CE0D2;
+
+  --ok-text: #48C78E;
+  --ok-bg: rgba(6, 118, 71, 0.22);
+  --ok-border: rgba(72, 199, 142, 0.35);
+
+  --warn-text: #FBBF24;
+  --warn-bg: rgba(181, 71, 8, 0.22);
+  --warn-border: rgba(251, 191, 36, 0.35);
+
+  --danger-text: #F87171;
+  --danger-bg: rgba(180, 35, 24, 0.22);
+  --danger-border: rgba(248, 113, 113, 0.35);
+
+  --info-text: #60A5FA;
+  --info-bg: rgba(23, 92, 211, 0.22);
+  --info-border: rgba(96, 165, 250, 0.35);
+
+  --shadow-card: none;
+  --shadow-dropdown: 0 4px 20px rgba(0, 0, 0, 0.40);
+  --shadow-modal: 0 16px 40px rgba(0, 0, 0, 0.60);
+
+  --chart-grid: #2A3038;
+  --chart-tooltip-bg: #1D2228;
+  --chart-tooltip-border: #2A3038;
+  --chart-tooltip-text: #E8EAED;
+}

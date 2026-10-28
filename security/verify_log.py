@@ -1,5 +1,5 @@
 """
-Phase 4 & Phase 8A — Audit Log Verifier
+Phase 4 & Phase 8A -- Audit Log Verifier
 
 WHAT THIS FILE DOES:
 Reads logs/audit_log.jsonl (or specified log file) line-by-line, recomputing SHA-256

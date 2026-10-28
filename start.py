@@ -1,11 +1,11 @@
 """
-Phase 8A — AegisAgent System Launcher
+Phase 8B -- AegisAgent System Launcher
 
 WHAT THIS FILE DOES:
 Starts and supervises all AegisAgent runtime services as child processes:
 1. Mosquitto MQTT broker (if hardware.mode is mqtt and executable exists)
 2. Agent Worker process (agent/worker.py)
-3. Streamlit Security Operations Dashboard (dashboard/app.py bound to 127.0.0.1)
+3. Hand-built Flask Web Application Server (web.server bound to 127.0.0.1:8501)
 4. Opens default browser to http://127.0.0.1:8501
 5. Displays a clean status line per service and coordinates graceful shutdown on Ctrl+C.
 """
@@ -21,12 +21,18 @@ if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
 import security.policy_loader
+import security.signing
+import web.guards
 
 
 def main():
     print("=" * 65)
     print(" AegisAgent System Launcher ".center(65, "="))
     print("=" * 65)
+
+    # Initialize / verify AEGIS_DASH_SECRET and AEGIS_WEB_SECRET once before launching children
+    security.signing.get_secret()
+    web.guards.get_web_secret()
 
     policy = security.policy_loader.POLICY
     hw_cfg = policy.get("hardware", {})
@@ -35,7 +41,7 @@ def main():
 
     procs: list[tuple[str, subprocess.Popen]] = []
 
-    # 1. Mosquitto MQTT Broker
+    # 1. Mosquitto MQTT Broker (only started if explicitly in mqtt mode)
     if mode == "mqtt":
         if Path(mosquitto_exe).exists():
             try:
@@ -47,6 +53,10 @@ def main():
                 print(f"[NOTE] Could not start Mosquitto broker: {e}")
         else:
             print(f"[NOTE] Mosquitto executable not found at '{mosquitto_exe}'. Skipping.")
+    elif mode == "auto":
+        print("[STATUS] Hardware Mode        : AUTO (Direct USB Plug-and-Play active, broker not required)")
+    elif mode == "serial":
+        print("[STATUS] Hardware Mode        : SERIAL (Direct USB Cable active, broker not required)")
     else:
         print("[STATUS] Hardware Mode        : FAKE (Mosquitto not required)")
 
@@ -58,34 +68,28 @@ def main():
     except Exception as e:
         print(f"[ERROR] Failed to start Agent Worker: {e}")
 
-    # 3. Streamlit Dashboard
-    dash_url = "http://127.0.0.1:8501"
+    # 3. Hand-built Flask Web Application
+    web_url = "http://127.0.0.1:8501"
     try:
-        dash_cmd = [
+        web_cmd = [
             sys.executable,
             "-m",
-            "streamlit",
-            "run",
-            "dashboard/app.py",
-            "--server.address",
-            "127.0.0.1",
-            "--server.headless",
-            "true",
+            "web.server",
         ]
-        dash_proc = subprocess.Popen(dash_cmd, cwd=str(ROOT_DIR))
-        procs.append(("Streamlit Dashboard", dash_proc))
-        print(f"[STATUS] Streamlit Dashboard  : RUNNING (PID {dash_proc.pid}) -> {dash_url}")
+        web_proc = subprocess.Popen(web_cmd, cwd=str(ROOT_DIR))
+        procs.append(("Flask Web App", web_proc))
+        print(f"[STATUS] Flask Web Server     : RUNNING (PID {web_proc.pid}) -> {web_url}")
     except Exception as e:
-        print(f"[ERROR] Failed to start Streamlit Dashboard: {e}")
+        print(f"[ERROR] Failed to start Flask Web Server: {e}")
 
     print("-" * 65)
     print("All services initialized. Press Ctrl+C to terminate all services.")
     print("-" * 65)
 
     # Open browser
-    time.sleep(2.0)
+    time.sleep(1.5)
     try:
-        webbrowser.open(dash_url)
+        webbrowser.open(web_url)
     except Exception:
         pass
 

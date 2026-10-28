@@ -1,5 +1,5 @@
 """
-Phase 7 — Hardware-Integrated IoT Tools
+Phase 7 -- Hardware-Integrated IoT Tools
 
 WHAT THIS FILE DOES:
 Provides tool functions for AegisAgent. When hardware.mode == "mqtt" in policy.yaml,

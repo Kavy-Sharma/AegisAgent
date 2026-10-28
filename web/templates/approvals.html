@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+
+{% block title %}Approvals — AegisAgent{% endblock %}
+{% block breadcrumb %}Approvals{% endblock %}
+
+{% block content %}
+<div class="approvals-page">
+  <!-- Page Header -->
+  <div class="page-header">
+    <div>
+      <h1 class="page-title">Human-In-The-Loop Approvals</h1>
+      <p class="page-subtitle">Cryptographic authorization console for high-risk operations and suspicious agent tool invocations.</p>
+    </div>
+    <div class="header-actions">
+      <span class="text-xs text-muted font-mono flex items-center gap-xs">
+        <svg class="icon"><use href="/static/icons.svg#icon-shield"></use></svg>
+        <span>HMAC-SHA256 Signed Authorization</span>
+      </span>
+    </div>
+  </div>
+
+  <!-- Section 1: Pending Authorization Queue -->
+  <div class="approvals-section">
+    <div class="section-title-wrap mb-md flex items-center justify-between">
+      <h2 class="text-base font-bold">Pending Authorization Queue</h2>
+      <span class="text-xs text-muted" id="approvals-timeout-hint">Auto-expires after <span id="approvals-timeout-val">60</span>s (Fail-Closed)</span>
+    </div>
+
+    <!-- Container for dynamic pending cards -->
+    <div class="pending-queue-container" id="pending-queue-container">
+      <div class="empty-state">
+        <svg class="icon empty-icon"><use href="/static/icons.svg#icon-check-circle"></use></svg>
+        <div class="empty-title">Queue Clear</div>
+        <div class="empty-hint">No approval requests currently require administrator authorization.</div>
+      </div>
+    </div>
+  </div>
+
+  <hr class="divider my-xl">
+
+  <!-- Section 2: Decision History Table -->
+  <div class="approvals-section">
+    <div class="section-title-wrap mb-md flex items-center justify-between">
+      <div>
+        <h2 class="text-base font-bold">Authorization Audit History</h2>
+        <p class="text-xs text-muted">Historical log of the last 50 human authorization events from the tamper-evident audit ledger.</p>
+      </div>
+
+      <!-- Filter Chips -->
+      <div class="history-filter-chips flex items-center gap-xs">
+        <button type="button" class="btn btn-secondary btn-xs history-filter-chip active" data-filter="all">All</button>
+        <button type="button" class="btn btn-secondary btn-xs history-filter-chip" data-filter="approved">Approved</button>
+        <button type="button" class="btn btn-secondary btn-xs history-filter-chip" data-filter="denied">Denied</button>
+        <button type="button" class="btn btn-secondary btn-xs history-filter-chip" data-filter="timed_out">Timed Out</button>
+      </div>
+    </div>
+
+    <!-- Data Table with Sticky Header -->
+    <div class="table-card card">
+      <div class="table-responsive">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th class="col-time">Timestamp</th>
+              <th>Operation / Tool</th>
+              <th class="col-decision">Decision</th>
+              <th class="col-user">Decided By</th>
+              <th>Review Summary</th>
+            </tr>
+          </thead>
+          <tbody id="approval-history-tbody">
+            <tr>
+              <td colspan="5" class="text-center text-muted py-lg">Loading authorization ledger...</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="/static/js/approvals.js"></script>
+{% endblock %}

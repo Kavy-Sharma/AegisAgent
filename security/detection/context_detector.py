@@ -1,5 +1,5 @@
 """
-Phase 5 — Multi-Turn Context Detector
+Phase 5 -- Multi-Turn Context Detector
 """
 
 from security.detection.base import Detector, DetectionContext, DetectionResult

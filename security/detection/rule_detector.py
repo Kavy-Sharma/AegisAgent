@@ -1,5 +1,5 @@
 """
-Phase 5 — Rule-Based Detector
+Phase 5 -- Rule-Based Detector
 """
 
 from pathlib import Path

@@ -1,10 +1,10 @@
 """
-Phase 6 — Human-In-The-Loop Approval Framework
+Phase 6 -- Human-In-The-Loop Approval Framework
 """
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import hashlib
 import json
 import os
@@ -325,19 +325,93 @@ class DashboardApprovalProvider(ApprovalProvider):
                             timed_out=False,
                         )
 
-                    # Verify HMAC signature over {request_id, request_hash, approved, decided_at}
-                    sig_payload = {
-                        "approved": dec_data.get("approved"),
-                        "decided_at": dec_data.get("decided_at"),
-                        "request_hash": dec_data.get("request_hash"),
-                        "request_id": dec_data.get("request_id"),
-                    }
+                    # Verify HMAC signature over decision payload (including decided_by when present)
                     sig = dec_data.get("signature")
-                    if not sig or not security.signing.verify(sig_payload, sig):
+                    is_valid_sig = False
+                    if sig:
+                        if "decided_by" in dec_data:
+                            sig_payload_with_user = {
+                                "approved": dec_data.get("approved"),
+                                "decided_at": dec_data.get("decided_at"),
+                                "decided_by": dec_data.get("decided_by"),
+                                "request_hash": dec_data.get("request_hash"),
+                                "request_id": dec_data.get("request_id"),
+                            }
+                            if security.signing.verify(sig_payload_with_user, sig):
+                                is_valid_sig = True
+
+                        if not is_valid_sig:
+                            sig_payload = {
+                                "approved": dec_data.get("approved"),
+                                "decided_at": dec_data.get("decided_at"),
+                                "request_hash": dec_data.get("request_hash"),
+                                "request_id": dec_data.get("request_id"),
+                            }
+                            if security.signing.verify(sig_payload, sig):
+                                is_valid_sig = True
+
+                    if not is_valid_sig:
+                        security.logger.log_event(
+                            "approval_rejected",
+                            {"request_id": req.request_id, "reason": "bad_signature"},
+                        )
+                        return ApprovalResult(
+                            approved=False,
+                            decided_by=dec_data.get("decided_by") or "dashboard_operator",
+                            reason="bad signature",
+                            timed_out=False,
+                        )
+
+                    # Verify decided_at is within [request created_at, now]
+                    decided_at_str = dec_data.get("decided_at")
+                    if not decided_at_str:
+                        security.logger.log_event(
+                            "approval_rejected",
+                            {"request_id": req.request_id, "reason": "missing_decided_at"},
+                        )
                         return ApprovalResult(
                             approved=False,
                             decided_by="dashboard_operator",
-                            reason="bad signature",
+                            reason="bad timestamp",
+                            timed_out=False,
+                        )
+
+                    try:
+                        dec_dt = datetime.fromisoformat(decided_at_str)
+                        if dec_dt.tzinfo is None:
+                            dec_dt = dec_dt.replace(tzinfo=timezone.utc)
+
+                        req_created_dt = datetime.fromisoformat(req.created_at)
+                        if req_created_dt.tzinfo is None:
+                            req_created_dt = req_created_dt.replace(tzinfo=timezone.utc)
+
+                        now_dt = datetime.now(timezone.utc)
+                        # Rejection if outside [created_at, now] (allow 5.0s clock jitter margin)
+                        if dec_dt < (req_created_dt - timedelta(seconds=5)) or dec_dt > (now_dt + timedelta(seconds=5)):
+                            security.logger.log_event(
+                                "approval_rejected",
+                                {
+                                    "created_at": req.created_at,
+                                    "decided_at": decided_at_str,
+                                    "reason": "timestamp_outside_valid_range",
+                                    "request_id": req.request_id,
+                                },
+                            )
+                            return ApprovalResult(
+                                approved=False,
+                                decided_by="dashboard_operator",
+                                reason="bad timestamp",
+                                timed_out=False,
+                            )
+                    except Exception as e:
+                        security.logger.log_event(
+                            "approval_rejected",
+                            {"error": str(e), "reason": "invalid_timestamp_format", "request_id": req.request_id},
+                        )
+                        return ApprovalResult(
+                            approved=False,
+                            decided_by="dashboard_operator",
+                            reason="bad timestamp",
                             timed_out=False,
                         )
 
@@ -345,6 +419,10 @@ class DashboardApprovalProvider(ApprovalProvider):
                     decision_hash = dec_data.get("request_hash")
                     dec_req_id = dec_data.get("request_id")
                     if decision_hash != req.request_hash or (dec_req_id is not None and dec_req_id != req.request_id):
+                        security.logger.log_event(
+                            "approval_rejected",
+                            {"reason": "hash_mismatch", "request_id": req.request_id},
+                        )
                         return ApprovalResult(
                             approved=False,
                             decided_by="dashboard_operator",
@@ -362,7 +440,7 @@ class DashboardApprovalProvider(ApprovalProvider):
 
                     return ApprovalResult(
                         approved=approved,
-                        decided_by="dashboard_operator",
+                        decided_by=dec_data.get("decided_by") or "dashboard_operator",
                         reason=reason,
                         timed_out=False,
                     )

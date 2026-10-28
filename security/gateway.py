@@ -1,5 +1,5 @@
 """
-Phase 4 — Security Gateway (Permissions, Risk & Rate Limiting)
+Phase 4 -- Security Gateway (Permissions, Risk & Rate Limiting)
 
 WHAT THIS FILE DOES:
 Intercepts tool execution requests from the agent and applies policy checks:
@@ -17,7 +17,14 @@ import security.hardware
 
 
 
-def evaluate(tool_name: str, tool_args: dict, user_text: str, role: str = "guest", session_id: str = "default") -> dict:
+def evaluate(
+    tool_name: str,
+    tool_args: dict,
+    user_text: str,
+    role: str = "guest",
+    session_id: str = "default",
+    emit=None,
+) -> dict:
     """
     Evaluates a tool execution request against active policy rules.
 
@@ -28,6 +35,13 @@ def evaluate(tool_name: str, tool_args: dict, user_text: str, role: str = "guest
     4. Human approval check (if tool risk requires approval)
     5. Tamper-evident audit logging
     """
+    def _emit(stage: str, status: str, detail: dict):
+        if emit is not None:
+            try:
+                emit(stage, status, detail)
+            except Exception:
+                pass
+
     risk = policy_loader.get_risk(tool_name)
 
     # a. If tool_name not in policy -> decision BLOCK, reason "unknown tool"
@@ -39,20 +53,26 @@ def evaluate(tool_name: str, tool_args: dict, user_text: str, role: str = "guest
         return {"decision": decision, "reason": reason}
 
     # b. If NOT is_tool_allowed_for_role(tool_name, role) -> decision BLOCK (human operator NEVER asked)
+    _emit("rbac", "running", {"tool": tool_name, "role": role})
     if not policy_loader.is_tool_allowed_for_role(tool_name, role):
         decision = "BLOCK"
         reason = f"permission denied: role '{role}' cannot use '{tool_name}'"
+        _emit("rbac", "block", {"tool": tool_name, "role": role, "reason": reason})
         logger.log_decision(tool_name, tool_args, role, risk, decision, reason)
         security.hardware.trigger_block_alert()
         return {"decision": decision, "reason": reason}
+    _emit("rbac", "pass", {"tool": tool_name, "role": role})
 
     # c. If NOT rate_limiter.check_rate_limit(tool_name) -> decision BLOCK (human operator NEVER asked)
+    _emit("rate_limit", "running", {"tool": tool_name})
     if not rate_limiter.check_rate_limit(tool_name):
         decision = "BLOCK"
         reason = f"rate limit exceeded for '{tool_name}'"
+        _emit("rate_limit", "block", {"tool": tool_name, "reason": reason})
         logger.log_decision(tool_name, tool_args, role, risk, decision, reason)
         security.hardware.trigger_block_alert()
         return {"decision": decision, "reason": reason}
+    _emit("rate_limit", "pass", {"tool": tool_name})
 
     # e. Call rate_limiter.record_call(tool_name) ONLY if we got past step (c)
     rate_limiter.record_call(tool_name)
@@ -79,18 +99,27 @@ def evaluate(tool_name: str, tool_args: dict, user_text: str, role: str = "guest
             risk=risk,
             reasons=reasons,
         )
+        _emit("approval", "running", {
+            "tool": tool_name,
+            "args": tool_args,
+            "request_id": req.request_id,
+            "request_hash": req.request_hash,
+            "risk": risk,
+        })
         mgr = get_approval_manager()
         app_result = mgr.request(req)
 
         if app_result.approved:
             decision = "ALLOW"
             reason = f"allowed by human operator ({app_result.decided_by})"
+            _emit("approval", "pass", {"reason": reason, "decided_by": app_result.decided_by})
         else:
             decision = "BLOCK"
             if app_result.timed_out:
                 reason = "Approval timed out, action denied"
             else:
                 reason = "Action denied by human operator"
+            _emit("approval", "block", {"reason": reason, "decided_by": app_result.decided_by})
             # Note: Human operator denial or approval timeout is NOT an attack-type block;
             # trigger_block_alert() must fire ONLY for attack-type blocks (unknown tool, RBAC denial,
             # rate-limit exceeded, detection BLOCK). It must NOT fire for human operator denial or timeout.
@@ -98,17 +127,23 @@ def evaluate(tool_name: str, tool_args: dict, user_text: str, role: str = "guest
         if risk == "LOW":
             decision = "ALLOW"
             reason = "low risk, auto-allowed"
+            _emit("approval", "skip", {"reason": "LOW risk auto-allowed"})
         elif risk == "HIGH":
             decision = "BLOCK"
             reason = "high risk, blocked pending human-approval flow (Phase 6)"
+            _emit("approval", "block", {"reason": reason})
             security.hardware.trigger_block_alert()
         else:
             decision = "BLOCK"
             reason = f"unrecognized risk level '{risk}'"
+            _emit("approval", "block", {"reason": reason})
             security.hardware.trigger_block_alert()
 
     # f. Call logger.log_decision(...) for EVERY call
-    logger.log_decision(tool_name, tool_args, role, risk, decision, reason)
+    try:
+        logger.log_decision(tool_name, tool_args, role, risk, decision, reason)
+    except Exception as e:
+        return {"decision": "BLOCK", "reason": f"Audit logging failure (fail-closed): {e}"}
 
     # g. Return {"decision": decision, "reason": reason}
     return {"decision": decision, "reason": reason}
@@ -249,6 +284,12 @@ def inspect_tool_output(session_id: str, text: str) -> Verdict:
             session_id=session_id,
             source="tool_output",
         )
+
+
+def reset_session_history(session_id: str):
+    """Resets the multi-turn detection window/suspicion history for a session."""
+    engine = get_detection_engine()
+    engine.reset_session(session_id)
 
 
 

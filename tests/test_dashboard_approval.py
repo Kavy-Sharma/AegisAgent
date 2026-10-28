@@ -1,5 +1,5 @@
 """
-Phase 8 — Pytest Suite for Dashboard Approval Provider & IPC Workflow
+Phase 8 -- Pytest Suite for Dashboard Approval Provider & IPC Workflow
 """
 
 from datetime import datetime, timezone

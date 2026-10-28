@@ -1,5 +1,5 @@
 """
-Phase 8B — AegisAgent Security Operations Dashboard (App Shell & Navigation)
+Phase 8B -- AegisAgent Security Operations Dashboard (App Shell & Navigation)
 
 DESIGN RULES:
 - Multi-page application with st.navigation.
@@ -30,6 +30,7 @@ from dashboard.pages.console import render_console
 from dashboard.pages.overview import render_overview
 from dashboard.theme import format_ist, inject_theme
 import security.auth
+import security.health
 import security.logger
 import security.policy_loader
 
@@ -50,57 +51,30 @@ def _get_data_dir() -> Path:
 
 
 def _get_worker_heartbeat() -> dict:
-    worker_file = _get_data_dir() / "worker_status.json"
-    if not worker_file.exists():
-        return {"alive": False, "detail": "Missing worker_status.json"}
-    try:
-        data = json.loads(worker_file.read_text(encoding="utf-8"))
-        last_hb = data.get("last_heartbeat")
-        if not last_hb:
-            return {"alive": False, "detail": "Missing heartbeat"}
-        dt = datetime.fromisoformat(last_hb)
-        age = (datetime.now(timezone.utc) - dt).total_seconds()
-        return {
-            "alive": age <= 5.0,
-            "detail": f"Seen {format_ist(last_hb, '%H:%M:%S IST')}",
-            "model_warm": data.get("model_warm", False),
-            "ollama_ok": data.get("ollama_ok", False),
-            "pid": data.get("pid"),
-        }
-    except Exception:
-        return {"alive": False, "detail": "Invalid status"}
+    """Delegates to security.health.get_system_health() for worker telemetry."""
+    health = security.health.get_system_health()
+    w = health["worker"]
+    last_hb = w.get("last_heartbeat")
+    detail = f"Seen {format_ist(last_hb, '%H:%M:%S IST')}" if last_hb else w.get("detail", "Offline")
+    return {
+        "alive": w["alive"],
+        "busy": w.get("busy", False),
+        "detail": detail,
+        "model_warm": w.get("model_warm", False),
+        "ollama_ok": w.get("ollama_ok", False),
+        "pid": w.get("pid"),
+    }
 
 
 def _get_device_status() -> str:
-    device_file = _get_data_dir() / "device_status.json"
-    if not device_file.exists():
-        return "unknown"
-    try:
-        data = json.loads(device_file.read_text(encoding="utf-8"))
-        now_ts = time.time()
-        file_ts = None
-        if "last_seen" in data:
-            try:
-                file_ts = datetime.fromisoformat(data["last_seen"]).timestamp()
-            except Exception:
-                pass
-        if file_ts is None and "timestamp" in data:
-            try:
-                file_ts = float(data["timestamp"])
-            except Exception:
-                pass
-        if file_ts is not None and (now_ts - file_ts) > 60:
-            return "unknown"
-        is_online = data.get("online")
-        if is_online is None:
-            is_online = data.get("device_online")
-        if is_online is True:
-            return "live"
-        elif is_online is False:
-            return "offline"
-        return "unknown"
-    except Exception:
-        return "unknown"
+    """Delegates to security.health.get_system_health() for device status."""
+    health = security.health.get_system_health()
+    st_val = health["device"]["status"]
+    if st_val == "online":
+        return "live"
+    elif st_val == "offline":
+        return "offline"
+    return "unknown"
 
 
 def check_auth_state() -> bool:

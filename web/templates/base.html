@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light" data-sidebar="expanded">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="csrf-token" content="{{ session.get('csrf_token', '') }}">
+  <title>{% block title %}AegisAgent{% endblock %}</title>
+
+  <!-- Prevent theme/sidebar flash before first paint -->
+  <script src="/static/js/theme-init.js"></script>
+
+  <!-- CSS Design System -->
+  <link rel="stylesheet" href="/static/css/tokens.css">
+  <link rel="stylesheet" href="/static/css/base.css">
+  <link rel="stylesheet" href="/static/css/components.css">
+  <link rel="stylesheet" href="/static/css/pages.css">
+  {% block extra_css %}{% endblock %}
+</head>
+<body data-role="{{ session.get('role', 'guest') }}" data-username="{{ session.get('username', '') }}">
+  <!-- Mobile Sidebar Overlay -->
+  <div class="sidebar-overlay"></div>
+
+  <div class="app-shell">
+    <!-- Left Navigation Rail (248px -> 72px) -->
+    <aside class="sidebar-rail" id="sidebar-rail">
+      <div class="sidebar-header">
+        <a href="/overview" class="brand-link">
+          <svg class="icon brand-logo"><use href="/static/icons.svg#icon-shield"></use></svg>
+          <span class="brand-text">AegisAgent</span>
+        </a>
+        <button type="button" class="btn-icon sidebar-collapse-btn" id="sidebar-toggle-btn" title="Toggle navigation rail">
+          <svg class="icon"><use href="/static/icons.svg#icon-menu"></use></svg>
+        </button>
+      </div>
+
+      <!-- Navigation Links -->
+      <nav class="sidebar-nav">
+        <a href="/overview" class="nav-item {% if active_page == 'overview' %}active{% endif %}" title="System Overview (G then O)">
+          <svg class="icon nav-icon"><use href="/static/icons.svg#icon-dashboard"></use></svg>
+          <span class="nav-label">Overview</span>
+        </a>
+
+        <a href="/console" class="nav-item {% if active_page == 'console' %}active{% endif %}" title="Agent Console (G then C)">
+          <svg class="icon nav-icon"><use href="/static/icons.svg#icon-terminal"></use></svg>
+          <span class="nav-label">Console</span>
+        </a>
+
+        {% if session.get('role') == 'admin' %}
+        <a href="/approvals" class="nav-item {% if active_page == 'approvals' %}active{% endif %}" title="Human Approvals Queue (G then A)">
+          <svg class="icon nav-icon"><use href="/static/icons.svg#icon-shield"></use></svg>
+          <span class="nav-label">Approvals</span>
+          <span class="nav-badge pill pill-warn" id="nav-pending-badge">0</span>
+        </a>
+        {% endif %}
+      </nav>
+
+      <!-- System Health Telemetry -->
+      <div class="sidebar-health-panel">
+        <div class="health-header">
+          <span class="text-xs uppercase font-semibold text-muted">Subsystem Health</span>
+        </div>
+        <div class="health-item">
+          <span class="pulse-dot offline" id="health-dot-worker"></span>
+          <span class="health-name">Worker</span>
+          <span class="health-val font-mono" id="health-label-worker">Polling...</span>
+        </div>
+        <div class="health-item">
+          <span class="pulse-dot offline" id="health-dot-device"></span>
+          <span class="health-name">ESP32</span>
+          <span class="health-val font-mono" id="health-label-device">Polling...</span>
+        </div>
+        <div class="health-item">
+          <span class="pulse-dot offline" id="health-dot-ollama"></span>
+          <span class="health-name">Ollama</span>
+          <span class="health-val font-mono" id="health-label-ollama">Polling...</span>
+        </div>
+        <div class="health-item">
+          <span class="pulse-dot offline" id="health-dot-audit"></span>
+          <span class="health-name">Audit Log</span>
+          <span class="health-val font-mono" id="health-label-audit">Polling...</span>
+        </div>
+      </div>
+
+      <!-- User Chip & Sign Out -->
+      <div class="sidebar-user-chip">
+        <div class="user-avatar">
+          <svg class="icon"><use href="/static/icons.svg#icon-user"></use></svg>
+        </div>
+        <div class="user-info">
+          <div class="user-name font-semibold">{{ session.get('username', 'Guest') }}</div>
+          <div class="user-role-line">
+            <span class="pill pill-info text-xs">{{ session.get('role', 'guest') }}</span>
+          </div>
+        </div>
+        <form action="/logout" method="POST" class="inline-form logout-form">
+          <input type="hidden" name="csrf_token" value="{{ session.get('csrf_token') }}">
+          <button type="submit" class="btn-icon signout-btn" title="Sign out of AegisAgent" aria-label="Sign out">
+            <svg class="icon"><use href="/static/icons.svg#icon-log-out"></use></svg>
+          </button>
+        </form>
+      </div>
+    </aside>
+
+    <!-- Main Application Area -->
+    <div class="main-layout">
+      <!-- Top Bar -->
+      <header class="topbar">
+        <div class="topbar-left">
+          <div class="breadcrumb-container">
+            <span class="breadcrumb-root text-muted font-medium">AegisAgent</span>
+            <span class="breadcrumb-separator text-muted">/</span>
+            <span class="breadcrumb-active font-semibold">{% block breadcrumb %}Overview{% endblock %}</span>
+          </div>
+        </div>
+
+        <div class="topbar-right">
+          <!-- Global System Status Chip -->
+          <span class="pill text-xs" id="global-system-status">Checking systems...</span>
+
+          <!-- Audit Log Verifier Trigger -->
+          <button type="button" class="btn btn-secondary btn-xs flex items-center gap-xs" id="verify-ledger-trigger-btn" title="Verify tamper-evident Audit Ledger Chain">
+            <svg class="icon text-accent icon-sm"><use href="/static/icons.svg#icon-shield"></use></svg>
+            <span>Verify Ledger</span>
+          </button>
+
+          <!-- Role Simulator Switcher for Live Demos -->
+          {% if session.get('real_role') == 'admin' %}
+          <button type="button" class="btn btn-secondary btn-xs flex items-center gap-xs" id="role-toggle-btn" title="Toggle Demo Role between Admin and Guest">
+            <span class="text-xs text-muted">Role:</span>
+            <strong id="current-sim-role" class="text-accent">{{ session.get('role', 'guest')|capitalize }}</strong>
+          </button>
+          {% endif %}
+
+          <!-- Command Palette Trigger -->
+          <button type="button" class="command-palette-trigger" id="palette-trigger-btn" title="Open Command Palette (Ctrl+K)">
+            <svg class="icon"><use href="/static/icons.svg#icon-search"></use></svg>
+            <span class="palette-btn-text">Quick actions...</span>
+            <kbd class="kbd-shortcut">Ctrl+K</kbd>
+          </button>
+
+          <!-- Theme Toggle Button -->
+          <button type="button" class="btn-icon theme-toggle-btn" id="theme-toggle-btn" title="Toggle Light / Dark mode (T)">
+            <svg class="icon icon-sun"><use href="/static/icons.svg#icon-sun"></use></svg>
+            <svg class="icon icon-moon"><use href="/static/icons.svg#icon-moon"></use></svg>
+          </button>
+        </div>
+      </header>
+
+      <!-- Global Notification Banner Slot (Clean, non-overlapping) -->
+      <div id="global-banner-slot"></div>
+
+      <!-- Page Content Block -->
+      <main class="page-content">
+        {% block content %}{% endblock %}
+      </main>
+    </div>
+  </div>
+
+  <!-- Cryptographic Audit Ledger Modal -->
+  <div class="modal-backdrop" id="ledger-verification-modal">
+    <div class="modal-card ledger-modal-card">
+      <div class="modal-header">
+        <div class="modal-title-group flex items-center gap-sm">
+          <div class="ledger-shield-icon-wrap">
+            <svg class="icon text-ok icon-lg"><use href="/static/icons.svg#icon-shield"></use></svg>
+          </div>
+          <div>
+            <h3 class="modal-title font-bold text-base">Audit Ledger Cryptographic Verification</h3>
+            <p class="modal-subtitle text-xs text-muted">Re-computed verification of SHA-256 tamper-evident sequential hash chain</p>
+          </div>
+        </div>
+        <button type="button" class="btn-icon modal-close-btn" id="close-ledger-modal" title="Close modal" aria-label="Close modal">
+          <svg class="icon"><use href="/static/icons.svg#icon-x"></use></svg>
+        </button>
+      </div>
+
+      <div class="modal-body">
+        <div class="ledger-status-banner mb-md flex items-center justify-between p-sm rounded border" id="ledger-banner">
+          <div class="flex items-center gap-sm">
+            <span class="pulse-dot ok" id="ledger-banner-dot"></span>
+            <span class="ledger-status-text font-semibold text-sm" id="ledger-status-text">Verifying Ledger Blocks...</span>
+          </div>
+          <span class="pill text-xs font-mono" id="ledger-status-badge">Verifying...</span>
+        </div>
+
+        <div class="ledger-meta-grid">
+          <div class="ledger-stat-card">
+            <span class="ledger-stat-label">Total Verified Blocks</span>
+            <div class="ledger-stat-val text-accent" id="ledger-block-count">--</div>
+            <span class="ledger-stat-sub">Cryptographically Sealed</span>
+          </div>
+          <div class="ledger-stat-card">
+            <span class="ledger-stat-label">Integrity Algorithm</span>
+            <div class="ledger-stat-val text-sm font-mono">SHA-256 sequential hash chain</div>
+            <span class="ledger-stat-sub">Sequential Hash Chaining</span>
+          </div>
+          <div class="ledger-hash-card col-span-2">
+            <div class="flex items-center justify-between mb-xs">
+              <span class="ledger-stat-label">Genesis Block Previous Hash</span>
+              <button type="button" class="btn-xs btn-ghost copy-hash-btn" data-target="ledger-genesis-hash" title="Copy Genesis Hash">
+                <svg class="icon icon-xs"><use href="/static/icons.svg#icon-clipboard"></use></svg>
+                <span>Copy</span>
+              </button>
+            </div>
+            <div class="ledger-hash-code font-mono text-muted" id="ledger-genesis-hash">genesis</div>
+          </div>
+          <div class="ledger-hash-card col-span-2">
+            <div class="flex items-center justify-between mb-xs">
+              <span class="ledger-stat-label">Current Head Hash (Latest Sealed Block)</span>
+              <button type="button" class="btn-xs btn-ghost copy-hash-btn" data-target="ledger-head-hash" title="Copy Head Hash">
+                <svg class="icon icon-xs"><use href="/static/icons.svg#icon-clipboard"></use></svg>
+                <span>Copy</span>
+              </button>
+            </div>
+            <div class="ledger-hash-code font-mono text-accent" id="ledger-head-hash">--</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-footer flex items-center justify-between pt-md border-top">
+        <button type="button" class="btn btn-secondary btn-sm flex items-center gap-xs" id="reverify-ledger-btn">
+          <svg class="icon icon-sm" id="reverify-icon"><use href="/static/icons.svg#icon-refresh"></use></svg>
+          <span>Re-verify Ledger</span>
+        </button>
+        <button type="button" class="btn btn-primary btn-sm" id="dismiss-ledger-btn">Done</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Command Palette Modal (Ctrl+K) -->
+  <div class="modal-backdrop" id="command-palette-modal">
+    <div class="palette-container">
+      <div class="palette-input-wrap">
+        <svg class="icon palette-search-icon"><use href="/static/icons.svg#icon-search"></use></svg>
+        <input type="text" class="palette-input" id="palette-search-input" placeholder="Type a command or jump to page..." autocomplete="off">
+        <kbd class="kbd-esc">ESC</kbd>
+      </div>
+      <div class="palette-results" id="palette-results-list"></div>
+    </div>
+  </div>
+
+  <!-- Global Toast Notification Container -->
+  <div class="toast-container" id="toast-container" aria-live="polite"></div>
+
+  <!-- Core Scripts -->
+  <script src="/static/js/api.js"></script>
+  <script src="/static/js/app.js"></script>
+  <script src="/static/js/shortcuts.js"></script>
+  {% block extra_js %}{% endblock %}
+</body>
+</html>

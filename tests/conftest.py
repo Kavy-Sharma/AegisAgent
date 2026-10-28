@@ -4,6 +4,7 @@ Pytest configuration and test isolation fixtures for AegisAgent.
 
 from pathlib import Path
 import pytest
+import security.hardware
 import security.logger
 
 
@@ -27,7 +28,10 @@ def isolate_test_environment(tmp_path, monkeypatch):
     monkeypatch.setenv("AEGIS_APPROVALS_DIR", str(test_approvals))
 
     security.logger.set_log_file(test_log)
+    fake_bridge = security.hardware.FakeBridge()
+    security.hardware.set_bridge(fake_bridge)
 
     yield tmp_path
 
     security.logger.set_log_file(None)
+    security.hardware.set_bridge(None)

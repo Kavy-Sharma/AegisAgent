@@ -1,5 +1,5 @@
 """
-Phase 4 & Phase 8A — Tamper-Evident Audit Logger
+Phase 4 & Phase 8A -- Tamper-Evident Audit Logger
 
 WHAT THIS FILE DOES:
 Appends decision and security logs to logs/audit_log.jsonl using a SHA-256 hash chain.
@@ -102,25 +102,70 @@ def _file_lock(log_path: Path, timeout: float = 10.0):
             pass
 
 
+def _read_last_line_from_end(log_file: Path) -> str | None:
+    """Reads only the last line from the file end without loading the whole file into memory."""
+    try:
+        file_size = log_file.stat().st_size
+    except OSError:
+        return None
+
+    if file_size == 0:
+        return None
+
+    buffer_size = 4096
+    with open(log_file, "rb") as f:
+        pos = file_size
+        remainder = b""
+        while pos > 0:
+            read_size = min(buffer_size, pos)
+            pos -= read_size
+            f.seek(pos)
+            chunk = f.read(read_size) + remainder
+            lines = chunk.splitlines()
+            if len(lines) > 1:
+                for line in reversed(lines):
+                    s = line.strip()
+                    if s:
+                        return s.decode("utf-8", errors="replace")
+                remainder = b""
+            else:
+                remainder = chunk
+        if remainder.strip():
+            return remainder.strip().decode("utf-8", errors="replace")
+    return None
+
+
 def _get_last_entry_hash(log_file: Path | None = None) -> str:
-    """Returns the entry_hash of the last line in the log file, or '0'*64 if empty/missing."""
+    """
+    Returns the entry_hash of the last line in the log file, or '0'*64 if empty/missing.
+    Reads only the last line from the file end. If the last line is corrupt, raises RuntimeError
+    and writes an audit corruption record rather than silently restarting at genesis.
+    """
     if log_file is None:
         log_file = get_log_file()
 
     if not log_file.exists():
         return "0" * 64
 
-    try:
-        content = log_file.read_text(encoding="utf-8").strip()
-        if not content:
-            return "0" * 64
-        lines = content.splitlines()
-        if not lines:
-            return "0" * 64
-        last_entry = json.loads(lines[-1])
-        return last_entry.get("entry_hash", "0" * 64)
-    except Exception:
+    last_line = _read_last_line_from_end(log_file)
+    if not last_line:
         return "0" * 64
+
+    try:
+        last_entry = json.loads(last_line)
+        if not isinstance(last_entry, dict) or "entry_hash" not in last_entry:
+            raise ValueError("Entry missing 'entry_hash' field or not a valid JSON object")
+        return last_entry["entry_hash"]
+    except Exception as err:
+        try:
+            corruption_log = log_file.with_name("audit_corruption.log")
+            with open(corruption_log, "a", encoding="utf-8") as cf:
+                cf.write(
+                    f"[{datetime.now(timezone.utc).isoformat()}] Audit log corrupt at {log_file}: {err}. Last line: {last_line}\n"
+                )
+        except Exception:
+            pass
+        raise RuntimeError(f"Corrupt audit log detected in {log_file}: {err}") from err
 
 
 def _append_entry(entry_data: dict) -> dict:
@@ -301,9 +346,11 @@ def log_approval_decision(req, result) -> dict:
         "reason": result.reason,
         "request_hash": req.request_hash,
         "request_id": req.request_id,
+        "risk": getattr(req, "risk", None),
         "session_id": req.session_id,
         "timed_out": result.timed_out,
         "timestamp": timestamp_str,
+        "tool": getattr(req, "tool", None),
     }
     return _append_entry(entry)
 
@@ -360,3 +407,27 @@ def log_event(event: str, data: dict | None = None, **kwargs) -> dict:
     if "timestamp" not in entry:
         entry["timestamp"] = datetime.now(timezone.utc).isoformat()
     return _append_entry(entry)
+
+
+def log_turn_summary(
+    request_id: str,
+    session_id: str,
+    decision: str,
+    tool: str | None,
+    rule_ids: list[str],
+    latency_ms: float,
+) -> dict:
+    """Constructs a tamper-evident audit log entry for a turn summary."""
+    timestamp_str = datetime.now(timezone.utc).isoformat()
+    entry = {
+        "decision": decision,
+        "event": "turn_summary",
+        "latency_ms": latency_ms,
+        "request_id": request_id,
+        "rule_ids": rule_ids or [],
+        "session_id": session_id,
+        "timestamp": timestamp_str,
+        "tool": tool,
+    }
+    return _append_entry(entry)
+

@@ -1,5 +1,5 @@
 """
-Phase 6 — Pytest Test Suite for Human-In-The-Loop Approval Framework
+Phase 6 -- Pytest Test Suite for Human-In-The-Loop Approval Framework
 """
 
 import sys

@@ -1,5 +1,5 @@
 """
-Phase 8B — Dashboard Page: Human-In-The-Loop Approvals (Admin Only)
+Phase 8B -- Dashboard Page: Human-In-The-Loop Approvals (Admin Only)
 
 WHAT THIS PAGE DOES:
 Provides a secure review and decision interface for HIGH-risk tool calls:

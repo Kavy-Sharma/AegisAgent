@@ -1,5 +1,5 @@
 """
-Phase 8B — Test Suite: Dashboard Components, Sanitization, Role Gating & Signed Decisions
+Phase 8B -- Test Suite: Dashboard Components, Sanitization, Role Gating & Signed Decisions
 """
 
 from datetime import datetime, timezone

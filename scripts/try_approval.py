@@ -1,5 +1,5 @@
 """
-AegisAgent Phase 6 — Interactive Approval Demo (No Ollama needed)
+AegisAgent Phase 6 -- Interactive Approval Demo (No Ollama needed)
 """
 
 import sys

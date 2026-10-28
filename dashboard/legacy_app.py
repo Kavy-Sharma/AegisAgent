@@ -1,5 +1,5 @@
 """
-Phase 8 — AegisAgent Security Operations Dashboard (Streamlit)
+Phase 8 -- AegisAgent Security Operations Dashboard (Streamlit)
 
 DESIGN RULES:
 - Separate process from the agent. Bound to 127.0.0.1 only.

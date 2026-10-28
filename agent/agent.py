@@ -1,5 +1,5 @@
 """
-AegisAgent — Security Policy Enforcement Gateway & Home Automation Assistant.
+AegisAgent -- Security Policy Enforcement Gateway & Home Automation Assistant.
 
 WHAT THIS FILE DOES:
 1. Takes a plain-English sentence from the user (e.g. "turn on the light", "unlock the door")
@@ -12,7 +12,9 @@ WHAT THIS FILE DOES:
 import argparse
 from dataclasses import dataclass
 import sys
+import time
 from typing import Any, Callable
+import uuid
 
 import ollama
 import security.gateway
@@ -123,12 +125,33 @@ def run_turn(
     role: str = "guest",
     session_id: str = "default",
     emit: Callable[[str, str, dict], None] | None = None,
+    request_id: str | None = None,
 ) -> TurnResult:
     """
     Executes a single conversational or command turn through the complete AegisAgent pipeline:
     [detection -> llm -> rbac -> rate_limit -> approval -> hardware -> output_scan].
     Calls emit(stage, status, detail) at each stage with status in [running, pass, review, block, skip, error].
     """
+    start_turn_time = time.perf_counter()
+    if not request_id:
+        request_id = str(uuid.uuid4())
+    detected_rule_ids = []
+
+    def _finalize(res: TurnResult) -> TurnResult:
+        latency_ms = round((time.perf_counter() - start_turn_time) * 1000, 2)
+        try:
+            security.logger.log_turn_summary(
+                request_id=request_id,
+                session_id=session_id,
+                decision=res.decision,
+                tool=res.tool_called,
+                rule_ids=list(detected_rule_ids),
+                latency_ms=latency_ms,
+            )
+        except Exception:
+            raise
+        return res
+
     def _emit(stage: str, status: str, detail: dict):
         if emit is not None:
             try:
@@ -140,6 +163,10 @@ def run_turn(
     _emit("detection", "running", {"text": text[:200]})
     verdict = security.gateway.inspect_user_message(session_id, text)
     detection_mode = security.policy_loader.POLICY.get("detection", {}).get("mode", "monitor")
+
+    for res in verdict.results:
+        if getattr(res, "rule_ids", None):
+            detected_rule_ids.extend(res.rule_ids)
 
     if verdict.decision == "BLOCK":
         top_reason = "Prompt injection detected"
@@ -155,11 +182,11 @@ def run_turn(
             _emit("detection", "block", {"reason": top_reason, "score": verdict.score})
             for s in ("llm", "rbac", "rate_limit", "approval", "hardware", "output_scan"):
                 _emit(s, "skip", {"reason": "Blocked by detection"})
-            return TurnResult(
+            return _finalize(TurnResult(
                 reply=f"Request blocked by AegisAgent: {top_reason}",
                 decision="BLOCK",
                 error=top_reason,
-            )
+            ))
         else:
             _emit("detection", "pass", {"monitor": True, "score": verdict.score, "reason": top_reason})
     elif verdict.decision == "REVIEW":
@@ -169,11 +196,11 @@ def run_turn(
             _emit("detection", "block", {"reason": "Denied by human operator"})
             for s in ("llm", "rbac", "rate_limit", "approval", "hardware", "output_scan"):
                 _emit(s, "skip", {"reason": "Denied by operator review"})
-            return TurnResult(
+            return _finalize(TurnResult(
                 reply="Request denied by human operator",
                 decision="DENY",
                 error="Review denied",
-            )
+            ))
         else:
             _emit("detection", "pass", {"reason": "Approved by human operator"})
     else:
@@ -204,11 +231,11 @@ def run_turn(
         _emit("llm", "error", {"error": str(e)})
         for s in ("rbac", "rate_limit", "approval", "hardware", "output_scan"):
             _emit(s, "skip", {"reason": "LLM communication error"})
-        return TurnResult(
+        return _finalize(TurnResult(
             reply=f"LLM communication error: {e}",
             decision="ERROR",
             error=str(e),
-        )
+        ))
 
     message = response.get("message", {})
     tool_calls = message.get("tool_calls")
@@ -218,7 +245,7 @@ def run_turn(
         _emit("llm", "pass", {"tool_calls": 0, "reply": content})
         for s in ("rbac", "rate_limit", "approval", "hardware", "output_scan"):
             _emit(s, "skip", {"reason": "No tool call generated"})
-        return TurnResult(reply=content, decision="ALLOW")
+        return _finalize(TurnResult(reply=content, decision="ALLOW"))
 
     _emit("llm", "pass", {"tool_calls": len(tool_calls)})
 
@@ -236,12 +263,12 @@ def run_turn(
             _emit("rbac", "block", {"tool": function_name, "reason": "unknown tool"})
             for s in ("rate_limit", "approval", "hardware", "output_scan"):
                 _emit(s, "skip", {"reason": "unknown tool"})
-            return TurnResult(
+            return _finalize(TurnResult(
                 reply=f"REJECTED — '{function_name}' is not a real tool.",
                 decision="BLOCK",
                 tool_called=function_name,
                 error="unknown tool",
-            )
+            ))
 
         if not security.policy_loader.is_tool_allowed_for_role(function_name, role):
             reason_msg = f"permission denied: role '{role}' cannot use '{function_name}'"
@@ -249,12 +276,12 @@ def run_turn(
             security.gateway.evaluate(function_name, function_args, text, role=role, session_id=session_id)
             for s in ("rate_limit", "approval", "hardware", "output_scan"):
                 _emit(s, "skip", {"reason": "RBAC denied"})
-            return TurnResult(
+            return _finalize(TurnResult(
                 reply=f"Request blocked by policy: {reason_msg}",
                 decision="BLOCK",
                 tool_called=function_name,
                 error=reason_msg,
-            )
+            ))
         _emit("rbac", "pass", {"tool": function_name, "role": role})
 
         # 4. Rate Limit stage
@@ -265,17 +292,16 @@ def run_turn(
             security.gateway.evaluate(function_name, function_args, text, role=role, session_id=session_id)
             for s in ("approval", "hardware", "output_scan"):
                 _emit(s, "skip", {"reason": "Rate limit exceeded"})
-            return TurnResult(
+            return _finalize(TurnResult(
                 reply=f"Request blocked: {reason_msg}",
                 decision="BLOCK",
                 tool_called=function_name,
                 error=reason_msg,
-            )
+            ))
         _emit("rate_limit", "pass", {"tool": function_name})
 
         # 5. Approval stage
-        _emit("approval", "running", {"tool": function_name})
-        evaluation = security.gateway.evaluate(function_name, function_args, text, role=role, session_id=session_id)
+        evaluation = security.gateway.evaluate(function_name, function_args, text, role=role, session_id=session_id, emit=_emit)
         decision = evaluation.get("decision")
         reason = evaluation.get("reason", "")
 
@@ -287,12 +313,12 @@ def run_turn(
             _emit("approval", "block", {"reason": reason})
             for s in ("hardware", "output_scan"):
                 _emit(s, "skip", {"reason": "Approval denied or blocked"})
-            return TurnResult(
+            return _finalize(TurnResult(
                 reply=f"Action blocked: {reason}",
                 decision="BLOCK",
                 tool_called=function_name,
                 error=reason,
-            )
+            ))
 
         if requires_approval:
             _emit("approval", "pass", {"reason": reason})
@@ -310,12 +336,12 @@ def run_turn(
         except Exception as e:
             _emit("hardware", "error", {"tool": function_name, "error": str(e)})
             _emit("output_scan", "skip", {"reason": "Hardware execution error"})
-            return TurnResult(
+            return _finalize(TurnResult(
                 reply=f"Error executing tool {function_name}: {e}",
                 decision="ERROR",
                 tool_called=function_name,
                 error=str(e),
-            )
+            ))
 
         # 7. Output Scan stage
         if scan_tool_outputs:
@@ -327,25 +353,25 @@ def run_turn(
                 except Exception:
                     pass
                 _emit("output_scan", "block", {"reason": "Tool output blocked by policy"})
-                return TurnResult(
+                return _finalize(TurnResult(
                     reply="[tool output withheld by AegisAgent]",
                     decision="BLOCK",
                     tool_called=function_name,
                     tool_result=None,
                     error="tool output withheld",
-                )
+                ))
             elif tool_verdict.decision == "REVIEW":
                 _emit("output_scan", "review", {"score": tool_verdict.score})
                 allowed_output = security.gateway.handle_review(session_id, tool_verdict, text=str(tool_result))
                 if not allowed_output:
                     _emit("output_scan", "block", {"reason": "Tool output review denied"})
-                    return TurnResult(
+                    return _finalize(TurnResult(
                         reply="[tool output withheld by AegisAgent]",
                         decision="DENY",
                         tool_called=function_name,
                         tool_result=None,
                         error="tool output denied by operator",
-                    )
+                    ))
                 _emit("output_scan", "pass", {"reason": "Tool output review allowed"})
             else:
                 _emit("output_scan", "pass", {"score": tool_verdict.score})
@@ -359,7 +385,7 @@ def run_turn(
             tool_result=tool_result,
         )
 
-    return last_turn_result or TurnResult(reply="Done.", decision="ALLOW")
+    return _finalize(last_turn_result or TurnResult(reply="Done.", decision="ALLOW"))
 
 
 def run_agent(user_text: str, session_id: str = "default", role: str = "guest") -> TurnResult:

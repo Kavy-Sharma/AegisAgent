@@ -1,24 +1,30 @@
 """
-Phase 8A — Agent Worker Service
+Phase 8A & Phase 8A-fix -- Agent Worker Service
 
 WHAT THIS FILE DOES:
 1. Polls data/chat/inbox/*.json every 0.3s for incoming user requests.
-2. Verifies cryptographic signature using security.signing. Rejects unsigned or
-   bad-signature requests and audits 'worker_rejected'.
-3. Dispatches chat requests to run_turn(text, role, session_id, emit) with role taken
-   strictly from the signed request (never from user text).
-4. Dispatches 'direct_tool' requests through gateway.evaluate without LLM (for dashboard hardware buttons).
-5. Streams execution steps to data/chat/outbox/<id>.jsonl and writes final reply and decision.
-6. Writes worker heartbeat to data/worker_status.json every 2s (pid, started_at, ollama_ok, model_warm).
-7. If hardware.mode is mqtt, maintains a long-lived MQTT subscription to aegis/status/<device_id>
-   and aegis/status/<device_id>/event, maintaining data/device_status.json and data/device_events.jsonl.
-8. Handles graceful shutdown on Ctrl+C and never crashes on a single bad request.
+2. Validates request IDs and inbox file stems against ^[A-Za-z0-9_-]{8,64}$ before
+   building ANY path. Prevents path traversal (e.g. '../../evil').
+3. Verifies cryptographic signature using security.signing.
+4. Enforces replay protection: rejects if |now - ts| > 60s or nonce was seen before
+   (maintains seen_nonces capped at 2000 in memory + data/chat/seen_nonces.json).
+5. Enforces valid kind ('chat', 'direct_tool') and roles defined in policy.yaml.
+6. Dispatches chat requests to run_turn(text, role, session_id, emit) with role taken
+   strictly from the signed request.
+7. Dispatches 'direct_tool' requests through gateway.evaluate(..., emit=emit) without
+   duplicating policy checks; rate limit counted exactly once.
+8. Streams execution steps to data/chat/outbox/<id>.jsonl and writes final reply and decision.
+9. Runs worker heartbeat on a daemon thread every 2s with busy and current_request_id fields,
+   and refreshes ollama_ok every 15s with a cheap ollama.list() (2s timeout).
+10. Maintains MQTT device status and events, recording broker_connected in device_status.json.
+11. Handles graceful shutdown on Ctrl+C and never crashes on a single bad request.
 """
 
 from datetime import datetime, timezone
 import json
 import os
 from pathlib import Path
+import re
 import secrets
 import signal
 import sys
@@ -33,10 +39,13 @@ if str(ROOT_DIR) not in sys.path:
 import ollama
 from agent.agent import AVAILABLE_FUNCTIONS, MODEL, TOOL_SCHEMAS, TurnResult, run_turn
 import security.gateway
+import security.hardware
 import security.logger
 import security.policy_loader
 import security.rate_limiter
 import security.signing
+
+ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{8,64}$")
 
 
 def _get_data_dir() -> Path:
@@ -52,6 +61,7 @@ class DeviceStatusSubscriber:
         self.data_dir = data_dir
         self.client = None
         self.is_running = False
+        self.broker_connected = False
         self._last_state = None
         self._since = None
 
@@ -67,7 +77,68 @@ class DeviceStatusSubscriber:
         self.user = os.environ.get("AEGIS_MQTT_USER", "")
         self.password = os.environ.get("AEGIS_MQTT_PASS", "")
 
+    def _write_device_status(self, is_online: bool | None = None):
+        status_file = self.data_dir / "device_status.json"
+        now_iso = datetime.now(timezone.utc).isoformat()
+        current = {}
+        if status_file.exists():
+            try:
+                current = json.loads(status_file.read_text(encoding="utf-8"))
+            except Exception:
+                current = {}
+
+        current["broker_connected"] = bool(self.broker_connected)
+        if is_online is not None:
+            if is_online != self._last_state:
+                self._last_state = is_online
+                self._since = now_iso
+            current["online"] = is_online
+            current["device_online"] = is_online
+            current["last_seen"] = now_iso
+            current["since"] = self._since or now_iso
+            current["timestamp"] = time.time()
+            try:
+                active_bridge = security.hardware.get_bridge()
+                if hasattr(active_bridge, "transport"):
+                    current["transport"] = str(active_bridge.transport)
+                if hasattr(active_bridge, "port"):
+                    current["port"] = str(active_bridge.port)
+                if hasattr(active_bridge, "description"):
+                    current["description"] = str(active_bridge.description)
+            except Exception:
+                pass
+
+        tmp_file = status_file.with_name(f"device_status.tmp.{secrets.token_hex(4)}")
+        try:
+            with open(tmp_file, "w", encoding="utf-8") as f:
+                f.write(json.dumps(current, indent=2))
+                f.flush()
+                try:
+                    os.fsync(f.fileno())
+                except Exception:
+                    pass
+            os.replace(tmp_file, status_file)
+        except Exception:
+            pass
+
     def start(self):
+        if self.mode in ("auto", "serial"):
+            try:
+                bridge = security.hardware.get_bridge()
+                if isinstance(bridge, security.hardware.SerialHardwareBridge):
+                    is_on = bridge.is_device_online()
+                    self.broker_connected = True
+                    self._write_device_status(is_online=is_on)
+                    self.is_running = True
+                    print(f"[WORKER] USB Serial hardware subscriber active (port={getattr(bridge, 'port', 'unknown')}, online={is_on})")
+                else:
+                    self.broker_connected = True
+                    self._write_device_status(is_online=bridge.is_device_online())
+                    self.is_running = True
+            except Exception as e:
+                print(f"[WORKER] USB Serial initialization note: {e}")
+            return
+
         if self.mode != "mqtt":
             return
 
@@ -84,6 +155,7 @@ class DeviceStatusSubscriber:
                 self.client.username_pw_set(self.user, self.password)
 
             self.client.on_connect = self._on_connect
+            self.client.on_disconnect = self._on_disconnect
             self.client.on_message = self._on_message
 
             self.client.connect(self.host, self.port, keepalive=60)
@@ -91,12 +163,23 @@ class DeviceStatusSubscriber:
             self.is_running = True
             print(f"[WORKER] MQTT subscriber active on {self.status_topic}")
         except Exception as e:
+            self.broker_connected = False
+            self._write_device_status()
             print(f"[WORKER] MQTT subscriber could not connect ({e}). Continuing.")
 
     def _on_connect(self, client, userdata, flags, reason_code, properties=None):
         if reason_code == 0:
+            self.broker_connected = True
+            self._write_device_status()
             client.subscribe(self.status_topic, qos=1)
             client.subscribe(self.event_topic, qos=1)
+        else:
+            self.broker_connected = False
+            self._write_device_status()
+
+    def _on_disconnect(self, client, userdata, flags_or_rc=None, reason_code=None, properties=None):
+        self.broker_connected = False
+        self._write_device_status()
 
     def _on_message(self, client, userdata, msg):
         try:
@@ -105,22 +188,7 @@ class DeviceStatusSubscriber:
 
             if msg.topic == self.status_topic:
                 is_online = (payload.lower() == "online")
-                if is_online != self._last_state:
-                    self._last_state = is_online
-                    self._since = now_iso
-
-                status_data = {
-                    "device_online": is_online,
-                    "last_seen": now_iso,
-                    "online": is_online,
-                    "since": self._since or now_iso,
-                    "timestamp": time.time(),
-                }
-                status_file = self.data_dir / "device_status.json"
-                tmp_file = status_file.with_name(f"device_status.tmp.{secrets.token_hex(4)}")
-                with open(tmp_file, "w", encoding="utf-8") as f:
-                    f.write(json.dumps(status_data, indent=2))
-                os.replace(tmp_file, status_file)
+                self._write_device_status(is_online=is_online)
 
             elif msg.topic == self.event_topic:
                 events_file = self.data_dir / "device_events.jsonl"
@@ -152,6 +220,8 @@ class DeviceStatusSubscriber:
             print(f"[WORKER] MQTT message error: {e}")
 
     def stop(self):
+        self.broker_connected = False
+        self._write_device_status()
         if self.client and self.is_running:
             try:
                 self.client.loop_stop()
@@ -161,8 +231,101 @@ class DeviceStatusSubscriber:
             self.is_running = False
 
 
-def _write_heartbeat(data_dir: Path, started_at_iso: str, ollama_ok: bool, model_warm: bool):
+class WorkerHeartbeatThread(threading.Thread):
+    """Daemon thread writing heartbeat every 2s and refreshing ollama_ok every 15s."""
+
+    def __init__(self, data_dir: Path, started_at_iso: str):
+        super().__init__(daemon=True)
+        self.data_dir = data_dir
+        self.started_at_iso = started_at_iso
+        self.running = True
+        self.busy = False
+        self.current_request_id = None
+        self.ollama_ok = False
+        self.model_warm = False
+        self._last_ollama_check = 0.0
+        self._last_hw_check = 0.0
+
+    def run(self):
+        while self.running:
+            now = time.time()
+            if now - self._last_ollama_check >= 15.0:
+                self._refresh_ollama()
+                self._last_ollama_check = now
+
+            if now - self._last_hw_check >= 3.0:
+                self._refresh_hardware()
+                self._last_hw_check = now
+
+            self.write_heartbeat()
+            time.sleep(2.0)
+
+    def _refresh_hardware(self):
+        try:
+            hw_cfg = security.policy_loader.POLICY.get("hardware", {})
+            mode = hw_cfg.get("mode", "fake")
+            if mode in ("auto", "serial"):
+                bridge = security.hardware.get_bridge()
+                if hasattr(bridge, "is_device_online"):
+                    is_on = bridge.is_device_online()
+                    if hasattr(self, "subscriber") and self.subscriber:
+                        self.subscriber._write_device_status(is_online=is_on)
+        except Exception:
+            pass
+
+    def _refresh_ollama(self):
+        try:
+            client = ollama.Client(timeout=2.0)
+            client.list()
+            self.ollama_ok = True
+        except Exception:
+            self.ollama_ok = False
+
+    def write_heartbeat(self):
+        status_data = {
+            "busy": self.busy,
+            "current_request_id": self.current_request_id,
+            "last_heartbeat": datetime.now(timezone.utc).isoformat(),
+            "model_warm": self.model_warm,
+            "ollama_ok": self.ollama_ok,
+            "pid": os.getpid(),
+            "started_at": self.started_at_iso,
+        }
+        status_file = self.data_dir / "worker_status.json"
+        tmp_file = status_file.with_name(f"worker_status.tmp.{secrets.token_hex(4)}")
+        try:
+            with open(tmp_file, "w", encoding="utf-8") as f:
+                f.write(json.dumps(status_data, indent=2))
+                f.flush()
+                try:
+                    os.fsync(f.fileno())
+                except Exception:
+                    pass
+            os.replace(tmp_file, status_file)
+        except Exception:
+            pass
+
+    def set_busy(self, busy: bool, request_id: str | None = None):
+        self.busy = busy
+        self.current_request_id = request_id
+        self.write_heartbeat()
+
+    def stop(self):
+        self.running = False
+
+
+def _write_heartbeat(
+    data_dir: Path,
+    started_at_iso: str,
+    ollama_ok: bool,
+    model_warm: bool,
+    busy: bool = False,
+    current_request_id: str | None = None,
+):
+    """Module-level heartbeat writer kept for backward compatibility."""
     status_data = {
+        "busy": busy,
+        "current_request_id": current_request_id,
         "last_heartbeat": datetime.now(timezone.utc).isoformat(),
         "model_warm": model_warm,
         "ollama_ok": ollama_ok,
@@ -180,6 +343,61 @@ def _write_heartbeat(data_dir: Path, started_at_iso: str, ollama_ok: bool, model
             except Exception:
                 pass
         os.replace(tmp_file, status_file)
+    except Exception:
+        pass
+
+
+def _load_seen_nonces(data_dir: Path) -> list[str]:
+    nonces_file = data_dir / "chat" / "seen_nonces.json"
+    if not nonces_file.exists():
+        return []
+    try:
+        data = json.loads(nonces_file.read_text(encoding="utf-8"))
+        if isinstance(data, list):
+            return data[-2000:]
+    except Exception:
+        pass
+    return []
+
+
+def _save_seen_nonces(data_dir: Path, nonces: list[str]):
+    chat_dir = data_dir / "chat"
+    chat_dir.mkdir(parents=True, exist_ok=True)
+    nonces_file = chat_dir / "seen_nonces.json"
+    tmp_file = nonces_file.with_name(f"seen_nonces.tmp.{secrets.token_hex(4)}")
+    try:
+        capped = nonces[-2000:]
+        with open(tmp_file, "w", encoding="utf-8") as f:
+            f.write(json.dumps(capped))
+            f.flush()
+            try:
+                os.fsync(f.fileno())
+            except Exception:
+                pass
+        os.replace(tmp_file, nonces_file)
+    except Exception:
+        pass
+
+
+def _write_rejection_outbox(outbox_file: Path, message: str):
+    err_line = {
+        "detail": {"error": message},
+        "stage": "worker",
+        "status": "error",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+    final_line = {
+        "decision": "BLOCK",
+        "error": message,
+        "final": True,
+        "reply": f"Request rejected: {message}.",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+    try:
+        with open(outbox_file, "a", encoding="utf-8") as f:
+            f.write(json.dumps(err_line) + "\n")
+            f.write(json.dumps(final_line) + "\n")
+            f.flush()
     except Exception:
         pass
 
@@ -203,94 +421,38 @@ def _process_direct_tool(req: dict, emit, outbox_file: Path):
     emit("detection", "skip", {"reason": "direct_tool bypasses prompt injection scan"})
     emit("llm", "skip", {"reason": "direct_tool bypasses LLM"})
 
-    # RBAC check
-    emit("rbac", "running", {"role": role, "tool": tool_name})
-    if tool_name not in AVAILABLE_FUNCTIONS:
-        emit("rbac", "block", {"reason": "unknown tool", "tool": tool_name})
-        for s in ("rate_limit", "approval", "hardware", "output_scan"):
-            emit(s, "skip", {"reason": "unknown tool"})
-        final = {
-            "decision": "BLOCK",
-            "error": "unknown tool",
-            "final": True,
-            "reply": f"Unknown tool '{tool_name}'",
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-        }
-        with open(outbox_file, "a", encoding="utf-8") as f:
-            f.write(json.dumps(final) + "\n")
-        return
-
-    if not security.policy_loader.is_tool_allowed_for_role(tool_name, role):
-        reason_msg = f"permission denied: role '{role}' cannot use '{tool_name}'"
-        emit("rbac", "block", {"reason": reason_msg, "role": role, "tool": tool_name})
-        security.gateway.evaluate(tool_name, tool_args, user_text, role=role, session_id=session_id)
-        for s in ("rate_limit", "approval", "hardware", "output_scan"):
-            emit(s, "skip", {"reason": "RBAC denied"})
-        final = {
-            "decision": "BLOCK",
-            "error": reason_msg,
-            "final": True,
-            "reply": f"Request blocked by policy: {reason_msg}",
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-        }
-        with open(outbox_file, "a", encoding="utf-8") as f:
-            f.write(json.dumps(final) + "\n")
-        return
-    emit("rbac", "pass", {"role": role, "tool": tool_name})
-
-    # Rate limiting
-    emit("rate_limit", "running", {"tool": tool_name})
-    if not security.rate_limiter.check_rate_limit(tool_name):
-        reason_msg = f"rate limit exceeded for '{tool_name}'"
-        emit("rate_limit", "block", {"reason": reason_msg, "tool": tool_name})
-        security.gateway.evaluate(tool_name, tool_args, user_text, role=role, session_id=session_id)
-        for s in ("approval", "hardware", "output_scan"):
-            emit(s, "skip", {"reason": "Rate limit exceeded"})
-        final = {
-            "decision": "BLOCK",
-            "error": reason_msg,
-            "final": True,
-            "reply": reason_msg,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-        }
-        with open(outbox_file, "a", encoding="utf-8") as f:
-            f.write(json.dumps(final) + "\n")
-        return
-    emit("rate_limit", "pass", {"tool": tool_name})
-
-    # Approval check
-    emit("approval", "running", {"tool": tool_name})
-    evaluation = security.gateway.evaluate(tool_name, tool_args, user_text, role=role, session_id=session_id)
-    decision = evaluation.get("decision")
-    reason = evaluation.get("reason", "")
-
-    risk = security.policy_loader.get_risk(tool_name)
-    approval_cfg = security.policy_loader.POLICY.get("approval", {})
-    requires_approval = approval_cfg.get("enabled", True) and (risk in approval_cfg.get("require_for_risk", ["HIGH"]))
+    # Evaluate permissions, rate limits, and approvals via gateway.evaluate without duplicate checks
+    eval_res = security.gateway.evaluate(
+        tool_name=tool_name,
+        tool_args=tool_args,
+        user_text=user_text,
+        role=role,
+        session_id=session_id,
+        emit=emit,
+    )
+    decision = eval_res.get("decision")
+    reason = eval_res.get("reason", "")
 
     if decision != "ALLOW":
-        emit("approval", "block", {"reason": reason})
         for s in ("hardware", "output_scan"):
-            emit(s, "skip", {"reason": "Approval denied or blocked"})
+            emit(s, "skip", {"reason": f"Blocked: {reason}"})
         final = {
             "decision": "BLOCK",
             "error": reason,
             "final": True,
-            "reply": f"Action blocked: {reason}",
+            "reply": f"Request blocked by policy: {reason}",
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }
         with open(outbox_file, "a", encoding="utf-8") as f:
             f.write(json.dumps(final) + "\n")
+            f.flush()
         return
-
-    if requires_approval:
-        emit("approval", "pass", {"reason": reason})
-    else:
-        emit("approval", "skip", {"reason": "LOW risk auto-allowed"})
 
     # Hardware execution
     emit("hardware", "running", {"args": tool_args, "tool": tool_name})
     try:
+        if tool_name not in AVAILABLE_FUNCTIONS:
+            raise RuntimeError(f"Tool '{tool_name}' has no registered execution function")
         expected_args = TOOL_SCHEMAS.get(tool_name, set())
         clean_args = {k: v for k, v in tool_args.items() if k in expected_args}
         tool_res = AVAILABLE_FUNCTIONS[tool_name](**clean_args)
@@ -307,10 +469,11 @@ def _process_direct_tool(req: dict, emit, outbox_file: Path):
         }
         with open(outbox_file, "a", encoding="utf-8") as f:
             f.write(json.dumps(final) + "\n")
+            f.flush()
         return
 
     # Output scan
-    emit("output_scan", "pass", {})
+    emit("output_scan", "skip", {"reason": "direct_tool does not generate conversational text"})
 
     final = {
         "decision": "ALLOW",
@@ -323,6 +486,7 @@ def _process_direct_tool(req: dict, emit, outbox_file: Path):
     }
     with open(outbox_file, "a", encoding="utf-8") as f:
         f.write(json.dumps(final) + "\n")
+        f.flush()
 
 
 def run_worker():
@@ -331,6 +495,25 @@ def run_worker():
     outbox_dir = data_dir / "chat" / "outbox"
     inbox_dir.mkdir(parents=True, exist_ok=True)
     outbox_dir.mkdir(parents=True, exist_ok=True)
+
+    # High fix: Single-worker lockfile to prevent double actuation
+    lock_file_path = data_dir / "worker.lock"
+    lock_fd = None
+    try:
+        lock_fd = open(lock_file_path, "a+")
+        if os.name == "nt":
+            import msvcrt
+            msvcrt.locking(lock_fd.fileno(), msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl
+            fcntl.flock(lock_fd.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        lock_fd.seek(0)
+        lock_fd.truncate()
+        lock_fd.write(f"{os.getpid()}\n")
+        lock_fd.flush()
+    except (OSError, IOError) as e:
+        print(f"[WORKER] Fatal: Another worker is already running (lock held at {lock_file_path}: {e}). Exiting.")
+        sys.exit(1)
 
     started_at_iso = datetime.now(timezone.utc).isoformat()
     print("=" * 60)
@@ -351,9 +534,21 @@ def run_worker():
     except Exception as e:
         print(f"[WORKER] Notice: Ollama not reachable on start ({e}). Continuing.")
 
+    # Start Heartbeat Daemon Thread
+    hb_thread = WorkerHeartbeatThread(data_dir, started_at_iso)
+    hb_thread.ollama_ok = ollama_ok
+    hb_thread.model_warm = model_warm
+    hb_thread.write_heartbeat()
+    hb_thread.start()
+
+    # Load seen nonces
+    seen_nonces_list = _load_seen_nonces(data_dir)
+    seen_nonces_set = set(seen_nonces_list)
+
     # Start MQTT Subscriber
     device_subscriber = DeviceStatusSubscriber(data_dir)
     device_subscriber.start()
+    hb_thread.subscriber = device_subscriber
 
     running = True
 
@@ -366,65 +561,133 @@ def run_worker():
     if hasattr(signal, "SIGTERM"):
         signal.signal(signal.SIGTERM, _sig_handler)
 
-    last_heartbeat_time = 0.0
-
     while running:
-        now = time.time()
-        if now - last_heartbeat_time >= 2.0:
-            _write_heartbeat(data_dir, started_at_iso, ollama_ok, model_warm)
-            last_heartbeat_time = now
-
         inbox_files = sorted(inbox_dir.glob("*.json"))
         for req_file in inbox_files:
+            stem = req_file.stem
+            is_stem_valid = bool(ID_PATTERN.match(stem))
+
             try:
                 content = req_file.read_text(encoding="utf-8").strip()
                 if not content:
+                    try:
+                        req_file.unlink()
+                    except Exception:
+                        pass
                     continue
                 req = json.loads(content)
             except Exception as e:
+                # Audit worker_rejected for malformed JSON
+                security.logger.log_event(
+                    "worker_rejected",
+                    {
+                        "error": str(e),
+                        "file": req_file.name,
+                        "reason": "malformed_json",
+                    },
+                )
+                if is_stem_valid:
+                    outbox_file = outbox_dir / f"{stem}.jsonl"
+                    _write_rejection_outbox(outbox_file, "malformed JSON in request")
+
                 try:
                     req_file.unlink()
                 except Exception:
                     pass
                 continue
 
-            req_id = req.get("id", req_file.stem)
-            outbox_file = outbox_dir / f"{req_id}.jsonl"
+            # Validate ID against ID_PATTERN
+            req_id = req.get("id")
+            is_id_valid = isinstance(req_id, str) and bool(ID_PATTERN.match(req_id))
+
+            # Validate kind
+            kind = req.get("kind", "chat")
+            is_kind_valid = kind in ("chat", "direct_tool")
+
+            # Validate role defined in policy.yaml
+            valid_roles = set(security.policy_loader.POLICY.get("roles", {}).keys())
+            role = req.get("role", "guest")
+            is_role_valid = isinstance(role, str) and (role in valid_roles)
+
+            # Validate timestamp (epoch seconds, |now - ts| <= 60s)
+            ts = req.get("ts")
+            is_ts_valid = False
+            if ts is not None and isinstance(ts, (int, float)):
+                if abs(time.time() - float(ts)) <= 60.0:
+                    is_ts_valid = True
+
+            # Validate nonce (16 random bytes hex = 32 hex chars)
+            nonce = req.get("nonce")
+            is_nonce_valid = (
+                isinstance(nonce, str)
+                and len(nonce) == 32
+                and all(c in "0123456789abcdefABCDEF" for c in nonce)
+            )
+            is_nonce_new = is_nonce_valid and (nonce not in seen_nonces_set)
 
             # Check signature
             sig = req.get("signature")
             sign_payload = {k: v for k, v in req.items() if k != "signature"}
+            is_sig_valid = bool(sig and security.signing.verify(sign_payload, sig))
 
-            if not sig or not security.signing.verify(sign_payload, sig):
+            # Determine rejection reason
+            reject_reason = None
+            reject_detail = None
+
+            if not is_sig_valid:
+                reject_reason = "bad_or_missing_signature"
+                reject_detail = "invalid or missing cryptographic signature"
+            elif not is_id_valid:
+                reject_reason = "invalid_request_id"
+                reject_detail = "request id format is invalid"
+            elif not is_kind_valid:
+                reject_reason = "unknown_kind"
+                reject_detail = f"unknown request kind '{kind}'"
+            elif not is_role_valid:
+                reject_reason = "invalid_role"
+                reject_detail = f"role '{role}' is not defined in policy"
+            elif not is_ts_valid:
+                reject_reason = "stale_timestamp"
+                reject_detail = "request timestamp is missing or outside 60-second window"
+            elif not is_nonce_valid:
+                reject_reason = "invalid_nonce"
+                reject_detail = "request nonce is missing or not a 16-byte hex token"
+            elif not is_nonce_new:
+                reject_reason = "replayed_nonce"
+                reject_detail = "request nonce has already been seen (replay detected)"
+
+            if reject_reason is not None:
                 security.logger.log_event(
                     "worker_rejected",
                     {
-                        "id": req_id,
-                        "reason": "bad_or_missing_signature",
+                        "file": req_file.name,
+                        "id": req_id if is_id_valid else "invalid",
+                        "reason": reject_reason,
                         "username": req.get("username", "unknown"),
                     },
                 )
-                err_line = {
-                    "detail": {"error": "bad or missing signature"},
-                    "stage": "worker",
-                    "status": "error",
-                    "timestamp": datetime.now(timezone.utc).isoformat(),
-                }
-                final_line = {
-                    "decision": "BLOCK",
-                    "error": "bad or missing signature",
-                    "final": True,
-                    "reply": "Request rejected: invalid or missing cryptographic signature.",
-                    "timestamp": datetime.now(timezone.utc).isoformat(),
-                }
-                with open(outbox_file, "a", encoding="utf-8") as f:
-                    f.write(json.dumps(err_line) + "\n")
-                    f.write(json.dumps(final_line) + "\n")
+                # Unsigned/invalid requests: use the inbox file stem (also validated) for outbox, never req["id"].
+                # If stem is invalid, write no outbox file at all.
+                if is_stem_valid:
+                    outbox_file = outbox_dir / f"{stem}.jsonl"
+                    _write_rejection_outbox(outbox_file, reject_detail)
+
                 try:
                     req_file.unlink()
                 except Exception:
                     pass
                 continue
+
+            # Record seen nonce and persist atomically
+            seen_nonces_set.add(nonce)
+            seen_nonces_list.append(nonce)
+            if len(seen_nonces_list) > 2000:
+                seen_nonces_list = seen_nonces_list[-2000:]
+                seen_nonces_set = set(seen_nonces_list)
+            _save_seen_nonces(data_dir, seen_nonces_list)
+
+            # Valid request: build outbox path using validated req_id
+            outbox_file = outbox_dir / f"{req_id}.jsonl"
 
             # Remove inbox file once read
             try:
@@ -443,17 +706,17 @@ def run_worker():
                     f.write(json.dumps(step) + "\n")
                     f.flush()
 
+            # Process request with busy state in heartbeat thread
+            hb_thread.set_busy(True, req_id)
             try:
-                kind = req.get("kind", "chat")
                 if kind == "direct_tool":
                     _process_direct_tool(req, emit, outbox_file)
                 else:
-                    # Role taken strictly from signed request
-                    assigned_role = req.get("role", "guest")
+                    assigned_role = role
                     user_text = req.get("text", "")
                     session_id = req.get("session_id", "default")
 
-                    res = run_turn(text=user_text, role=assigned_role, session_id=session_id, emit=emit)
+                    res = run_turn(text=user_text, role=assigned_role, session_id=session_id, emit=emit, request_id=req_id)
                     final = {
                         "decision": res.decision,
                         "error": res.error,
@@ -478,10 +741,25 @@ def run_worker():
                 with open(outbox_file, "a", encoding="utf-8") as f:
                     f.write(json.dumps(err_final) + "\n")
                     f.flush()
+            finally:
+                hb_thread.set_busy(False, None)
 
         time.sleep(0.3)
 
+    hb_thread.stop()
     device_subscriber.stop()
+    if lock_fd:
+        try:
+            if os.name == "nt":
+                import msvcrt
+                lock_fd.seek(0)
+                msvcrt.locking(lock_fd.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                import fcntl
+                fcntl.flock(lock_fd.fileno(), fcntl.LOCK_UN)
+            lock_fd.close()
+        except Exception:
+            pass
     print("[WORKER] Worker stopped gracefully.")
 
 

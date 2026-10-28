@@ -1,5 +1,5 @@
 """
-AegisAgent Phase 7 — Hardware CLI Dispatch Tool (No Ollama needed)
+AegisAgent Phase 7 -- Hardware CLI Dispatch Tool (No Ollama needed)
 """
 
 import sys

@@ -1,5 +1,5 @@
 """
-AegisAgent Phase 8 — Manual Dashboard Approval CLI Tool (No Ollama needed)
+AegisAgent Phase 8 -- Manual Dashboard Approval CLI Tool (No Ollama needed)
 
 Dispatches a HIGH-risk approval request to DashboardApprovalProvider so you can
 test approving or denying it in the Streamlit dashboard interface.

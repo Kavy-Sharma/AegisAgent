@@ -1,3 +1,3 @@
 """
-Phase 5 — Prompt Injection Detection Package
+Phase 5 -- Prompt Injection Detection Package
 """

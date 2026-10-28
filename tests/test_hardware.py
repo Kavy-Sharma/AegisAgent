@@ -1,5 +1,5 @@
 """
-Phase 7 — Pytest Test Suite for Hardware Bridge & Attack LED System
+Phase 7 -- Pytest Test Suite for Hardware Bridge & Attack LED System
 """
 
 import sys

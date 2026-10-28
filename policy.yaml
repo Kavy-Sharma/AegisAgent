@@ -43,13 +43,15 @@ detection:
 approval:
   enabled: true
   provider: dashboard       # console | dashboard (default: console)
-  timeout_seconds: 10
+  timeout_seconds: 60
   require_for_risk: [HIGH]    # use whatever risk label names the existing tool policy already uses
   require_for_review_verdict: true
 
 hardware:
-  mode: mqtt
-  broker_host: 10.115.143.146
+  mode: mqtt             # auto (detects USB Serial first, falls back to MQTT/fake) | serial | mqtt | fake
+  serial_port: auto      # auto (auto-detects CP210x, CH340, ESP32) or specific port (e.g. COM11)
+  baud_rate: 115200
+  broker_host: 127.0.0.1
   broker_port: 1883
   device_id: esp32-01
   mosquitto_exe: "C:\\Program Files\\mosquitto\\mosquitto.exe"

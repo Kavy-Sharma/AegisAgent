@@ -1,5 +1,5 @@
 """
-Phase 8B — AegisAgent Design System Tokens, Altair Theme & Time Formatting
+Phase 8B -- AegisAgent Design System Tokens, Altair Theme & Time Formatting
 """
 
 from datetime import datetime, timezone
@@ -11,7 +11,7 @@ import streamlit as st
 # IST ZoneInfo for India Standard Time
 IST_TZ = ZoneInfo("Asia/Kolkata")
 
-# Color Tokens (Light Theme Only — No Gradients, No Neon)
+# Color Tokens (Light Theme Only -- No Gradients, No Neon)
 COLOR_BACKGROUND = "#F6F5F2"
 COLOR_SURFACE = "#FFFFFF"
 COLOR_BORDER = "#E7E5E0"

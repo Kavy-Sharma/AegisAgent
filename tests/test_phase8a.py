@@ -1,5 +1,5 @@
 """
-Phase 8A — Comprehensive Test Suite
+Phase 8A -- Comprehensive Test Suite
 
 Tests:
 1. Signing & Verification (valid sig, bad sig, tampered field, replay attacks)

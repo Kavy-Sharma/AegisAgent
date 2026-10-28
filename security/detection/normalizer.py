@@ -1,5 +1,5 @@
 """
-Phase 5 — Text Normalizer and Multi-View Extraction
+Phase 5 -- Text Normalizer and Multi-View Extraction
 """
 
 import base64

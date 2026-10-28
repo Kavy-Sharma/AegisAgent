@@ -64,8 +64,26 @@ void handleCommand(const String& cmd) {
     digitalWrite(RED_LED, HIGH);
     redTimed = true; redStart = millis(); redDur = 5000;
     event("alert_blocked_shown");
+  } else if (cmd == "ping" || cmd == "status") {
+    Serial.println("STATUS:online");
+    event("ping_ack");
   } else {
     Serial.println("IGNORED: unknown or empty command");
+  }
+}
+
+void processSerial() {
+  while (Serial.available()) {
+    String line = Serial.readStringUntil('\n');
+    line.trim();
+    if (line.length() > 0) {
+      Serial.print("USB_RECV: "); Serial.println(line);
+      String cmd = getCommand(line);
+      if (cmd.length() == 0) {
+        cmd = line;
+      }
+      handleCommand(cmd);
+    }
   }
 }
 
@@ -152,6 +170,7 @@ void setup() {
   digitalWrite(BUZZER, LOW);
   digitalWrite(YELLOW_LED, LOW);
   Serial.println("\nAEGISAGENT DEVICE starting");
+  Serial.println("STATUS:online");
   WiFi.mode(WIFI_STA);
   WiFi.begin(WIFI_SSID, WIFI_PASS);
   lastWifiTry = millis();
@@ -160,6 +179,7 @@ void setup() {
 }
 
 void loop() {
+  processSerial();
   ensureWifi();
   ensureMqtt();
   mqtt.loop();

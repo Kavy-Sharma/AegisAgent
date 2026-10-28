@@ -1,5 +1,5 @@
 """
-Phase 5 — Detection Engine and Session Store
+Phase 5 -- Detection Engine and Session Store
 """
 
 from collections import defaultdict, deque

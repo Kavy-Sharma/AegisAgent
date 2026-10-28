@@ -1,5 +1,5 @@
 """
-Phase 8B — Dashboard Page: Agent Console
+Phase 8B -- Dashboard Page: Agent Console
 
 WHAT THIS PAGE DOES:
 Interactive chat interface connected to agent/worker.py via signed IPC files:
@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 import json
 import os
 from pathlib import Path
+import secrets
 import time
 import uuid
 import streamlit as st
@@ -40,10 +41,12 @@ def _send_request(text: str, role: str, username: str, session_id: str) -> dict:
     payload = {
         "id": req_id,
         "kind": "chat",
+        "nonce": secrets.token_hex(16),
         "role": role,
         "session_id": session_id,
         "text": text,
         "tool": None,
+        "ts": time.time(),
         "username": username,
     }
     payload["signature"] = security.signing.sign(payload)

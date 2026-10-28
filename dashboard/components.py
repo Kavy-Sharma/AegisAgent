@@ -1,5 +1,5 @@
 """
-Phase 8B — AegisAgent Component Library
+Phase 8B -- AegisAgent Component Library
 
 WHAT THIS FILE DOES:
 Provides reusable, theme-consistent UI components:

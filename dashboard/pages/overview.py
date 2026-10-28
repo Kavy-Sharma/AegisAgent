@@ -1,5 +1,5 @@
 """
-Phase 8B — Dashboard Page: Overview
+Phase 8B -- Dashboard Page: Overview
 
 WHAT THIS PAGE DOES:
 Displays high-level gateway telemetry, 4 KPI cards with hourly deltas,
@@ -55,63 +55,34 @@ def _load_events() -> list[dict]:
     return events
 
 
+import security.health
+
+
 def _get_device_status_info() -> tuple[str, str]:
-    device_file = _get_data_dir() / "device_status.json"
-    if not device_file.exists():
-        return "unknown", "No telemetry received"
-    try:
-        data = json.loads(device_file.read_text(encoding="utf-8"))
-        now_ts = time.time()
-        file_ts = None
-        if "last_seen" in data:
-            try:
-                file_ts = datetime.fromisoformat(data["last_seen"]).timestamp()
-            except Exception:
-                pass
-        if file_ts is None and "timestamp" in data:
-            try:
-                file_ts = float(data["timestamp"])
-            except Exception:
-                pass
-
-        if file_ts is not None and (now_ts - file_ts) > 60:
-            return "unknown", "Stale telemetry (>60s)"
-
-        is_online = data.get("online")
-        if is_online is None:
-            is_online = data.get("device_online")
-
-        if is_online is True:
-            last_seen_str = format_ist(data.get("last_seen") or file_ts, "%H:%M:%S IST")
-            return "online", f"Active (seen {last_seen_str})"
-        elif is_online is False:
-            return "offline", "Device reported offline"
-        return "unknown", "State indeterminate"
-    except Exception:
-        return "unknown", "Telemetry error"
+    health = security.health.get_system_health()
+    dev = health["device"]
+    st_val = dev["status"]
+    if st_val == "online":
+        seen_str = format_ist(dev.get("last_seen"), "%H:%M:%S IST") if dev.get("last_seen") else "retained"
+        return "online", f"Active (seen {seen_str})"
+    elif st_val == "offline":
+        return "offline", "Device reported offline"
+    return "unknown", "Broker disconnected / no status"
 
 
 def _get_worker_status_info() -> dict:
-    worker_file = _get_data_dir() / "worker_status.json"
-    if not worker_file.exists():
-        return {"alive": False, "detail": "Not running"}
-    try:
-        data = json.loads(worker_file.read_text(encoding="utf-8"))
-        last_hb = data.get("last_heartbeat")
-        if not last_hb:
-            return {"alive": False, "detail": "Missing heartbeat"}
-        dt = datetime.fromisoformat(last_hb)
-        age = (datetime.now(timezone.utc) - dt).total_seconds()
-        alive = age <= 5.0
-        return {
-            "alive": alive,
-            "detail": f"PID {data.get('pid', '?')} (seen {format_ist(last_hb, '%H:%M:%S IST')})",
-            "model_warm": data.get("model_warm", False),
-            "ollama_ok": data.get("ollama_ok", False),
-            "pid": data.get("pid"),
-        }
-    except Exception:
-        return {"alive": False, "detail": "Corrupted status file"}
+    health = security.health.get_system_health()
+    w = health["worker"]
+    last_hb = w.get("last_heartbeat")
+    detail = f"PID {w.get('pid', '?')} (seen {format_ist(last_hb, '%H:%M:%S IST')})" if last_hb else w.get("detail", "Not running")
+    return {
+        "alive": w["alive"],
+        "busy": w.get("busy", False),
+        "detail": detail,
+        "model_warm": w.get("model_warm", False),
+        "ollama_ok": w.get("ollama_ok", False),
+        "pid": w.get("pid"),
+    }
 
 
 @st.fragment(run_every="2s")
@@ -346,7 +317,9 @@ def _render_overview_content():
         )
 
         if st.button(":material/verified_user: Verify Audit Chain", use_container_width=True):
-            is_intact, msg = check_audit_log_status()
+            h = security.health.get_system_health(force_audit_check=True)
+            is_intact = h["audit_chain"]["intact"]
+            msg = h["audit_chain"]["message"]
             if is_intact:
                 st.success(f"Audit Integrity Verified: {msg}")
             else:
