@@ -218,7 +218,16 @@ def api_overview():
     dev = health.get("device", {})
     dev_status = dev.get("status", "unknown")
     dev_seen = _format_ist(dev.get("last_seen")) if dev.get("last_seen") else "retained"
-    dev_hint = f"Active (seen {dev_seen})" if dev_status == "online" else ("Reported offline" if dev_status == "offline" else "Broker disconnected")
+    worker_alive = health.get("worker", {}).get("alive", False)
+    dev_port = dev.get("port") or "COM11"
+    if dev_status == "online":
+        dev_hint = f"Connected on {dev_port}" if dev.get("transport") == "usb_serial" else f"Active (seen {dev_seen})"
+    elif not worker_alive:
+        dev_hint = "Worker service offline"
+    elif dev_status == "offline":
+        dev_hint = f"Disconnected from {dev_port}"
+    else:
+        dev_hint = "Checking hardware link..."
 
     # 30-min rolling stacked bar buckets (per minute)
     now_minute = now_utc.replace(second=0, microsecond=0)
@@ -480,6 +489,25 @@ def api_console_clear_threat():
         "status": "ok",
         "message": "Threat window and cumulative suspicion cleared for active session.",
         "session_id": new_sess,
+    })
+
+
+# 5c. Agent Console: Release Session Quarantine (Admin only)
+@api_bp.route("/console/release_quarantine", methods=["POST"])
+@role_required("admin")
+def api_console_release_quarantine():
+    import security.quarantine
+    active_sess = session.get("console_session_id", "default")
+    security.quarantine.release_quarantine(active_sess)
+    security.gateway.reset_session_history(active_sess)
+    security.logger.log_event("quarantine_released_by_admin", {
+        "admin": session.get("username", "admin"),
+        "session_id": active_sess,
+    })
+    return jsonify({
+        "status": "ok",
+        "message": "Quarantine released and threat suspicion reset.",
+        "session_id": active_sess,
     })
 
 

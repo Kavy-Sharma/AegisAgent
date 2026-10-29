@@ -66,7 +66,7 @@ class DeviceStatusSubscriber:
         self._since = None
 
         hw_cfg = security.policy_loader.POLICY.get("hardware", {})
-        self.mode = hw_cfg.get("mode", "fake")
+        self.mode = hw_cfg.get("mode", "auto")
         self.host = hw_cfg.get("broker_host", "127.0.0.1")
         self.port = int(hw_cfg.get("broker_port", 1883))
         self.device_id = hw_cfg.get("device_id", "esp32-01")
@@ -263,12 +263,13 @@ class WorkerHeartbeatThread(threading.Thread):
     def _refresh_hardware(self):
         try:
             hw_cfg = security.policy_loader.POLICY.get("hardware", {})
-            mode = hw_cfg.get("mode", "fake")
+            mode = hw_cfg.get("mode", "auto")
             if mode in ("auto", "serial"):
                 bridge = security.hardware.get_bridge()
                 if hasattr(bridge, "is_device_online"):
                     is_on = bridge.is_device_online()
                     if hasattr(self, "subscriber") and self.subscriber:
+                        self.subscriber.broker_connected = True
                         self.subscriber._write_device_status(is_online=is_on)
         except Exception:
             pass
@@ -419,6 +420,7 @@ def _process_direct_tool(req: dict, emit, outbox_file: Path):
     session_id = req.get("session_id", "direct_tool_session")
 
     emit("detection", "skip", {"reason": "direct_tool bypasses prompt injection scan"})
+    emit("intent", "skip", {"reason": "direct_tool bypasses intent lock"})
     emit("llm", "skip", {"reason": "direct_tool bypasses LLM"})
 
     # Evaluate permissions, rate limits, and approvals via gateway.evaluate without duplicate checks

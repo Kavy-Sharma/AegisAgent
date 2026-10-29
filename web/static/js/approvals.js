@@ -16,9 +16,33 @@
 
   function init() {
     setupFilterChips();
+    setupReturnLink();
     pollApprovals();
     pollTimer = setInterval(pollApprovals, 2000);
     countdownTimer = setInterval(updateCountdowns, 1000);
+  }
+
+  function setupReturnLink() {
+    try {
+      const returnTo = new URLSearchParams(window.location.search).get("return_to");
+      const returnLink = document.getElementById("approvals-return-link");
+      const returnText = document.getElementById("approvals-return-text");
+      if (returnTo && returnLink) {
+        returnLink.href = returnTo;
+        returnLink.style.display = "inline-flex";
+        if (returnText) {
+          if (returnTo.indexOf("voice") !== -1) {
+            returnText.textContent = "← Return to Aura Voice";
+          } else if (returnTo === "/" || returnTo.indexOf("overview") !== -1) {
+            returnText.textContent = "← Return to Overview";
+          } else if (returnTo.indexOf("console") !== -1) {
+            returnText.textContent = "← Return to Console";
+          } else {
+            returnText.textContent = "← Return to Previous Page";
+          }
+        }
+      }
+    } catch (e) {}
   }
 
   function setupFilterChips() {
@@ -391,6 +415,18 @@
           window.showToast(approved ? "Operation authorized." : "Operation denied.", approved ? "ok" : "warn");
         }
         await pollApprovals();
+
+        // Round-trip return navigation
+        const urlParams = new URLSearchParams(window.location.search);
+        const returnTo = urlParams.get("return_to");
+        if (returnTo) {
+          if (window.showToast) {
+            window.showToast("Returning to Previous Screen", "Decision confirmed. Navigating back...", "info", 2000);
+          }
+          setTimeout(() => {
+            window.location.href = returnTo;
+          }, 1000);
+        }
       } else {
         const msg = (res && res.error) || "Decision submission failed.";
         if (window.showToast) window.showToast(msg, "danger");

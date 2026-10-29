@@ -19,6 +19,25 @@
     </div>
   </div>
 
+  <!-- Dynamic Authorization Banner for Operator Alerts -->
+  <div class="card p-md mb-lg border border-warn bg-warn-subtle flex items-center justify-between" id="overview-pending-alert-banner" style="display: none; border-left: 4px solid var(--warn);">
+    <div class="flex items-center gap-sm">
+      <div class="p-xs rounded bg-warn text-surface flex items-center justify-center">
+        <svg class="icon icon-sm text-warn"><use href="/static/icons.svg#icon-alert-triangle"></use></svg>
+      </div>
+      <div>
+        <strong class="text-sm font-semibold text-warn">Human Authorization Required</strong>
+        <p class="text-xs text-muted mb-0"><span id="overview-pending-count-text">1 high-risk action</span> waiting in authorization queue.</p>
+      </div>
+    </div>
+    <div class="flex items-center gap-xs">
+      <a href="/approvals?return_to=/" class="btn btn-primary btn-xs flex items-center gap-xs">
+        <svg class="icon icon-xs"><use href="/static/icons.svg#icon-shield"></use></svg>
+        <span>Review & Authorize (Returns to Overview) &rarr;</span>
+      </a>
+    </div>
+  </div>
+
   <!-- Row 1: 4 KPI Cards with Sparklines & Deltas -->
   <div class="kpi-grid">
     <!-- KPI 1: Requests (Past Hour) -->
@@ -62,7 +81,7 @@
           <span class="kpi-value tabular-nums font-mono" id="kpi-pending-val">0</span>
           <span class="kpi-delta text-warn" id="kpi-pending-delta">Real-time queue</span>
         </div>
-        <a href="/approvals" class="btn btn-ghost btn-xs">View Queue &rarr;</a>
+        <a href="/approvals?return_to=/" class="btn btn-ghost btn-xs">View Queue &rarr;</a>
       </div>
     </div>
 

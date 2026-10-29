@@ -9,7 +9,14 @@ from datetime import datetime, timezone, timedelta
 import os
 from pathlib import Path
 import secrets
+import sys
 import time
+
+# Ensure project root is in sys.path when executed directly
+ROOT_DIR = Path(__file__).resolve().parent.parent
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
+
 from flask import (
     Flask,
     abort,
@@ -186,6 +193,13 @@ def create_app() -> Flask:
     @role_required("admin")
     def approvals():
         return render_template("approvals.html", active_page="approvals")
+
+    @app.route("/voice", methods=["GET"])
+    @login_required
+    def voice():
+        health = security.health.get_system_health()
+        worker_alive = bool(health.get("worker", {}).get("alive"))
+        return render_template("voice.html", active_page="voice", worker_alive=worker_alive)
 
     # Error Handlers
     @app.errorhandler(400)

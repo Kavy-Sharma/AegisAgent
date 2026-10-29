@@ -55,3 +55,14 @@ def get_rate_limit() -> tuple[int, int]:
     max_calls = default_limit.get("max_calls", 5)
     window_seconds = default_limit.get("window_seconds", 60)
     return max_calls, window_seconds
+
+
+def is_untrusted_output(tool_name: str) -> bool:
+    """
+    Returns True if the tool output is untrusted (e.g., read_note),
+    triggering taint tracking for provenance.
+    """
+    tools = POLICY.get("tools", {})
+    if tool_name not in tools:
+        return False
+    return bool(tools[tool_name].get("untrusted_output", False))

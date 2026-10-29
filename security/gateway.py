@@ -24,6 +24,9 @@ def evaluate(
     role: str = "guest",
     session_id: str = "default",
     emit=None,
+    scope=None,
+    tainted: bool = False,
+    taint_source: str | None = None,
 ) -> dict:
     """
     Evaluates a tool execution request against active policy rules.
@@ -31,9 +34,10 @@ def evaluate(
     ORDER OF CHECKS:
     1. Tool existence check
     2. Role-Based Access Control (RBAC)
-    3. Sliding window rate limiting
-    4. Human approval check (if tool risk requires approval)
-    5. Tamper-evident audit logging
+    3. Intent Lock check (if enabled and scope provided)
+    4. Sliding window rate limiting
+    5. Human approval check (if tool risk requires approval)
+    6. Tamper-evident audit logging
     """
     def _emit(stage: str, status: str, detail: dict):
         if emit is not None:
@@ -43,6 +47,15 @@ def evaluate(
                 pass
 
     risk = policy_loader.get_risk(tool_name)
+
+    # Honeypot Check: Instant Trap Activation
+    if risk == "HONEYPOT":
+        decision = "BLOCK"
+        reason = f"HONEYPOT TRAP ACTIVATED: Unauthorized access attempt on honeypot tool '{tool_name}'"
+        _emit("rbac", "block", {"tool": tool_name, "reason": reason})
+        logger.log_decision(tool_name, tool_args, role, risk, decision, reason)
+        security.hardware.trigger_block_alert()
+        return {"decision": decision, "reason": reason}
 
     # a. If tool_name not in policy -> decision BLOCK, reason "unknown tool"
     if risk is None:
@@ -62,6 +75,21 @@ def evaluate(
         security.hardware.trigger_block_alert()
         return {"decision": decision, "reason": reason}
     _emit("rbac", "pass", {"tool": tool_name, "role": role})
+
+    # Intent Lock check: after RBAC, before rate limit
+    intent_cfg = policy_loader.POLICY.get("intent_lock", {})
+    if intent_cfg.get("enabled", True) and scope is not None:
+        if tool_name not in scope:
+            decision = "BLOCK"
+            reason = f"outside intent scope: this request did not ask for '{tool_name}'"
+            _emit("intent", "block", {
+                "tool": tool_name,
+                "reason": reason,
+                "scope": sorted(list(scope)) if isinstance(scope, (set, list)) else [],
+            })
+            logger.log_decision(tool_name, tool_args, role, risk, decision, reason)
+            security.hardware.trigger_block_alert()
+            return {"decision": decision, "reason": reason}
 
     # c. If NOT rate_limiter.check_rate_limit(tool_name) -> decision BLOCK (human operator NEVER asked)
     _emit("rate_limit", "running", {"tool": tool_name})
@@ -90,6 +118,11 @@ def evaluate(
         last_v = engine.get_last_verdict(session_id)
         if last_v and last_v.decision in ("REVIEW", "BLOCK"):
             reasons.append(f"WARNING: this session triggered injection detection (score {last_v.score:.2f})")
+
+        prov_cfg = policy_loader.POLICY.get("provenance", {})
+        if prov_cfg.get("enabled", True) and tainted and risk == "HIGH":
+            source_str = taint_source if taint_source else "untrusted content"
+            reasons.append(f"Requested after untrusted content from {source_str}")
 
         req = ApprovalRequest(
             session_id=session_id,

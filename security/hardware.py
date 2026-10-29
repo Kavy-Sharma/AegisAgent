@@ -428,18 +428,31 @@ _bridge_instance = None
 
 def get_bridge():
     global _bridge_instance
-    if _bridge_instance is None:
-        hw_cfg = policy_loader.POLICY.get("hardware", {})
-        mode = hw_cfg.get("mode", "mqtt")
+    hw_cfg = policy_loader.POLICY.get("hardware", {})
+    mode = hw_cfg.get("mode", "auto")
 
-        if mode == "fake":
+    if mode == "fake":
+        if not isinstance(_bridge_instance, FakeBridge):
             _bridge_instance = FakeBridge()
-        elif mode == "serial":
+        return _bridge_instance
+    elif mode == "serial":
+        if not isinstance(_bridge_instance, SerialHardwareBridge):
             _bridge_instance = SerialHardwareBridge()
-        elif mode == "mqtt":
+        return _bridge_instance
+    elif mode == "mqtt":
+        if not isinstance(_bridge_instance, HardwareBridge):
             _bridge_instance = HardwareBridge()
-        elif mode == "auto":
-            # Check if USB serial device is available first
+        return _bridge_instance
+    elif mode == "auto":
+        needs_detect = False
+        if _bridge_instance is None:
+            needs_detect = True
+        elif isinstance(_bridge_instance, HardwareBridge) and not _bridge_instance.is_device_online():
+            needs_detect = True
+        elif isinstance(_bridge_instance, SerialHardwareBridge) and not getattr(_bridge_instance, "device_online", False):
+            needs_detect = True
+
+        if needs_detect:
             try:
                 import serial.tools.list_ports
                 ports = list(serial.tools.list_ports.comports())
@@ -449,17 +462,19 @@ def get_bridge():
                            for k in ["cp210", "ch340", "ftdi", "usb to uart", "esp32", "silicon labs"])
                 ]
                 if usb_ports:
-                    _bridge_instance = SerialHardwareBridge(port=usb_ports[0])
+                    curr_port = getattr(_bridge_instance, "_detected_port", None) or getattr(_bridge_instance, "port_setting", None)
+                    if not isinstance(_bridge_instance, SerialHardwareBridge) or curr_port != usb_ports[0]:
+                        _bridge_instance = SerialHardwareBridge(port=usb_ports[0])
             except Exception:
                 pass
 
-            if _bridge_instance is None:
-                _bridge_instance = HardwareBridge()
-        else:
-            # Mode not fake: fail closed to HardwareBridge (never silent FakeBridge)
+        if _bridge_instance is None:
             _bridge_instance = HardwareBridge()
-
-    return _bridge_instance
+        return _bridge_instance
+    else:
+        if _bridge_instance is None:
+            _bridge_instance = HardwareBridge()
+        return _bridge_instance
 
 
 def set_bridge(bridge):

@@ -39,11 +39,17 @@
             <svg class="icon"><use href="/static/icons.svg#icon-shield"></use></svg>
           </div>
           <div class="chat-msg-bubble">
-            <div class="assistant-text">
-              Welcome to the AegisAgent Autonomous Execution Console. All instructions dispatched here are cryptographically verified and inspected through our multi-stage security pipeline.
-            </div>
-            <div class="assistant-hint text-xs text-muted mt-xs">
-              Dispatched commands pass through Prompt Injection Detection, LLM Planning, RBAC Verification, Rate Limiting, Operator Approval, and Output Sanitization.
+            <div class="assistant-response-card">
+              <div class="assistant-response-tag">
+                <svg class="icon icon-xs"><use href="/static/icons.svg#icon-shield"></use></svg>
+                <span>Aegis Security Gateway</span>
+              </div>
+              <div class="assistant-text">
+                Welcome to the AegisAgent Autonomous Execution Console. All instructions dispatched here are cryptographically verified and inspected through our multi-stage security pipeline.
+              </div>
+              <div class="assistant-hint text-xs text-muted mt-xs">
+                Dispatched commands pass through Prompt Injection Detection, Intent Lock, LLM Planning, RBAC Verification, Rate Limiting, Operator Approval, and Output Sanitization.
+              </div>
             </div>
           </div>
         </div>
@@ -156,27 +162,31 @@
             </div>
             <div class="legend-stage-item flex items-center gap-xs">
               <span class="pulse-dot live"></span>
-              <span>2. LLM Reasoning Engine</span>
+              <span>2. Intent Lock</span>
             </div>
             <div class="legend-stage-item flex items-center gap-xs">
               <span class="pulse-dot live"></span>
-              <span>3. RBAC Policy Check</span>
+              <span>3. LLM Reasoning Engine</span>
             </div>
             <div class="legend-stage-item flex items-center gap-xs">
               <span class="pulse-dot live"></span>
-              <span>4. Rate Limiter</span>
+              <span>4. RBAC Policy Check</span>
             </div>
             <div class="legend-stage-item flex items-center gap-xs">
               <span class="pulse-dot live"></span>
-              <span>5. Operator Approval</span>
+              <span>5. Rate Limiter</span>
             </div>
             <div class="legend-stage-item flex items-center gap-xs">
               <span class="pulse-dot live"></span>
-              <span>6. Hardware Execution</span>
+              <span>6. Operator Approval</span>
             </div>
             <div class="legend-stage-item flex items-center gap-xs">
               <span class="pulse-dot live"></span>
-              <span>7. Output Sanitization</span>
+              <span>7. Hardware Execution</span>
+            </div>
+            <div class="legend-stage-item flex items-center gap-xs">
+              <span class="pulse-dot live"></span>
+              <span>8. Output Sanitization</span>
             </div>
           </div>
         </div>
@@ -187,5 +197,5 @@
 {% endblock %}
 
 {% block extra_js %}
-<script src="/static/js/console.js"></script>
+<script src="/static/js/console.js?t=20261029b"></script>
 {% endblock %}

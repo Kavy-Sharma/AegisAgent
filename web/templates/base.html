@@ -45,6 +45,11 @@
           <span class="nav-label">Console</span>
         </a>
 
+        <a href="/voice" class="nav-item {% if active_page == 'voice' %}active{% endif %}" title="Aura Voice AI Assistant (G then V)">
+          <svg class="icon nav-icon"><use href="/static/icons.svg#icon-mic"></use></svg>
+          <span class="nav-label">Aura Voice</span>
+        </a>
+
         {% if session.get('role') == 'admin' %}
         <a href="/approvals" class="nav-item {% if active_page == 'approvals' %}active{% endif %}" title="Human Approvals Queue (G then A)">
           <svg class="icon nav-icon"><use href="/static/icons.svg#icon-shield"></use></svg>
@@ -239,13 +244,76 @@
     </div>
   </div>
 
+  <!-- Security Quarantine Lockdown Modal (Air-Gap Protection) -->
+  <div class="modal-backdrop" id="quarantine-lockdown-modal">
+    <div class="modal-card quarantine-modal-card">
+      <div class="modal-header border-b border-danger-subtle bg-danger-subtle p-md flex items-center justify-between">
+        <div class="modal-title-group flex items-center gap-sm">
+          <div class="quarantine-shield-wrap">
+            <svg class="icon text-danger icon-lg"><use href="/static/icons.svg#icon-alert-triangle"></use></svg>
+          </div>
+          <div>
+            <h3 class="modal-title font-bold text-danger text-base">AIR-GAP SECURITY CONTAINMENT ACTIVE</h3>
+            <p class="modal-subtitle text-xs text-muted">Session Quarantined: Multiple Consecutive Prompt Injections Detected</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-body p-lg">
+        <div class="quarantine-alert-box p-md rounded border border-danger mb-md">
+          <p class="text-sm font-medium mb-xs text-danger">
+            ⚠️ Physical Actuation Locked Down to Prevent Hardware Takeover
+          </p>
+          <p class="text-xs text-muted">
+            To prevent potential hardware sabotage (e.g. unauthorized door unlocking or siren activation), this session has been placed in air-gap containment. Outbound tool calls and hardware triggers are temporarily frozen.
+          </p>
+        </div>
+
+        <div class="quarantine-meta-grid mb-md">
+          <div class="quarantine-stat">
+            <span class="text-xs text-muted block">Enforcement Trigger</span>
+            <strong class="text-danger font-mono text-sm">3 Consecutive Injection Blocks</strong>
+          </div>
+          <div class="quarantine-stat">
+            <span class="text-xs text-muted block">Hardware Protection State</span>
+            <strong class="text-ok font-mono text-sm">SAFE & ISOLATED</strong>
+          </div>
+        </div>
+
+        <div class="demo-override-callout p-sm rounded bg-surface border border-subtle">
+          <span class="text-xs font-semibold text-accent block mb-xxs">Demo & Viva Fast-Track</span>
+          <span class="text-xs text-muted">In production, sessions are isolated for incident review. For live demonstrations and college evaluation, administrators can immediately reset the threat window with 1 click without waiting.</span>
+        </div>
+      </div>
+
+      <div class="modal-footer flex items-center justify-between p-md border-top">
+        <form action="/logout" method="POST" class="inline-form">
+          <input type="hidden" name="csrf_token" value="{{ session.get('csrf_token') }}">
+          <button type="submit" class="btn btn-secondary btn-sm flex items-center gap-xs">
+            <svg class="icon icon-xs"><use href="/static/icons.svg#icon-log-out"></use></svg>
+            <span>Sign Out Session</span>
+          </button>
+        </form>
+
+        {% if session.get('role') == 'admin' %}
+        <button type="button" class="btn btn-danger btn-sm flex items-center gap-xs" id="quarantine-instant-unlock-btn">
+          <svg class="icon icon-xs"><use href="/static/icons.svg#icon-shield"></use></svg>
+          <span>Admin Override: Instant Release & Reset</span>
+        </button>
+        {% else %}
+        <span class="text-xs text-muted">Contact administrator to release session quarantine.</span>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
   <!-- Global Toast Notification Container -->
   <div class="toast-container" id="toast-container" aria-live="polite"></div>
 
   <!-- Core Scripts -->
-  <script src="/static/js/api.js"></script>
-  <script src="/static/js/app.js"></script>
-  <script src="/static/js/shortcuts.js"></script>
+  <script src="/static/js/api.js?t=20261029b"></script>
+  <script src="/static/js/app.js?t=20261029b"></script>
+  <script src="/static/js/shortcuts.js?t=20261029b"></script>
   {% block extra_js %}{% endblock %}
 </body>
 </html>

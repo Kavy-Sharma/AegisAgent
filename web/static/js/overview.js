@@ -71,8 +71,22 @@
 
     // Pending Approvals
     if (kpis.pending_approvals) {
-      updateNumberWithFade("kpi-pending-val", kpis.pending_approvals.value);
+      var pVal = kpis.pending_approvals.value || 0;
+      updateNumberWithFade("kpi-pending-val", pVal);
       setText("kpi-pending-delta", kpis.pending_approvals.delta || "Real-time queue");
+
+      var banner = document.getElementById("overview-pending-alert-banner");
+      var countText = document.getElementById("overview-pending-count-text");
+      if (banner) {
+        if (pVal > 0) {
+          banner.style.display = "flex";
+          if (countText) {
+            countText.textContent = pVal + " high-risk action" + (pVal > 1 ? "s" : "");
+          }
+        } else {
+          banner.style.display = "none";
+        }
+      }
     }
 
     // Device Status

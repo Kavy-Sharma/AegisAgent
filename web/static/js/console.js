@@ -11,9 +11,10 @@
 
   if (!chatStream || !chatTextarea) return;
 
-  var STAGES = ["detection", "llm", "rbac", "rate_limit", "approval", "hardware", "output_scan"];
+  var STAGES = ["detection", "intent", "llm", "rbac", "rate_limit", "approval", "hardware", "output_scan"];
   var STAGE_LABELS = {
     detection: "Detection",
+    intent: "Intent",
     llm: "LLM",
     rbac: "RBAC",
     rate_limit: "Rate Limit",
@@ -22,7 +23,77 @@
     output_scan: "Output Scan",
   };
 
+  var isQuarantineActive = false;
+
+  function setQuarantineLockdown(locked) {
+    isQuarantineActive = locked;
+    var container = document.querySelector(".chat-input-bar") || document.querySelector(".chat-input-wrap");
+    var existingBar = document.getElementById("console-quarantine-bar");
+
+    if (locked) {
+      if (chatTextarea) {
+        chatTextarea.disabled = true;
+        chatTextarea.placeholder = "🚨 SESSION QUARANTINED: Hardware protected. Admin release required.";
+      }
+      if (chatSendBtn) {
+        chatSendBtn.disabled = true;
+      }
+      if (!existingBar && container) {
+        var bar = document.createElement("div");
+        bar.id = "console-quarantine-bar";
+        bar.className = "console-quarantine-bar";
+        bar.innerHTML = '<div class="flex items-center gap-xs">' +
+          '<svg class="icon text-danger icon-sm"><use href="/static/icons.svg#icon-alert-triangle"></use></svg>' +
+          '<strong class="text-danger text-xs uppercase tracking-wider">Air-Gap Containment Active — 3 Injections Exceeded</strong>' +
+          '</div>' +
+          '<button type="button" class="btn btn-danger btn-xs" id="bar-release-quarantine-btn">' +
+          '<span>Admin Override: Instant Release</span>' +
+          '</button>';
+        container.parentNode.insertBefore(bar, container);
+
+        var btn = document.getElementById("bar-release-quarantine-btn");
+        if (btn) {
+          btn.addEventListener("click", function () {
+            btn.disabled = true;
+            btn.textContent = "Releasing...";
+            api.releaseQuarantine().then(function () {
+              setQuarantineLockdown(false);
+              app.showToast("Quarantine Released", "Threat score reset. Console ready for commands.", "ok", 4000);
+            }).catch(function (err) {
+              app.showToast("Release Error", err.message, "danger");
+              btn.disabled = false;
+              btn.textContent = "Admin Override: Instant Release";
+            });
+          });
+        }
+      }
+      if (window.AegisApp && window.AegisApp.openQuarantineModal) {
+        window.AegisApp.openQuarantineModal();
+      }
+    } else {
+      if (existingBar && existingBar.parentNode) {
+        existingBar.parentNode.removeChild(existingBar);
+      }
+      if (chatTextarea) {
+        chatTextarea.disabled = false;
+        chatTextarea.placeholder = "Dispatched command or prompt (e.g. 'Turn on the light', 'What is the temperature?')...";
+        chatTextarea.focus();
+      }
+      if (chatSendBtn) {
+        chatSendBtn.disabled = false;
+      }
+      if (window.AegisApp && window.AegisApp.closeQuarantineModal) {
+        window.AegisApp.closeQuarantineModal();
+      }
+    }
+  }
+
   function setTurnRunning(running) {
+    if (isQuarantineActive) {
+      if (chatSendBtn) chatSendBtn.disabled = true;
+      if (chatTextarea) chatTextarea.disabled = true;
+      return;
+    }
     if (chatSendBtn) chatSendBtn.disabled = running;
     if (chatTextarea) chatTextarea.disabled = running;
     if (!running && chatTextarea) {
@@ -63,12 +134,7 @@
     var bubble = document.createElement("div");
     bubble.className = "chat-msg-bubble";
 
-    var textEl = document.createElement("div");
-    textEl.className = "assistant-text";
-    textEl.textContent = "Processing request...";
-    bubble.appendChild(textEl);
-
-    // Pipeline stepper container
+    // 1. Pipeline stepper container (Rendered ON TOP as requested)
     var stepper = document.createElement("div");
     stepper.className = "pipeline-stepper";
 
@@ -93,11 +159,35 @@
 
     bubble.appendChild(stepper);
 
-    // Callout container for blocks or warnings
+    // 2. Callout container for blocks or warnings
     var callout = document.createElement("div");
     callout.className = "turn-callout";
     callout.style.setProperty("display", "none");
     bubble.appendChild(callout);
+
+    // 3. Catchy Agent Response Card (Rendered BELOW the stepper)
+    var responseCard = document.createElement("div");
+    responseCard.className = "assistant-response-card";
+
+    var responseHeader = document.createElement("div");
+    responseHeader.className = "assistant-response-tag";
+    var tagSvg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    tagSvg.setAttribute("class", "icon icon-xs");
+    var tagUse = document.createElementNS("http://www.w3.org/2000/svg", "use");
+    tagUse.setAttribute("href", "/static/icons.svg#icon-shield");
+    tagSvg.appendChild(tagUse);
+    var tagLabel = document.createElement("span");
+    tagLabel.textContent = "Agent Response";
+    responseHeader.appendChild(tagSvg);
+    responseHeader.appendChild(tagLabel);
+    responseCard.appendChild(responseHeader);
+
+    var textEl = document.createElement("div");
+    textEl.className = "assistant-text";
+    textEl.textContent = "Processing request...";
+    responseCard.appendChild(textEl);
+
+    bubble.appendChild(responseCard);
 
     msg.appendChild(avatar);
     msg.appendChild(bubble);
@@ -107,6 +197,7 @@
     return {
       msg: msg,
       textEl: textEl,
+      responseCard: responseCard,
       bubble: bubble,
       stepper: stepper,
       nodeMap: nodeMap,
@@ -223,13 +314,19 @@
             }
 
             if (final.decision === "BLOCK") {
+              if (turnUi.responseCard) turnUi.responseCard.style.setProperty("display", "none");
               turnUi.textEl.textContent = "";
               turnUi.callout.className = "callout-blocked";
               turnUi.callout.style.setProperty("display", "block");
               var errDetail = final.error || "Policy violation";
               var isCumulative = errDetail.indexOf("Cumulative suspicion") !== -1;
+              var isOutOfScope = errDetail.indexOf("outside intent scope") !== -1;
+              var isQuarantine = errDetail.indexOf("SESSION QUARANTINED") !== -1;
+              if (isQuarantine) {
+                setQuarantineLockdown(true);
+              }
               var ruleMatch = errDetail.match(/INJ-[0-9]{3}/);
-              var ruleBadge = ruleMatch ? ruleMatch[0] : (isCumulative ? "CTX-WINDOW" : "SECURITY-GATE");
+              var ruleBadge = ruleMatch ? ruleMatch[0] : (isCumulative ? "CTX-WINDOW" : (isOutOfScope ? "OUT-OF-SCOPE" : (isQuarantine ? "QUARANTINE" : "SECURITY-GATE")));
 
               // Pure DOM creation + textContent
               turnUi.callout.replaceChildren();
@@ -290,12 +387,33 @@
                 clearUse.setAttribute("href", "/static/icons.svg#icon-refresh");
                 clearSvg.appendChild(clearUse);
                 var clearText = document.createElement("span");
-                clearText.textContent = "Acknowledge & Clear Threat Window";
+                clearText.textContent = isQuarantine ? "Release Session Quarantine" : "Acknowledge & Clear Threat Window";
+                if (isQuarantine) {
+                  footerSpan.textContent = "Admin Override: Instant release session quarantine";
+                }
                 clearBtn.appendChild(clearSvg);
                 clearBtn.appendChild(clearText);
 
                 clearBtn.addEventListener("click", function () {
                   clearBtn.disabled = true;
+                  if (isQuarantine) {
+                    clearBtn.textContent = "Releasing quarantine...";
+                    api.releaseQuarantine()
+                      .then(function () {
+                        setQuarantineLockdown(false);
+                        app.showToast("Quarantine Released", "Session restored. Normal commands can now execute.", "ok", 5000);
+                        var okSpan = document.createElement("span");
+                        okSpan.className = "text-xs text-ok font-semibold";
+                        okSpan.textContent = "[OK] Quarantine released -- session restored.";
+                        clearBtn.replaceWith(okSpan);
+                      })
+                      .catch(function (err) {
+                        app.showToast("Release Error", err.message, "danger");
+                        clearBtn.disabled = false;
+                        clearBtn.textContent = "Release Session Quarantine";
+                      });
+                    return;
+                  }
                   clearBtn.textContent = "Clearing threat window...";
                   api.clearThreat()
                     .then(function () {
@@ -327,11 +445,14 @@
                 turnUi.callout.appendChild(footer);
               }
             } else if (final.decision === "DENY") {
+              if (turnUi.responseCard) turnUi.responseCard.style.setProperty("display", "none");
               turnUi.textEl.textContent = "";
               turnUi.callout.className = "callout-warning";
               turnUi.callout.style.setProperty("display", "block");
               turnUi.callout.textContent = "Action denied by human operator.";
             } else {
+              if (turnUi.responseCard) turnUi.responseCard.style.setProperty("display", "block");
+              turnUi.callout.style.setProperty("display", "none");
               turnUi.textEl.textContent = final.reply || "Done.";
             }
 
@@ -549,10 +670,12 @@
       btnGroup.appendChild(denyBtn);
       actBar.appendChild(btnGroup);
 
-      var hintSpan = document.createElement("span");
-      hintSpan.className = "text-xs text-muted";
-      hintSpan.textContent = "Direct 1-click authorization";
-      actBar.appendChild(hintSpan);
+      var queueLink = document.createElement("a");
+      queueLink.href = "/approvals";
+      queueLink.className = "btn btn-sm btn-outline text-xs";
+      queueLink.textContent = "Open Approvals Queue ↗";
+      queueLink.title = "View and manage in Approvals queue";
+      actBar.appendChild(queueLink);
 
       card.appendChild(actBar);
     } else {
@@ -667,4 +790,9 @@
       sendPrompt(initialPrompt);
     }, 200);
   }
+
+  // Listen for global quarantine release from modal
+  window.addEventListener("aegis:quarantine_released", function () {
+    setQuarantineLockdown(false);
+  });
 })();

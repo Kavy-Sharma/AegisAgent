@@ -409,6 +409,19 @@ def log_event(event: str, data: dict | None = None, **kwargs) -> dict:
     return _append_entry(entry)
 
 
+def log_intent_scope(request_id: str, session_id: str, scope: list[str]) -> dict:
+    """Constructs a tamper-evident audit log entry for intent scope."""
+    timestamp_str = datetime.now(timezone.utc).isoformat()
+    entry = {
+        "event": "intent_scope",
+        "request_id": request_id,
+        "scope": scope or [],
+        "session_id": session_id,
+        "timestamp": timestamp_str,
+    }
+    return _append_entry(entry)
+
+
 def log_turn_summary(
     request_id: str,
     session_id: str,
@@ -416,6 +429,8 @@ def log_turn_summary(
     tool: str | None,
     rule_ids: list[str],
     latency_ms: float,
+    scope: list[str] | None = None,
+    tainted: bool = False,
 ) -> dict:
     """Constructs a tamper-evident audit log entry for a turn summary."""
     timestamp_str = datetime.now(timezone.utc).isoformat()
@@ -425,7 +440,9 @@ def log_turn_summary(
         "latency_ms": latency_ms,
         "request_id": request_id,
         "rule_ids": rule_ids or [],
+        "scope": scope if scope is not None else [],
         "session_id": session_id,
+        "tainted": tainted,
         "timestamp": timestamp_str,
         "tool": tool,
     }

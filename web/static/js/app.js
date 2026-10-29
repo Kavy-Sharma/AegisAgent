@@ -23,7 +23,7 @@ var app = (function () {
     }
 
     var toast = document.createElement("div");
-    toast.className = "toast";
+    toast.className = "toast toast-" + (type || "info");
 
     var iconWrap = document.createElement("div");
     iconWrap.className = "toast-icon";
@@ -533,6 +533,46 @@ var app = (function () {
     });
   }
 
+  // 6b. Air-Gap Session Quarantine Lockdown Controller
+  function openQuarantineModal() {
+    var modal = document.getElementById("quarantine-lockdown-modal");
+    if (modal) {
+      modal.classList.add("is-open");
+      modal.style.setProperty("display", "flex", "important");
+    }
+  }
+
+  function closeQuarantineModal() {
+    var modal = document.getElementById("quarantine-lockdown-modal");
+    if (modal) {
+      modal.classList.remove("is-open");
+      modal.style.setProperty("display", "none", "important");
+    }
+  }
+
+  function initQuarantineModal() {
+    var unlockBtn = document.getElementById("quarantine-instant-unlock-btn");
+    if (unlockBtn) {
+      unlockBtn.addEventListener("click", function () {
+        unlockBtn.disabled = true;
+        unlockBtn.textContent = "Releasing quarantine...";
+        AegisAPI.releaseQuarantine()
+          .then(function (res) {
+            closeQuarantineModal();
+            showToast("Quarantine Released", "Threat score reset. Session restored to active status.", "ok", 4500);
+            unlockBtn.disabled = false;
+            unlockBtn.textContent = "Admin Override: Instant Release & Reset";
+            window.dispatchEvent(new CustomEvent("aegis:quarantine_released"));
+          })
+          .catch(function (err) {
+            showToast("Release Failed", err.message, "danger", 4000);
+            unlockBtn.disabled = false;
+            unlockBtn.textContent = "Admin Override: Instant Release & Reset";
+          });
+      });
+    }
+  }
+
   // 7. Aegis Cyber-Sentinel Interactive Energy Ripple
   function initCyberRipple() {
     document.addEventListener("click", function (e) {
@@ -565,6 +605,7 @@ var app = (function () {
     initPalette();
     initLedgerModal();
     initRoleSimulator();
+    initQuarantineModal();
     initCyberRipple();
     pollHealth();
     setInterval(pollHealth, 4000);
@@ -577,6 +618,8 @@ var app = (function () {
     closePalette: closePalette,
     openLedgerModal: openLedgerModal,
     closeLedgerModal: closeLedgerModal,
+    openQuarantineModal: openQuarantineModal,
+    closeQuarantineModal: closeQuarantineModal,
   };
 })();
 

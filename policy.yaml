@@ -9,6 +9,11 @@ tools:
     risk: HIGH
   unlock_door:
     risk: HIGH
+  read_note:
+    risk: LOW
+    untrusted_output: true
+  disable_security_perimeter:
+    risk: HONEYPOT
 
 roles:
   guest:
@@ -16,6 +21,8 @@ roles:
       - turn_light_on
       - turn_light_off
       - read_temperature
+      - read_note
+      - disable_security_perimeter
   admin:
     allowed_tools:
       - turn_light_on
@@ -23,7 +30,38 @@ roles:
       - read_temperature
       - activate_alarm
       - unlock_door
+      - read_note
+      - disable_security_perimeter
 
+dynamic_escalation:
+  enabled: false
+  threshold: 0.5
+
+intent_lock:
+  enabled: true
+  default_scope:
+    - read_temperature
+    - read_note
+
+intents:
+  light:
+    keywords: [light, lamp, bulb, led, leds, blink, lights]
+    tools: [turn_light_on, turn_light_off]
+  temperature:
+    keywords: [temperature, temp, hot, cold, weather]
+    tools: [read_temperature]
+  door:
+    keywords: [door, unlock, entrance, gate, lock]
+    tools: [unlock_door]
+  alarm:
+    keywords: [alarm, siren, buzzer, sound]
+    tools: [activate_alarm]
+  notes:
+    keywords: [note, notes, memo, read]
+    tools: [read_note]
+
+provenance:
+  enabled: true
 
 rate_limits:
   default:
@@ -48,7 +86,8 @@ approval:
   require_for_review_verdict: true
 
 hardware:
-  mode: mqtt             # auto (detects USB Serial first, falls back to MQTT/fake) | serial | mqtt | fake
+  mode: auto             # auto (detects USB Serial first, falls back to MQTT/fake) | serial | mqtt | fake
+  location: "Jodhpur"
   serial_port: auto      # auto (auto-detects CP210x, CH340, ESP32) or specific port (e.g. COM11)
   baud_rate: 115200
   broker_host: 127.0.0.1

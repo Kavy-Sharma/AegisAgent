@@ -11,6 +11,7 @@ WHAT THIS FILE DOES:
 
 import argparse
 from dataclasses import dataclass
+import re
 import sys
 import time
 from typing import Any, Callable
@@ -19,8 +20,10 @@ import uuid
 import ollama
 import security.gateway
 import security.hardware
+import security.intent
 import security.logger
 import security.policy_loader
+import security.quarantine
 import security.rate_limiter
 from agent.tools import (
     turn_light_on,
@@ -28,17 +31,38 @@ from agent.tools import (
     read_temperature,
     activate_alarm,
     unlock_door,
+    read_note,
+    disable_security_perimeter,
 )
 
 MODEL = "llama3.1"  # change this one line if you use a different Ollama model
+
+_SESSION_TAINTS: dict[str, tuple[bool, str | None]] = {}
+
+
+def clear_session_taints(session_id: str | None = None):
+    """Clears taint tracking state globally or for a specific session."""
+    if session_id:
+        _SESSION_TAINTS.pop(session_id, None)
+    else:
+        _SESSION_TAINTS.clear()
 
 TOOLS = [
     {
         "type": "function",
         "function": {
             "name": "turn_light_on",
-            "description": "Turns the LED light on. ONLY call when the user explicitly asks to turn on the light.",
-            "parameters": {"type": "object", "properties": {}, "required": []},
+            "description": "Turns the LED light on, or blinks it multiple times. ONLY call when the user explicitly asks to turn on or blink the light.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "blink_count": {
+                        "type": "integer",
+                        "description": "Number of times to blink the light (1 to 10). Set to 1 for steady ON.",
+                    }
+                },
+                "required": [],
+            },
         },
     },
     {
@@ -53,8 +77,17 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "read_temperature",
-            "description": "Reads the current temperature from the sensor. ONLY call when the user explicitly asks for temperature or weather reading.",
-            "parameters": {"type": "object", "properties": {}, "required": []},
+            "description": "Reads current live temperature and weather. Optionally specify a city or location name (e.g. 'Delhi', 'Jaipur', 'Mumbai', 'London', or 'local').",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "location": {
+                        "type": "string",
+                        "description": "City or location name. Leave blank for user's local temperature.",
+                    }
+                },
+                "required": [],
+            },
         },
     },
     {
@@ -62,7 +95,16 @@ TOOLS = [
         "function": {
             "name": "activate_alarm",
             "description": "Sounds the buzzer alarm. ONLY call when the user explicitly asks to sound the alarm.",
-            "parameters": {"type": "object", "properties": {}, "required": []},
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "duration_seconds": {
+                        "type": "integer",
+                        "description": "Duration in seconds to sound the buzzer (1 to 30). Default is 5.",
+                    }
+                },
+                "required": [],
+            },
         },
     },
     {
@@ -70,6 +112,31 @@ TOOLS = [
         "function": {
             "name": "unlock_door",
             "description": "Unlocks the door lock. ONLY call when the user explicitly asks to unlock or open the door.",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "read_note",
+            "description": "Reads a local text note or memo by name. ONLY call when the user explicitly asks to read a note or memo.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "description": "The alphanumeric name of the note to read (no extensions or paths).",
+                    }
+                },
+                "required": ["name"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "disable_security_perimeter",
+            "description": "Administrative honeypot control. Emergency command to disable the security perimeter.",
             "parameters": {"type": "object", "properties": {}, "required": []},
         },
     },
@@ -81,12 +148,67 @@ AVAILABLE_FUNCTIONS = {
     "read_temperature": read_temperature,
     "activate_alarm": activate_alarm,
     "unlock_door": unlock_door,
+    "read_note": read_note,
+    "disable_security_perimeter": disable_security_perimeter,
 }
 
 TOOL_SCHEMAS = {
     t["function"]["name"]: set(t["function"]["parameters"]["properties"].keys())
     for t in TOOLS
 }
+
+
+def synthesize_conversational_reply(user_prompt: str, function_name: str, tool_result: Any) -> str:
+    """Produces an instant, friendly, natural response confirming the action in English or Hindi with zero latency."""
+    is_hindi = bool(re.search(r"[\u0900-\u097F]", user_prompt or ""))
+    hw_connected = tool_result.get("hardware_connected", True) if isinstance(tool_result, dict) else True
+    hw_note = ""
+    if not hw_connected and function_name in ("turn_light_on", "turn_light_off", "activate_alarm", "unlock_door"):
+        hw_note = " (सूचना: ESP32 बोर्ड कनेक्ट नहीं है। भौतिक हार्डवेयर पर देखने के लिए ESP32 कनेक्ट करें।)" if is_hindi else " (Note: ESP32 hardware is not connected. To see physical hardware actuation, please connect the ESP32 board)."
+
+    if is_hindi:
+        if function_name == "turn_light_on":
+            count = tool_result.get("blink_count", 1) if isinstance(tool_result, dict) else 1
+            if count > 1:
+                return f"जी, मैंने लाइट {count} बार ब्लिंक कर दी है।{hw_note}"
+            return f"जी, मैंने आपके लिए लाइट चालू कर दी है।{hw_note}"
+        elif function_name == "turn_light_off":
+            return f"जी, लाइट बंद कर दी गई है।{hw_note}"
+        elif function_name == "read_temperature" and isinstance(tool_result, dict):
+            temp = tool_result.get("value_celsius", 23.0)
+            loc = tool_result.get("location", "जोधपुर")
+            cond = tool_result.get("condition", "साफ़")
+            return f"{loc} में वर्तमान तापमान {temp}°C है और मौसम {cond} है।"
+        elif function_name == "activate_alarm":
+            sec = tool_result.get("duration_seconds", 5) if isinstance(tool_result, dict) else 5
+            return f"अलार्म बज़र {sec} सेकंड के लिए बजा दिया गया है।{hw_note}"
+        elif function_name == "unlock_door":
+            return f"मुख्य दरवाजा खोल दिया गया है।{hw_note}"
+        elif function_name == "read_note" and isinstance(tool_result, str):
+            return f"नोट में यह लिखा है: \"{tool_result}\""
+        return f"कार्रवाई '{function_name}' सफलतापूर्वक पूरी हुई।{hw_note}"
+
+    # English Natural Responses (Instant 0ms latency)
+    if function_name == "turn_light_on":
+        count = tool_result.get("blink_count", 1) if isinstance(tool_result, dict) else 1
+        if count > 1:
+            return f"I have blinked the light {count} times for you.{hw_note}"
+        return f"I have turned on the living room light for you.{hw_note}"
+    elif function_name == "turn_light_off":
+        return f"The light has been switched off.{hw_note}"
+    elif function_name == "read_temperature" and isinstance(tool_result, dict):
+        temp = tool_result.get("value_celsius", 23.0)
+        loc = tool_result.get("location", "Jodhpur, India")
+        cond = tool_result.get("condition", "Clear")
+        return f"The current temperature in {loc} is {temp}°C with {cond} conditions."
+    elif function_name == "activate_alarm":
+        sec = tool_result.get("duration_seconds", 5) if isinstance(tool_result, dict) else 5
+        return f"The buzzer alarm has been sounded for {sec} seconds.{hw_note}"
+    elif function_name == "unlock_door":
+        return f"The front door has been unlocked.{hw_note}"
+    elif function_name == "read_note" and isinstance(tool_result, str):
+        return f"Here is what the note says: \"{tool_result}\""
+    return f"Completed {function_name.replace('_', ' ')}.{hw_note}"
 
 
 @dataclass
@@ -96,6 +218,8 @@ class TurnResult:
     tool_called: str | None = None
     tool_result: Any = None
     error: str | None = None
+    scope: list[str] | None = None
+    tainted: bool = False
 
 
 def print_tools_table():
@@ -126,10 +250,12 @@ def run_turn(
     session_id: str = "default",
     emit: Callable[[str, str, dict], None] | None = None,
     request_id: str | None = None,
+    tainted: bool = False,
+    taint_source: str | None = None,
 ) -> TurnResult:
     """
     Executes a single conversational or command turn through the complete AegisAgent pipeline:
-    [detection -> llm -> rbac -> rate_limit -> approval -> hardware -> output_scan].
+    [detection -> intent -> llm -> rbac -> rate_limit -> approval -> hardware -> output_scan].
     Calls emit(stage, status, detail) at each stage with status in [running, pass, review, block, skip, error].
     """
     start_turn_time = time.perf_counter()
@@ -137,8 +263,17 @@ def run_turn(
         request_id = str(uuid.uuid4())
     detected_rule_ids = []
 
+    # Restore session taint state if not explicitly passed
+    if not tainted and session_id in _SESSION_TAINTS:
+        tainted, taint_source = _SESSION_TAINTS[session_id]
+
+    # Compute Intent Lock Scope at start
+    scope, matched_intents = security.intent.compute_scope(text, security.policy_loader.POLICY)
+
     def _finalize(res: TurnResult) -> TurnResult:
         latency_ms = round((time.perf_counter() - start_turn_time) * 1000, 2)
+        res.scope = sorted(list(scope))
+        res.tainted = tainted
         try:
             security.logger.log_turn_summary(
                 request_id=request_id,
@@ -147,6 +282,8 @@ def run_turn(
                 tool=res.tool_called,
                 rule_ids=list(detected_rule_ids),
                 latency_ms=latency_ms,
+                scope=sorted(list(scope)),
+                tainted=tainted,
             )
         except Exception:
             raise
@@ -159,6 +296,18 @@ def run_turn(
             except Exception:
                 pass
 
+    # Check Session Quarantine
+    if security.quarantine.is_quarantined(session_id):
+        quarantine_msg = "[SESSION QUARANTINED] Suspended after repeated prompt injection attacks. Admin release required."
+        _emit("detection", "block", {"reason": quarantine_msg, "quarantined": True})
+        for s in ("intent", "llm", "rbac", "rate_limit", "approval", "hardware", "output_scan"):
+            _emit(s, "skip", {"reason": "Session quarantined"})
+        return _finalize(TurnResult(
+            reply=quarantine_msg,
+            decision="BLOCK",
+            error=quarantine_msg,
+        ))
+
     # 1. Detection Stage
     _emit("detection", "running", {"text": text[:200]})
     verdict = security.gateway.inspect_user_message(session_id, text)
@@ -169,6 +318,17 @@ def run_turn(
             detected_rule_ids.extend(res.rule_ids)
 
     if verdict.decision == "BLOCK":
+        count = security.quarantine.record_injection_attempt(session_id)
+        if count >= 3:
+            quarantine_msg = f"[SESSION QUARANTINED] Suspended after {count} consecutive prompt injection attacks. Admin release required."
+            _emit("detection", "block", {"reason": quarantine_msg, "quarantined": True})
+            for s in ("intent", "llm", "rbac", "rate_limit", "approval", "hardware", "output_scan"):
+                _emit(s, "skip", {"reason": "Session quarantined"})
+            return _finalize(TurnResult(
+                reply=quarantine_msg,
+                decision="BLOCK",
+                error=quarantine_msg,
+            ))
         top_reason = "Prompt injection detected"
         for res in verdict.results:
             if res.reasons:
@@ -180,7 +340,7 @@ def run_turn(
             except Exception:
                 pass
             _emit("detection", "block", {"reason": top_reason, "score": verdict.score})
-            for s in ("llm", "rbac", "rate_limit", "approval", "hardware", "output_scan"):
+            for s in ("intent", "llm", "rbac", "rate_limit", "approval", "hardware", "output_scan"):
                 _emit(s, "skip", {"reason": "Blocked by detection"})
             return _finalize(TurnResult(
                 reply=f"Request blocked by AegisAgent: {top_reason}",
@@ -194,7 +354,7 @@ def run_turn(
         allowed = security.gateway.handle_review(session_id, verdict, text=text)
         if not allowed:
             _emit("detection", "block", {"reason": "Denied by human operator"})
-            for s in ("llm", "rbac", "rate_limit", "approval", "hardware", "output_scan"):
+            for s in ("intent", "llm", "rbac", "rate_limit", "approval", "hardware", "output_scan"):
                 _emit(s, "skip", {"reason": "Denied by operator review"})
             return _finalize(TurnResult(
                 reply="Request denied by human operator",
@@ -206,20 +366,29 @@ def run_turn(
     else:
         _emit("detection", "pass", {"score": verdict.score})
 
+    # 1b. Intent Stage
+    _emit("intent", "pass", {"scope": sorted(list(scope)), "matched": matched_intents})
+    security.logger.log_intent_scope(
+        request_id=request_id,
+        session_id=session_id,
+        scope=sorted(list(scope)),
+    )
+
     # 2. LLM Stage
     _emit("llm", "running", {"model": MODEL})
     messages = [
         {
             "role": "system",
             "content": (
-                "You are a home automation assistant with 5 tools: "
-                "turn_light_on, turn_light_off, read_temperature, activate_alarm, unlock_door. "
+                "You are Aura (powered by AegisAgent), an intelligent AI assistant and zero-trust IoT security gateway. "
+                "You control smart home devices via 6 tools: turn_light_on, turn_light_off, read_temperature, activate_alarm, unlock_door, read_note. "
+                "When the user asks to control hardware or read notes, call the appropriate tool. "
                 "If the user asks to unlock or open the door, call unlock_door. "
-                "If the user asks for multiple actions in one sentence (e.g. turning on light AND checking temperature), "
-                "call ALL matching tools. "
-                "Do NOT call any tool for single-word prompts (e.g., 'yes', 'no', 'ok', 'sure') or ambiguous follow-ups. "
-                "Do NOT attempt to map unsupported requests (e.g. 'break the alarm', 'fix the light') to unrelated tools. "
-                "For ambiguous, single-word, or unsupported requests, do NOT call any tool — reply in plain text."
+                "If the user asks to read a note or memo, call read_note. "
+                "If the user asks for multiple actions in one sentence (e.g. turning on light AND checking temperature), call ALL matching tools. "
+                "When the user greets, asks general questions ('who are you?', 'how does this work?'), converses socially, or asks about cybersecurity, "
+                "do NOT call any tool — respond conversationally, concisely, and warmly in the same language (English or Hindi). "
+                "Do NOT attempt to map unsupported requests (e.g. 'break the alarm', 'fix the light') to unrelated tools."
             ),
         },
         {"role": "user", "content": text},
@@ -241,7 +410,10 @@ def run_turn(
     tool_calls = message.get("tool_calls")
 
     if not tool_calls:
-        content = message.get("content", "")
+        content = (message.get("content") or "").strip()
+        if not content:
+            is_hindi = bool(re.search(r"[\u0900-\u097F]", text or ""))
+            content = "नमस्ते! मैं ऑरा हूँ, आपकी एआई असिस्टेंट और स्मार्ट होम सुरक्षा गेटवे। मैं आपकी क्या मदद कर सकती हूँ?" if is_hindi else "I am Aura, your AegisAgent AI assistant and zero-trust IoT security gateway. How can I help you today?"
         _emit("llm", "pass", {"tool_calls": 0, "reply": content})
         for s in ("rbac", "rate_limit", "approval", "hardware", "output_scan"):
             _emit(s, "skip", {"reason": "No tool call generated"})
@@ -273,7 +445,16 @@ def run_turn(
         if not security.policy_loader.is_tool_allowed_for_role(function_name, role):
             reason_msg = f"permission denied: role '{role}' cannot use '{function_name}'"
             _emit("rbac", "block", {"tool": function_name, "role": role, "reason": reason_msg})
-            security.gateway.evaluate(function_name, function_args, text, role=role, session_id=session_id)
+            security.gateway.evaluate(
+                function_name,
+                function_args,
+                text,
+                role=role,
+                session_id=session_id,
+                scope=scope,
+                tainted=tainted,
+                taint_source=taint_source,
+            )
             for s in ("rate_limit", "approval", "hardware", "output_scan"):
                 _emit(s, "skip", {"reason": "RBAC denied"})
             return _finalize(TurnResult(
@@ -284,12 +465,45 @@ def run_turn(
             ))
         _emit("rbac", "pass", {"tool": function_name, "role": role})
 
+        # Intent Lock stage (after RBAC, before rate limit)
+        intent_cfg = security.policy_loader.POLICY.get("intent_lock", {})
+        if intent_cfg.get("enabled", True) and scope is not None and function_name not in scope:
+            reason_msg = f"outside intent scope: this request did not ask for '{function_name}'"
+            _emit("intent", "block", {"tool": function_name, "reason": reason_msg, "scope": sorted(list(scope))})
+            security.gateway.evaluate(
+                function_name,
+                function_args,
+                text,
+                role=role,
+                session_id=session_id,
+                scope=scope,
+                tainted=tainted,
+                taint_source=taint_source,
+            )
+            for s in ("rate_limit", "approval", "hardware", "output_scan"):
+                _emit(s, "skip", {"reason": "Outside intent scope"})
+            return _finalize(TurnResult(
+                reply=f"Action blocked: {reason_msg}",
+                decision="BLOCK",
+                tool_called=function_name,
+                error=reason_msg,
+            ))
+
         # 4. Rate Limit stage
         _emit("rate_limit", "running", {"tool": function_name})
         if not security.rate_limiter.check_rate_limit(function_name):
             reason_msg = f"rate limit exceeded for '{function_name}'"
             _emit("rate_limit", "block", {"tool": function_name, "reason": reason_msg})
-            security.gateway.evaluate(function_name, function_args, text, role=role, session_id=session_id)
+            security.gateway.evaluate(
+                function_name,
+                function_args,
+                text,
+                role=role,
+                session_id=session_id,
+                scope=scope,
+                tainted=tainted,
+                taint_source=taint_source,
+            )
             for s in ("approval", "hardware", "output_scan"):
                 _emit(s, "skip", {"reason": "Rate limit exceeded"})
             return _finalize(TurnResult(
@@ -301,7 +515,17 @@ def run_turn(
         _emit("rate_limit", "pass", {"tool": function_name})
 
         # 5. Approval stage
-        evaluation = security.gateway.evaluate(function_name, function_args, text, role=role, session_id=session_id, emit=_emit)
+        evaluation = security.gateway.evaluate(
+            function_name,
+            function_args,
+            text,
+            role=role,
+            session_id=session_id,
+            emit=_emit,
+            scope=scope,
+            tainted=tainted,
+            taint_source=taint_source,
+        )
         decision = evaluation.get("decision")
         reason = evaluation.get("reason", "")
 
@@ -333,6 +557,10 @@ def run_turn(
         try:
             tool_result = AVAILABLE_FUNCTIONS[function_name](**clean_args)
             _emit("hardware", "pass", {"tool": function_name, "result": str(tool_result)})
+            if security.policy_loader.is_untrusted_output(function_name):
+                tainted = True
+                taint_source = function_name
+                _SESSION_TAINTS[session_id] = (True, taint_source)
         except Exception as e:
             _emit("hardware", "error", {"tool": function_name, "error": str(e)})
             _emit("output_scan", "skip", {"reason": "Hardware execution error"})
@@ -378,8 +606,9 @@ def run_turn(
         else:
             _emit("output_scan", "skip", {"reason": "Output scanning disabled"})
 
+        natural_reply = synthesize_conversational_reply(text, function_name, tool_result)
         last_turn_result = TurnResult(
-            reply=f"Executed {function_name}: {tool_result}",
+            reply=natural_reply,
             decision="ALLOW",
             tool_called=function_name,
             tool_result=tool_result,

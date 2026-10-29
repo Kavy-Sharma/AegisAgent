@@ -81,6 +81,9 @@ var api = (function () {
     clearThreat: function () {
       return request("/api/console/clear_threat", { method: "POST" });
     },
+    releaseQuarantine: function () {
+      return request("/api/console/release_quarantine", { method: "POST" });
+    },
     startWorker: function () {
       return request("/api/worker/start", { method: "POST" });
     },
