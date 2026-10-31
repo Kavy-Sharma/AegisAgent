@@ -27,6 +27,8 @@ def evaluate(
     scope=None,
     tainted: bool = False,
     taint_source: str | None = None,
+    record_rate_limit: bool = True,
+    username: str = "guest",
 ) -> dict:
     """
     Evaluates a tool execution request against active policy rules.
@@ -93,7 +95,7 @@ def evaluate(
 
     # c. If NOT rate_limiter.check_rate_limit(tool_name) -> decision BLOCK (human operator NEVER asked)
     _emit("rate_limit", "running", {"tool": tool_name})
-    if not rate_limiter.check_rate_limit(tool_name):
+    if not rate_limiter.check_rate_limit(tool_name, username=username):
         decision = "BLOCK"
         reason = f"rate limit exceeded for '{tool_name}'"
         _emit("rate_limit", "block", {"tool": tool_name, "reason": reason})
@@ -102,8 +104,9 @@ def evaluate(
         return {"decision": decision, "reason": reason}
     _emit("rate_limit", "pass", {"tool": tool_name})
 
-    # e. Call rate_limiter.record_call(tool_name) ONLY if we got past step (c)
-    rate_limiter.record_call(tool_name)
+    # e. Call rate_limiter.record_call(tool_name) ONLY if we got past step (c) and record_rate_limit is True
+    if record_rate_limit:
+        rate_limiter.record_call(tool_name, username=username)
 
     # d. Check approval policy for risk-level requirements
     approval_cfg = policy_loader.POLICY.get("approval", {})

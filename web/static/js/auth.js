@@ -10,7 +10,6 @@
   function init() {
     initCredentialInputs();
     initPasswordToggle();
-    initLockoutTimer();
     initSetupValidation();
     initThemeToggle();
     initAuthRipples();
@@ -51,10 +50,17 @@
     }
 
     alertEl.className = "auth-alert alert-" + type + " auth-alert-animated";
-    alertEl.innerHTML = `
-      <svg class="icon"><use href="/static/icons.svg#icon-${type === "ok" ? "check-circle" : "alert-triangle"}"></use></svg>
-      <span class="auth-alert-text">${message}</span>
-    `;
+    alertEl.replaceChildren();
+    const svgEl = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svgEl.setAttribute("class", "icon");
+    const useEl = document.createElementNS("http://www.w3.org/2000/svg", "use");
+    useEl.setAttribute("href", "/static/icons.svg#icon-" + (type === "ok" ? "check-circle" : "alert-triangle"));
+    svgEl.appendChild(useEl);
+    const spanEl = document.createElement("span");
+    spanEl.className = "auth-alert-text";
+    spanEl.textContent = message;
+    alertEl.appendChild(svgEl);
+    alertEl.appendChild(spanEl);
 
     // Restart shake animation
     alertEl.classList.remove("auth-alert-animated");
@@ -97,10 +103,17 @@
     const confirmInput = document.getElementById("confirm_password");
 
     form.addEventListener("submit", (e) => {
+      if (passInput && passInput.value.length < 10) {
+        e.preventDefault();
+        showAuthAlert("Password must be at least 10 characters long.");
+        passInput.focus();
+        return;
+      }
       if (passInput && confirmInput && passInput.value !== confirmInput.value) {
         e.preventDefault();
         showAuthAlert("Passwords do not match. Please re-enter matching passwords.");
         confirmInput.focus();
+        return;
       }
     });
   }

@@ -538,6 +538,7 @@ def test_dashboard_approval_rejects_stale_or_future_decided_at(tmp_path):
     sig_payload_a = {
         "approved": True,
         "decided_at": stale_decided_at,
+        "decided_by": "admin",
         "request_hash": req.request_hash,
         "request_id": req.request_id,
     }
@@ -547,6 +548,7 @@ def test_dashboard_approval_rejects_stale_or_future_decided_at(tmp_path):
         json.dumps({
             "approved": True,
             "decided_at": stale_decided_at,
+            "decided_by": "admin",
             "request_hash": req.request_hash,
             "request_id": req.request_id,
             "signature": sig_a,
@@ -563,6 +565,7 @@ def test_dashboard_approval_rejects_stale_or_future_decided_at(tmp_path):
     sig_payload_b = {
         "approved": True,
         "decided_at": future_decided_at,
+        "decided_by": "admin",
         "request_hash": req.request_hash,
         "request_id": req.request_id,
     }
@@ -572,6 +575,7 @@ def test_dashboard_approval_rejects_stale_or_future_decided_at(tmp_path):
         json.dumps({
             "approved": True,
             "decided_at": future_decided_at,
+            "decided_by": "admin",
             "request_hash": req.request_hash,
             "request_id": req.request_id,
             "signature": sig_b,

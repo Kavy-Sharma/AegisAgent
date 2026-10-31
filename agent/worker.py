@@ -64,9 +64,10 @@ class DeviceStatusSubscriber:
         self.broker_connected = False
         self._last_state = None
         self._since = None
+        self._status_lock = threading.Lock()
 
         hw_cfg = security.policy_loader.POLICY.get("hardware", {})
-        self.mode = hw_cfg.get("mode", "auto")
+        self.mode = hw_cfg.get("mode", "mqtt")
         self.host = hw_cfg.get("broker_host", "127.0.0.1")
         self.port = int(hw_cfg.get("broker_port", 1883))
         self.device_id = hw_cfg.get("device_id", "esp32-01")
@@ -78,48 +79,49 @@ class DeviceStatusSubscriber:
         self.password = os.environ.get("AEGIS_MQTT_PASS", "")
 
     def _write_device_status(self, is_online: bool | None = None):
-        status_file = self.data_dir / "device_status.json"
-        now_iso = datetime.now(timezone.utc).isoformat()
-        current = {}
-        if status_file.exists():
-            try:
-                current = json.loads(status_file.read_text(encoding="utf-8"))
-            except Exception:
-                current = {}
-
-        current["broker_connected"] = bool(self.broker_connected)
-        if is_online is not None:
-            if is_online != self._last_state:
-                self._last_state = is_online
-                self._since = now_iso
-            current["online"] = is_online
-            current["device_online"] = is_online
-            current["last_seen"] = now_iso
-            current["since"] = self._since or now_iso
-            current["timestamp"] = time.time()
-            try:
-                active_bridge = security.hardware.get_bridge()
-                if hasattr(active_bridge, "transport"):
-                    current["transport"] = str(active_bridge.transport)
-                if hasattr(active_bridge, "port"):
-                    current["port"] = str(active_bridge.port)
-                if hasattr(active_bridge, "description"):
-                    current["description"] = str(active_bridge.description)
-            except Exception:
-                pass
-
-        tmp_file = status_file.with_name(f"device_status.tmp.{secrets.token_hex(4)}")
-        try:
-            with open(tmp_file, "w", encoding="utf-8") as f:
-                f.write(json.dumps(current, indent=2))
-                f.flush()
+        with self._status_lock:
+            status_file = self.data_dir / "device_status.json"
+            now_iso = datetime.now(timezone.utc).isoformat()
+            current = {}
+            if status_file.exists():
                 try:
-                    os.fsync(f.fileno())
+                    current = json.loads(status_file.read_text(encoding="utf-8"))
+                except Exception:
+                    current = {}
+
+            current["broker_connected"] = bool(self.broker_connected)
+            if is_online is not None:
+                if is_online != self._last_state:
+                    self._last_state = is_online
+                    self._since = now_iso
+                current["online"] = is_online
+                current["device_online"] = is_online
+                current["last_seen"] = now_iso
+                current["since"] = self._since or now_iso
+                current["timestamp"] = time.time()
+                try:
+                    active_bridge = security.hardware.get_bridge()
+                    if hasattr(active_bridge, "transport"):
+                        current["transport"] = str(active_bridge.transport)
+                    if hasattr(active_bridge, "port"):
+                        current["port"] = str(active_bridge.port)
+                    if hasattr(active_bridge, "description"):
+                        current["description"] = str(active_bridge.description)
                 except Exception:
                     pass
-            os.replace(tmp_file, status_file)
-        except Exception:
-            pass
+
+            tmp_file = status_file.with_name(f"device_status.tmp.{secrets.token_hex(4)}")
+            try:
+                with open(tmp_file, "w", encoding="utf-8") as f:
+                    f.write(json.dumps(current, indent=2))
+                    f.flush()
+                    try:
+                        os.fsync(f.fileno())
+                    except Exception:
+                        pass
+                os.replace(tmp_file, status_file)
+            except Exception:
+                pass
 
     def start(self):
         if self.mode in ("auto", "serial"):
@@ -404,6 +406,22 @@ def _write_rejection_outbox(outbox_file: Path, message: str):
 
 
 def _process_direct_tool(req: dict, emit, outbox_file: Path):
+    username = req.get("username", "guest")
+    if security.quarantine.is_quarantined(username):
+        msg = f"Account '{username}' is in containment lockdown (quarantined). Admin release required."
+        for s in ("detection", "intent", "llm", "rbac", "rate_limit", "approval", "hardware", "output_scan"):
+            emit(s, "skip", {"reason": "User quarantined"})
+        final = {
+            "decision": "BLOCK",
+            "error": msg,
+            "final": True,
+            "reply": f"Request blocked: {msg}",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+        with open(outbox_file, "a", encoding="utf-8") as f:
+            f.write(json.dumps(final) + "\n")
+            f.flush()
+        return
     raw_tool = req.get("tool")
     if isinstance(raw_tool, str):
         tool_name = raw_tool
@@ -491,12 +509,67 @@ def _process_direct_tool(req: dict, emit, outbox_file: Path):
         f.flush()
 
 
+def prune_stale_files(data_dir: Path | None = None):
+    """
+    Prunes files older than 24h from outbox and decisions, and purges expired pending approvals.
+    Runs at worker startup and hourly.
+    """
+    if data_dir is None:
+        data_dir = _get_data_dir()
+    now = time.time()
+    cutoff_24h = now - (24 * 3600)
+
+    # 1. Prune data/chat/outbox/*.jsonl > 24h
+    outbox_dir = data_dir / "chat" / "outbox"
+    if outbox_dir.exists():
+        for p in outbox_dir.glob("*.jsonl"):
+            try:
+                if p.stat().st_mtime < cutoff_24h:
+                    p.unlink(missing_ok=True)
+            except Exception:
+                pass
+
+    # 2. Purge data/approvals/pending/*.json (expired or > 24h)
+    pending_dir = data_dir / "approvals" / "pending"
+    if pending_dir.exists():
+        for p in pending_dir.glob("*.json"):
+            try:
+                stale = False
+                if p.stat().st_mtime < cutoff_24h:
+                    stale = True
+                else:
+                    try:
+                        data = json.loads(p.read_text(encoding="utf-8"))
+                        expires_at = data.get("expires_at", 0)
+                        if expires_at and expires_at < now:
+                            stale = True
+                    except Exception:
+                        stale = True
+                if stale:
+                    p.unlink(missing_ok=True)
+            except Exception:
+                pass
+
+    # 3. Prune data/approvals/decisions/*.json > 24h
+    decisions_dir = data_dir / "approvals" / "decisions"
+    if decisions_dir.exists():
+        for p in decisions_dir.glob("*.json"):
+            try:
+                if p.stat().st_mtime < cutoff_24h:
+                    p.unlink(missing_ok=True)
+            except Exception:
+                pass
+
+
 def run_worker():
     data_dir = _get_data_dir()
     inbox_dir = data_dir / "chat" / "inbox"
     outbox_dir = data_dir / "chat" / "outbox"
     inbox_dir.mkdir(parents=True, exist_ok=True)
     outbox_dir.mkdir(parents=True, exist_ok=True)
+
+    # VULN-08: Prune outbox and purge stale approvals at worker startup
+    prune_stale_files(data_dir)
 
     # High fix: Single-worker lockfile to prevent double actuation
     lock_file_path = data_dir / "worker.lock"
@@ -563,7 +636,16 @@ def run_worker():
     if hasattr(signal, "SIGTERM"):
         signal.signal(signal.SIGTERM, _sig_handler)
 
+    last_prune_time = time.time()
     while running:
+        # VULN-08: Hourly pruning
+        if time.time() - last_prune_time >= 3600:
+            try:
+                prune_stale_files(data_dir)
+            except Exception:
+                pass
+            last_prune_time = time.time()
+
         inbox_files = sorted(inbox_dir.glob("*.json"))
         for req_file in inbox_files:
             stem = req_file.stem
@@ -703,6 +785,7 @@ def run_worker():
                     "stage": stage,
                     "status": status,
                     "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "owner": req.get("username", "guest"),
                 }
                 with open(outbox_file, "a", encoding="utf-8") as f:
                     f.write(json.dumps(step) + "\n")
@@ -718,7 +801,7 @@ def run_worker():
                     user_text = req.get("text", "")
                     session_id = req.get("session_id", "default")
 
-                    res = run_turn(text=user_text, role=assigned_role, session_id=session_id, emit=emit, request_id=req_id)
+                    res = run_turn(text=user_text, role=assigned_role, session_id=session_id, emit=emit, request_id=req_id, username=req.get("username", "guest"))
                     final = {
                         "decision": res.decision,
                         "error": res.error,
@@ -727,6 +810,7 @@ def run_worker():
                         "timestamp": datetime.now(timezone.utc).isoformat(),
                         "tool_called": res.tool_called,
                         "tool_result": res.tool_result,
+                        "owner": req.get("username", "guest"),
                     }
                     with open(outbox_file, "a", encoding="utf-8") as f:
                         f.write(json.dumps(final) + "\n")

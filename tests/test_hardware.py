@@ -170,7 +170,16 @@ def test_hardware_bridge_success_with_online_status():
         mock_msg.payload = b"online"
         bridge._on_message(mock_client, None, mock_msg)
 
+    def fake_publish(topic, payload, qos=1):
+        # Simulate device event confirmation as required by Item 6 ACK mapping
+        mock_event_msg = MagicMock()
+        mock_event_msg.topic = bridge.event_topic
+        mock_event_msg.payload = b"EVENT: light_on_done"
+        bridge._on_message(mock_client, None, mock_event_msg)
+        return mock_info
+
     mock_client.connect.side_effect = fake_connect
+    mock_client.publish.side_effect = fake_publish
 
     with patch.object(bridge, "_create_client", return_value=mock_client):
         res = bridge.publish("light_on")
@@ -196,7 +205,16 @@ def test_hardware_bridge_auth_failure_returns_clean_error():
         # Simulate CONNACK with reason_code 134 (bad credentials)
         bridge._on_connect(mock_client, None, {}, 134)
 
+    def fake_publish(topic, payload, qos=1):
+        # Simulate device event confirmation as required by Item 6 ACK mapping
+        mock_event_msg = MagicMock()
+        mock_event_msg.topic = bridge.event_topic
+        mock_event_msg.payload = b"EVENT: light_on_done"
+        bridge._on_message(mock_client, None, mock_event_msg)
+        return mock_info
+
     mock_client.connect.side_effect = fake_connect
+    mock_client.publish.side_effect = fake_publish
 
     with patch.object(bridge, "_create_client", return_value=mock_client):
         res = bridge.publish("light_on")
@@ -251,7 +269,16 @@ def test_hardware_bridge_device_offline_fails_closed():
         mock_msg.payload = b"offline"
         bridge._on_message(mock_client, None, mock_msg)
 
+    def fake_publish(topic, payload, qos=1):
+        # Simulate device event confirmation as required by Item 6 ACK mapping
+        mock_event_msg = MagicMock()
+        mock_event_msg.topic = bridge.event_topic
+        mock_event_msg.payload = b"EVENT: light_on_done"
+        bridge._on_message(mock_client, None, mock_event_msg)
+        return mock_info
+
     mock_client.connect.side_effect = fake_connect
+    mock_client.publish.side_effect = fake_publish
 
     with patch.object(bridge, "_create_client", return_value=mock_client):
         res = bridge.publish("light_on")

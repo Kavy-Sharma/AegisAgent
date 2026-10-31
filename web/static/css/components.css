@@ -1111,3 +1111,32 @@ html[data-theme="light"] .toast.toast-info .toast-desc { color: #0284C7 !importa
   to { transform: translateY(0); opacity: 1; }
 }
 
+
+
+/* Mobile menu toggle & Step classes */
+.mobile-menu-btn {
+  display: none;
+  margin-right: 8px;
+}
+
+@media (max-width: 768px) {
+  .mobile-menu-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+}
+
+.step-node.step-skip,
+.step-skip {
+  background-color: transparent !important;
+  border-color: var(--border-subtle, #334155) !important;
+  color: var(--muted, #64748b) !important;
+  opacity: 0.6;
+}
+
+.step-block {
+  background-color: var(--danger-bg, rgba(239, 68, 68, 0.15)) !important;
+  border-color: var(--danger-border, #ef4444) !important;
+  color: var(--danger-text, #f87171) !important;
+}

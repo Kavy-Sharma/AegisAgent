@@ -29,6 +29,14 @@ ROOT_DIR = Path(__file__).resolve().parent.parent
 _audit_cache: tuple[bool, str, float] | None = None
 
 
+def invalidate_audit_cache(is_intact: bool | None = None, message: str | None = None) -> None:
+    global _audit_cache
+    if is_intact is not None and message is not None:
+        _audit_cache = (is_intact, message, time.time())
+    else:
+        _audit_cache = None
+
+
 def _get_data_dir() -> Path:
     return Path(os.environ.get("AEGIS_DATA_DIR", ROOT_DIR / "data"))
 

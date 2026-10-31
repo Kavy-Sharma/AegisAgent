@@ -211,7 +211,10 @@ def archive_and_reset(reason: str) -> dict:
     archive_dir.mkdir(parents=True, exist_ok=True)
 
     with _file_lock(log_file):
-        final_hash = _get_last_entry_hash(log_file)
+        try:
+            final_hash = _get_last_entry_hash(log_file)
+        except Exception:
+            final_hash = "CORRUPT"
         now_utc = datetime.now(timezone.utc)
         ts_str = now_utc.strftime("%Y-%m-%dT%H-%M-%SZ")
         archive_name = f"{ts_str}.jsonl"

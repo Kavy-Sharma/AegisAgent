@@ -1,262 +1,548 @@
 {% extends "base.html" %}
 
+
+
 {% block title %}AURA Voice Assistant — AegisAgent{% endblock %}
+
 {% block breadcrumb %}Aura Voice{% endblock %}
 
+
+
 {% block content %}
+
 <div class="voice-page-wrapper">
+
   <!-- Page Header -->
+
   <div class="page-header flex justify-between items-center flex-wrap gap-sm">
+
     <div>
+
       <h1 class="page-title text-xl font-bold flex items-center gap-xs">
+
         <svg class="icon text-accent"><use href="/static/icons.svg#icon-mic"></use></svg>
+
         AURA Neural Voice Assistant
+
       </h1>
+
       <p class="text-sm text-muted mt-xs">
-        Air-gapped voice intelligence with real-time 3D kinetic visualization & zero-trust security gating.
+
+        Containment-hardened voice intelligence with real-time 3D kinetic visualization & zero-trust security gating.
+
       </p>
+
     </div>
+
     <div class="flex items-center gap-xs">
+
       <span class="badge badge-accent font-mono text-xs">Autonomous Agent</span>
+
       <span class="badge badge-subtle font-mono text-xs">Jodhpur (HQ)</span>
+
     </div>
+
   </div>
+
+
+
+  {% if voice_enabled %}
+
+  <div class="voice-privacy-notice p-xs mb-sm rounded flex items-center gap-xs" id="voice-privacy-notice" style="font-size: 12px; background: rgba(56, 189, 248, 0.1); border: 1px solid rgba(56, 189, 248, 0.3); color: #bae6fd;">
+
+    <svg class="icon icon-xs"><use href="/static/icons.svg#icon-info"></use></svg>
+
+    <span>Speech recognition uses the browser's speech service and may send audio to the browser vendor; not offline</span>
+
+  </div>
+
+  {% else %}
+
+  <div class="voice-disabled-notice p-xs mb-sm rounded flex items-center gap-xs" id="voice-disabled-notice" style="font-size: 12px; background: rgba(245, 158, 11, 0.1); border: 1px solid rgba(245, 158, 11, 0.3); color: #fde68a;">
+
+    <svg class="icon icon-xs"><use href="/static/icons.svg#icon-shield-alert"></use></svg>
+
+    <span>Voice interface is currently disabled in policy.yaml (voice.enabled: false).</span>
+
+  </div>
+
+  {% endif %}
+
+
 
   <!-- Central Holographic Orb Stage -->
+
   <div class="voice-orb-card">
+
     <!-- Status Badge -->
+
     <div class="voice-orb-badge">
+
       <span class="pulse-dot live" id="orb-pulse-dot"></span>
+
       <span id="orb-status-text">STANDBY</span>
+
     </div>
+
+
 
     <!-- Dual Language Toggle -->
+
     <div class="voice-lang-switch">
+
       <button type="button" class="lang-btn active" id="lang-btn-en" data-lang="en">English</button>
+
       <button type="button" class="lang-btn" id="lang-btn-hi" data-lang="hi">हिंदी</button>
+
     </div>
+
+
 
     <!-- 3D Kinetic Particle Sphere Canvas -->
+
     <div class="voice-canvas-wrap">
+
       <canvas id="voice-sphere-canvas" width="420" height="380"></canvas>
+
     </div>
+
+
 
     <!-- Animated Glowing Microphone Trigger with Concentric Pulse Rings -->
+
     <div class="voice-mic-container">
+
       <div class="mic-wave-ring ring-1" id="mic-ring-1"></div>
+
       <div class="mic-wave-ring ring-2" id="mic-ring-2"></div>
+
       <div class="mic-wave-ring ring-3" id="mic-ring-3"></div>
+
       <button type="button" class="voice-mic-btn" id="voice-mic-trigger" title="Click to speak (or press Spacebar)">
+
         <svg class="icon"><use href="/static/icons.svg#icon-mic"></use></svg>
+
       </button>
+
     </div>
+
+
 
     <!-- Voice Control Bar -->
+
     <div class="voice-controls-bar">
+
       <button type="button" class="btn btn-secondary btn-sm flex items-center gap-xs" id="voice-speaker-toggle" title="Toggle audio speech output">
+
         <svg class="icon icon-xs"><use href="/static/icons.svg#icon-volume-2"></use></svg>
+
         <span id="speaker-label">Speaker: ON</span>
+
       </button>
+
+
 
       <button type="button" class="btn btn-outline btn-sm flex items-center gap-xs" id="voice-replay-audio-btn" title="Replay last spoken answer">
+
         <svg class="icon icon-xs"><use href="/static/icons.svg#icon-volume-2"></use></svg>
+
         <span>🔊 Replay Audio</span>
+
       </button>
+
     </div>
+
+
 
     <!-- Dynamic Sarcastic/Helpful Status Hint -->
+
     <div class="voice-hint-text" id="voice-instruction-hint">
+
       Click microphone or press <kbd class="font-mono text-xs">Spacebar</kbd> to talk to Aura
+
     </div>
+
   </div>
+
+
 
   <!-- Inline Operator Authorization Modal (Appears directly on voice page!) -->
+
   <div class="voice-approval-card" id="voice-approval-alert" style="display: none;">
+
     <div class="flex items-start gap-md">
+
       <div class="voice-approval-icon-wrap">
+
         <svg class="icon text-warn"><use href="/static/icons.svg#icon-shield-alert"></use></svg>
+
       </div>
+
       <div class="flex-1">
+
         <div class="flex items-center justify-between">
+
           <div>
+
             <h3 class="font-bold text-warn text-md">Human Authorization Required</h3>
+
             <p class="text-xs text-muted">Privileged action held by Aegis zero-trust security gateway.</p>
+
           </div>
+
           <span class="badge badge-warn font-mono text-xs" id="voice-approval-badge">HIGH RISK</span>
+
         </div>
+
+
 
         <div class="approval-meta-box mt-sm p-sm rounded bg-surface border border-subtle">
+
           <div class="flex items-center justify-between text-xs">
+
             <span>Target Action: <strong class="text-accent" id="voice-approval-tool">privileged_action</strong></span>
+
             <span class="font-mono text-muted" id="voice-approval-hash-display">Hash: pending</span>
+
           </div>
+
           <pre class="approval-args-pre mt-xs text-xs font-mono" id="voice-approval-args">{}</pre>
+
         </div>
+
+
 
         <!-- 60-Second Countdown Progress Bar -->
+
         <div class="approval-countdown-bar mt-sm">
+
           <div class="flex items-center justify-between text-xs text-muted mb-xs">
+
             <span>Operator Decision Window:</span>
+
             <span><strong id="voice-approval-countdown" class="text-warn">60</strong>s remaining</span>
+
           </div>
+
           <div class="approval-progress-track">
+
             <div class="approval-progress-fill" id="voice-approval-progress" style="width: 100%;"></div>
+
           </div>
+
         </div>
+
+
 
         <!-- Authorization Action Controls -->
+
         <div class="flex items-center justify-between flex-wrap gap-xs mt-md pt-sm border-t border-subtle">
+
           <div class="flex items-center gap-xs">
+
             {% if session.get('role') == 'admin' %}
+
             <button type="button" class="btn btn-sm btn-primary flex items-center gap-xs" id="voice-inline-approve-btn">
+
               <svg class="icon icon-xs"><use href="/static/icons.svg#icon-check-circle"></use></svg>
+
               <span>Approve Action Now</span>
+
             </button>
+
             <button type="button" class="btn btn-sm btn-secondary flex items-center gap-xs" id="voice-inline-deny-btn">
+
               <svg class="icon icon-xs"><use href="/static/icons.svg#icon-x-circle"></use></svg>
+
               <span>Deny</span>
+
             </button>
+
             {% else %}
+
             <span class="text-xs text-muted flex items-center gap-xs">
+
               <span class="pulse-dot warn"></span>
+
               Waiting for an administrator to review this action...
+
             </span>
+
             {% endif %}
+
           </div>
+
           <div class="flex items-center gap-xs">
+
             <button type="button" class="btn btn-ghost btn-xs text-muted" id="voice-stay-btn">Dismiss Banner</button>
+
             <a href="/approvals?return_to=/voice" class="btn btn-outline btn-xs flex items-center gap-xs" id="voice-go-approval-btn">
+
               Open Full Approvals Queue ↗
+
             </a>
+
           </div>
+
         </div>
+
       </div>
+
     </div>
+
   </div>
+
+
 
   <!-- Real-Time Dialogue Transcript Card -->
+
   <div class="voice-transcript-card">
+
     <!-- User transcript bubble -->
+
     <div class="transcript-line user" id="voice-user-line" style="display: none;">
+
       <div class="transcript-avatar user">
+
         <svg class="icon icon-sm"><use href="/static/icons.svg#icon-user"></use></svg>
+
       </div>
+
       <div class="transcript-body">
+
         <div class="transcript-label">You Said (<span id="user-lang-label">English</span>)</div>
+
         <div class="transcript-text font-medium" id="voice-user-text">Listening...</div>
+
       </div>
+
     </div>
+
+
 
     <!-- Aura Assistant transcript bubble -->
+
     <div class="transcript-line agent" id="voice-agent-line">
+
       <div class="transcript-avatar agent">
+
         <svg class="icon icon-sm"><use href="/static/icons.svg#icon-shield"></use></svg>
+
       </div>
+
       <div class="transcript-body">
+
         <div class="flex items-center justify-between">
+
           <div class="transcript-label font-bold text-accent">Aura Voice Assistant</div>
+
           <span class="text-xs text-muted font-mono" id="voice-turn-meta">Ready</span>
+
         </div>
+
         <div class="transcript-text" id="voice-agent-text">
+
           Hello! I am Aura, your security and smart home assistant. How can I help you today?
+
         </div>
+
       </div>
+
     </div>
+
+
 
     <!-- Mini Security Stepper for Voice Commands -->
+
     <div class="mt-xs pt-xs border-t border-subtle" id="voice-stepper-container" style="display: none;">
+
       <div class="text-xs text-muted mb-xs font-semibold uppercase">Security Pipeline Verification</div>
+
       <div class="stepper-track flex gap-xs flex-wrap" id="voice-stepper">
+
         <span class="pill pill-default text-xs" data-stage="detection">Detection</span>
+
         <span class="pill pill-default text-xs" data-stage="intent">Intent</span>
+
         <span class="pill pill-default text-xs" data-stage="llm">LLM</span>
+
         <span class="pill pill-default text-xs" data-stage="rbac">RBAC</span>
+
         <span class="pill pill-default text-xs" data-stage="approval">Approval</span>
+
         <span class="pill pill-default text-xs" data-stage="hardware">Hardware</span>
+
         <span class="pill pill-default text-xs" data-stage="output_scan">Output Scan</span>
+
       </div>
+
     </div>
+
   </div>
+
+
 
   <!-- Modern Interactive Command Showcase Deck -->
+
   <div class="voice-commands-deck">
+
     <div class="deck-header flex items-center justify-between mb-sm">
+
       <div class="flex items-center gap-xs">
+
         <svg class="icon text-accent icon-sm"><use href="/static/icons.svg#icon-terminal"></use></svg>
+
         <span class="text-sm font-bold uppercase tracking-wider">Try Speaking These Commands</span>
+
       </div>
+
       <span class="text-xs text-muted">Click any prompt to trigger voice execution</span>
+
     </div>
+
+
 
     <div class="deck-grid">
+
       <!-- 1. Smart Lighting & Blinking -->
+
       <div class="command-group-card">
+
         <div class="group-title">
+
           <svg class="icon icon-xs text-accent"><use href="/static/icons.svg#icon-activity"></use></svg>
+
           <span>Smart Lighting & LEDs</span>
+
         </div>
+
         <div class="group-chips">
+
           <button type="button" class="voice-cmd-chip" data-speak="Turn on the living room light">"Turn on the light"</button>
+
           <button type="button" class="voice-cmd-chip" data-speak="Blink the light 4 times">"Blink the light 4 times"</button>
+
           <button type="button" class="voice-cmd-chip" data-speak="Turn off the light">"Turn off the light"</button>
+
         </div>
+
       </div>
+
+
 
       <!-- 2. Live Weather & Telemetry -->
+
       <div class="command-group-card">
+
         <div class="group-title">
+
           <svg class="icon icon-xs text-info"><use href="/static/icons.svg#icon-cloud"></use></svg>
+
           <span>Climate & Telemetry</span>
+
         </div>
+
         <div class="group-chips">
+
           <button type="button" class="voice-cmd-chip" data-speak="What is the current temperature?">"What is the temperature?"</button>
+
           <button type="button" class="voice-cmd-chip" data-speak="What is the temperature in Delhi?">"Temperature in Delhi"</button>
+
           <button type="button" class="voice-cmd-chip" data-speak="Is it cold in Jaipur?">"Weather in Jaipur"</button>
+
         </div>
+
       </div>
+
+
 
       <!-- 3. Security & Access Control (Privileged) -->
+
       <div class="command-group-card highlight-security">
+
         <div class="group-title">
+
           <svg class="icon icon-xs text-warn"><use href="/static/icons.svg#icon-shield"></use></svg>
+
           <span>Security Actions (High Risk)</span>
+
         </div>
+
         <div class="group-chips">
+
           <button type="button" class="voice-cmd-chip" data-speak="Unlock the front entrance door">"Unlock the front door"</button>
+
           <button type="button" class="voice-cmd-chip" data-speak="Sound the alarm buzzer for 10 seconds">"Sound the alarm for 10 seconds"</button>
+
         </div>
+
       </div>
+
+
 
       <!-- 4. Conversational AI Chat -->
+
       <div class="command-group-card">
+
         <div class="group-title">
+
           <svg class="icon icon-xs text-accent"><use href="/static/icons.svg#icon-cpu"></use></svg>
+
           <span>General AI Conversation</span>
+
         </div>
+
         <div class="group-chips">
+
           <button type="button" class="voice-cmd-chip" data-speak="Who are you and what do you do?">"Who are you?"</button>
+
           <button type="button" class="voice-cmd-chip" data-speak="How does the zero-trust security gateway work?">"How does zero-trust work?"</button>
+
           <button type="button" class="voice-cmd-chip" data-speak="Explain what a prompt injection attack is">"Explain prompt injection"</button>
+
         </div>
+
       </div>
+
+
 
       <!-- 5. Hindi Commands (हिंदी वॉयस कमांड्स) -->
+
       <div class="command-group-card">
+
         <div class="group-title">
+
           <svg class="icon icon-xs text-accent"><use href="/static/icons.svg#icon-volume-2"></use></svg>
+
           <span>हिंदी वॉयस कमांड्स</span>
+
         </div>
+
         <div class="group-chips">
+
           <button type="button" class="voice-cmd-chip" data-speak="कमरे की लाइट चालू कर दो">"कमरे की लाइट चालू कर दो"</button>
+
           <button type="button" class="voice-cmd-chip" data-speak="आज का तापमान क्या है?">"आज का तापमान क्या है?"</button>
+
           <button type="button" class="voice-cmd-chip" data-speak="अलार्म 5 सेकंड के लिए बजाओ">"अलार्म 5 सेकंड के लिए बजाओ"</button>
+
         </div>
+
       </div>
+
     </div>
+
   </div>
+
 </div>
+
 {% endblock %}
 
+
+
 {% block extra_js %}
+
 <script src="/static/js/voice_sphere.js?t=20261029b"></script>
+
 {% endblock %}
+

@@ -313,19 +313,38 @@
     window.removeEventListener("click", onFirstClick);
   }, { once: true });
 
-  function speakText(text, onEndCallback) {
+  function sanitizeForSpeech(text) {
+    if (!text) return "";
+    var clean = text
+      .replace(/\b[a-f0-9]{16,64}\b/gi, "")
+      .replace(/\(?Error ID:\s*[a-zA-Z0-9_-]+\)?/gi, "")
+      .replace(/\breq_[a-zA-Z0-9_-]+\b/gi, "")
+      .replace(/\bINJ-\d+\b/gi, "")
+      .replace(/\s+/g, " ")
+      .trim();
+    return clean || text;
+  }
+
+  function speakText(rawText, onEndCallback) {
+    var text = sanitizeForSpeech(rawText);
     if (!speakerEnabled || !window.speechSynthesis || !text) {
       if (onEndCallback) onEndCallback();
       return;
     }
 
     primeAudio();
-    window.speechSynthesis.cancel();
+    try {
+      window.speechSynthesis.cancel();
+      if (window.speechSynthesis.paused) {
+        window.speechSynthesis.resume();
+      }
+    } catch (e) {}
 
     var utterance = new SpeechSynthesisUtterance(text);
     utterance.lang = currentLang === "hi" ? "hi-IN" : "en-IN";
     utterance.rate = 1.0;
     utterance.pitch = 1.0;
+    utterance.volume = 1.0;
 
     var bestVoice = getBestVoice(currentLang);
     if (bestVoice) {
@@ -554,9 +573,9 @@
 
             if (data.final.error && data.final.error.indexOf("SESSION QUARANTINED") !== -1) {
               setOrbState("idle", "SESSION QUARANTINED");
-              if (micBtn) micBtn.disabled = true;
-              if (instructionHint) {
-                instructionHint.textContent = "🚨 Session Quarantined: Hardware containment active. Admin release required.";
+              if (micTrigger) micTrigger.disabled = true;
+              if (hintEl) {
+                hintEl.textContent = "🚨 Session Quarantined: Hardware containment active. Admin release required.";
               }
               if (window.AegisApp && window.AegisApp.openQuarantineModal) {
                 window.AegisApp.openQuarantineModal();
@@ -587,7 +606,7 @@
             return;
           }
 
-          if (Date.now() - startTime > 35000) {
+          if (Date.now() - startTime > 75000) {
             setOrbState("idle", "STANDBY");
             if (agentTextEl) agentTextEl.textContent = "Gateway response timed out.";
             return;
@@ -832,10 +851,10 @@
 
   // Listen for global quarantine release from modal
   window.addEventListener("aegis:quarantine_released", function () {
-    if (micBtn) micBtn.disabled = false;
+    if (micTrigger) micTrigger.disabled = false;
     setOrbState("idle", "STANDBY");
-    if (instructionHint) {
-      instructionHint.textContent = "Click microphone or press Spacebar to talk to Aura";
+    if (hintEl) {
+      hintEl.textContent = "Click microphone or press Spacebar to talk to Aura";
     }
   });
 

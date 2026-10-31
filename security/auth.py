@@ -29,24 +29,6 @@ LOCKOUT_DURATION_SECONDS = 300.0  # 5 minutes
 _auth_thread_lock = threading.RLock()
 
 
-class AuthError(str):
-    """
-    Uniform user-facing error ("Invalid username or password") that preserves
-    detailed internal reason for logging and backward-compatible test assertions.
-    """
-    def __new__(cls, audit_reason=""):
-        obj = super().__new__(cls, "Invalid username or password")
-        obj.audit_reason = audit_reason
-        return obj
-
-    def __contains__(self, item):
-        if str(item) in "Invalid username or password":
-            return True
-        if self.audit_reason and str(item) in self.audit_reason:
-            return True
-        return False
-
-
 def _get_users_file() -> Path:
     data_dir = Path(os.environ.get("AEGIS_DATA_DIR", Path(__file__).resolve().parent.parent / "data"))
     data_dir.mkdir(parents=True, exist_ok=True)
@@ -231,11 +213,14 @@ def verify_login(username: str, password: str) -> tuple[bool, str]:
         # Check active lockout
         if locked_until > now:
             remaining_seconds = int(locked_until - now)
+            # Constant-time dummy computation to defend against timing attacks
+            dummy_salt = "0" * 32
+            _hash_password(password, dummy_salt)
             security.logger.log_event(
                 "login_failure",
                 {"reason": "account_locked", "remaining_seconds": remaining_seconds, "username": username},
             )
-            return False, AuthError(f"Account is locked. Try again in {remaining_seconds} seconds.")
+            return False, "Invalid username or password"
 
         user = data.get("users", {}).get(username)
 
@@ -247,7 +232,7 @@ def verify_login(username: str, password: str) -> tuple[bool, str]:
                 "login_failure",
                 {"reason": "user_not_found", "username": username},
             )
-            return False, AuthError("user_not_found")
+            return False, "Invalid username or password"
 
         stored_hash = user.get("pbkdf2_hash", "")
         salt = user.get("salt", "")
@@ -282,7 +267,7 @@ def verify_login(username: str, password: str) -> tuple[bool, str]:
                         "username": username,
                     },
                 )
-                return False, AuthError(f"Account locked for {int(LOCKOUT_DURATION_SECONDS / 60)} minutes due to {LOCKOUT_MAX_ATTEMPTS} failed login attempts.")
+                return False, "Invalid username or password"
             else:
                 lockouts[username] = {
                     "failed_attempts": failed_attempts,
@@ -298,7 +283,7 @@ def verify_login(username: str, password: str) -> tuple[bool, str]:
                         "username": username,
                     },
                 )
-                return False, AuthError(f"Invalid username or password ({remaining_attempts} attempts remaining before lockout).")
+                return False, "Invalid username or password"
 
 
 def logout(username: str):

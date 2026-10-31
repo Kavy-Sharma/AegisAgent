@@ -1,98 +1,217 @@
 tools:
+
   turn_light_on:
+
     risk: LOW
+
   turn_light_off:
+
     risk: LOW
+
   read_temperature:
     risk: LOW
-  activate_alarm:
-    risk: HIGH
-  unlock_door:
-    risk: HIGH
-  read_note:
-    risk: LOW
+    online: false
     untrusted_output: true
+
+  activate_alarm:
+
+    risk: HIGH
+
+  unlock_door:
+
+    risk: HIGH
+
+  read_note:
+
+    risk: LOW
+
+    untrusted_output: true
+
   disable_security_perimeter:
+
     risk: HONEYPOT
 
+
+
 roles:
+
   guest:
+
     allowed_tools:
+
       - turn_light_on
+
       - turn_light_off
+
       - read_temperature
+
       - read_note
+
       - disable_security_perimeter
+
   admin:
+
     allowed_tools:
+
       - turn_light_on
+
       - turn_light_off
+
       - read_temperature
+
       - activate_alarm
+
       - unlock_door
+
       - read_note
+
       - disable_security_perimeter
+
+
 
 dynamic_escalation:
-  enabled: false
+
+  enabled: true
+
   threshold: 0.5
 
+
+
 intent_lock:
+
   enabled: true
+
   default_scope:
+
     - read_temperature
+
     - read_note
 
+
+
 intents:
+
   light:
-    keywords: [light, lamp, bulb, led, leds, blink, lights]
+
+    keywords: [light, lamp, bulb, led, leds, blink, lights, लाइट, बत्ती, रोशन]
+
     tools: [turn_light_on, turn_light_off]
+
   temperature:
-    keywords: [temperature, temp, hot, cold, weather]
+
+    keywords: [temperature, temp, hot, cold, weather, तापमान, मौसम]
+
     tools: [read_temperature]
+
   door:
-    keywords: [door, unlock, entrance, gate, lock]
+
+    keywords: [door, unlock, entrance, gate, lock, दरवाजा, गेट, ताला]
+
     tools: [unlock_door]
+
   alarm:
-    keywords: [alarm, siren, buzzer, sound]
+
+    keywords: [alarm, siren, buzzer, sound, अलार्म, सायरन, बज़र]
+
     tools: [activate_alarm]
+
   notes:
-    keywords: [note, notes, memo, read]
+
+    keywords: [note, notes, memo, read, नोट, मेमो]
+
     tools: [read_note]
 
+
+
 provenance:
+
   enabled: true
+
+
 
 rate_limits:
+
   default:
+
     max_calls: 5
+
     window_seconds: 60
 
+
+
 detection:
+
   enabled: true
+
   mode: enforce            # monitor = log only | enforce = BLOCK actually stops the request
+
   review_threshold: 0.5
+
   block_threshold: 0.8
+
   context_window: 4
+
   detectors: [rules, context]
+
   scan_tool_outputs: true
+
   rules_file: security/rules/injection_rules.yaml
 
+
+
 approval:
+
   enabled: true
+
   provider: dashboard       # console | dashboard (default: console)
+
   timeout_seconds: 60
+
   require_for_risk: [HIGH]    # use whatever risk label names the existing tool policy already uses
+
   require_for_review_verdict: true
 
+
+
 hardware:
-  mode: auto             # auto (detects USB Serial first, falls back to MQTT/fake) | serial | mqtt | fake
+
+  mode: mqtt             # mqtt (production broker mode) | serial (direct USB) | fake (testing)
+  # When mode is serial, connect ESP32 via USB and configure serial_port or vid_pid
+  vid_pid:
+    - "10C4:EA60"        # Silicon Labs CP210x
+    - "1A86:7523"        # QinHeng CH340
+    - "303A:1001"        # Espressif ESP32-S3 USB JTAG/serial
+
   location: "Jodhpur"
+
   serial_port: auto      # auto (auto-detects CP210x, CH340, ESP32) or specific port (e.g. COM11)
+
   baud_rate: 115200
+
   broker_host: 127.0.0.1
+
   broker_port: 1883
+
   device_id: esp32-01
+
   mosquitto_exe: "C:\\Program Files\\mosquitto\\mosquitto.exe"
 
+  ack_map:
+
+    light_on: "EVENT: light_on_done"
+
+    light_off: "EVENT: light_off_done"
+
+    unlock_door: "EVENT: door_unlocked"
+
+    alarm_on: "EVENT: alarm_started"
+
+    alert_blocked: "EVENT: alert_blocked_shown"
+
+    ping: "EVENT: ping_ack"
+
+
+
+voice:
+  enabled: false
 

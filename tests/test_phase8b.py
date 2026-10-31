@@ -122,17 +122,17 @@ def test_login_lockout_after_5_failed_attempts():
     for attempt in range(1, 5):
         ok, msg = security.auth.verify_login("test_lockout_user", "WrongPassword!")
         assert ok is False
-        assert "attempts remaining" in msg
+        assert msg == "Invalid username or password"
 
     # 5th attempt triggers lockout
     ok, msg = security.auth.verify_login("test_lockout_user", "WrongPassword!")
     assert ok is False
-    assert "Account locked for 5 minutes" in msg
+    assert msg == "Invalid username or password"
 
     # 6th attempt with correct password fails closed
     ok, msg = security.auth.verify_login("test_lockout_user", "ValidPass123!")
     assert ok is False
-    assert "Account is locked" in msg
+    assert msg == "Invalid username or password" 
 
 
 # ============================================================================
