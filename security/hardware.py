@@ -53,6 +53,29 @@ from security import logger, policy_loader
 COMMAND_ALLOWLIST = {"light_on", "light_off", "unlock_door", "alarm_on", "alert_blocked", "ping"}
 
 
+def _normalize_ack(val) -> str:
+    s = str(val or "").strip()
+    if s.startswith("EVENT:"):
+        s = s[6:].strip()
+    return s
+
+
+def _ack_ok(payload, target) -> bool:
+    if not payload or not target:
+        return False
+    return _normalize_ack(payload) == _normalize_ack(target)
+
+
+def _serial_ack_ok(raw_buffer: str, expected_ack: str) -> bool:
+    if not raw_buffer or not expected_ack:
+        return False
+    target = _normalize_ack(expected_ack)
+    for line in raw_buffer.splitlines():
+        if _normalize_ack(line) == target:
+            return True
+    return False
+
+
 
 def load_env_file():
 
@@ -119,6 +142,13 @@ class HardwareCommandResult:
 
 
     error: str | None = None
+    adapter: str = "hardware"
+
+    def __getitem__(self, item):
+        return getattr(self, item)
+
+    def get(self, item, default=None):
+        return getattr(self, item, default)
 
 
 
@@ -431,6 +461,8 @@ class HardwareBridge:
 
 
             self._status_event.clear()
+            self._event_received_event.clear()
+            self._last_event_payload = None
 
 
 
@@ -599,10 +631,7 @@ class HardwareBridge:
 
 
                                     if expected_ack:
-
-
-
-                                        if self._event_received_event.wait(timeout=3.0) and (self._last_event_payload == expected_ack or (self._last_event_payload and expected_ack in str(self._last_event_payload))):
+                                        if self._event_received_event.wait(timeout=3.0) and _ack_ok(self._last_event_payload, expected_ack):
 
 
 
@@ -1244,10 +1273,11 @@ class SerialHardwareBridge:
 
 
                         if any(k in chunk for k in ("STATUS:online", "ping_ack", "EVENT:", "USB_RECV:")):
-
-
-
                             ack_found = True
+
+
+
+
 
 
 
@@ -1466,19 +1496,9 @@ class SerialHardwareBridge:
 
                         raw_buffer += chunk
 
-
-
-                        if expected_ack and expected_ack in raw_buffer:
-
-
-
+                        if expected_ack and _serial_ack_ok(raw_buffer, expected_ack):
                             ack_found = True
-
-
-
                             break
-
-
 
                     time.sleep(0.02)
 
@@ -1579,7 +1599,12 @@ def get_bridge():
 
 
 
-        if mode == "fake":
+        if mode == "virtual":
+            from security.virtual_home import VirtualBridge
+            if not isinstance(_bridge_instance, VirtualBridge):
+                _bridge_instance = VirtualBridge()
+            return _bridge_instance
+        elif mode == "fake":
 
 
 

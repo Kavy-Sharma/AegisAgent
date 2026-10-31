@@ -384,7 +384,7 @@ def log_role_change(old_role: str, new_role: str) -> dict:
     return _append_entry(entry)
 
 
-def log_hardware_command(command: str, ok: bool, error: str | None) -> dict:
+def log_hardware_command(command: str, ok: bool, error: str | None, adapter: str | None = None) -> dict:
     """Constructs a tamper-evident audit log entry for a hardware command."""
     timestamp_str = datetime.now(timezone.utc).isoformat()
     entry = {
@@ -394,6 +394,8 @@ def log_hardware_command(command: str, ok: bool, error: str | None) -> dict:
         "ok": ok,
         "timestamp": timestamp_str,
     }
+    if adapter:
+        entry["adapter"] = adapter
     return _append_entry(entry)
 
 

@@ -93,7 +93,7 @@ intents:
 
   light:
 
-    keywords: [light, lamp, bulb, led, leds, blink, lights, लाइट, बत्ती, रोशन]
+    keywords: [light, lamp, bulb, led, leds, blink, lights, dark, darker, darkness, bright, brighter, dim, dimmer, "off", "on", "turn off", "turn on", "switch off", "switch on", "turn it off", "turn it on", "switch it off", "switch it on", लाइट, बत्ती, रोशन]
 
     tools: [turn_light_on, turn_light_off]
 
@@ -175,7 +175,7 @@ approval:
 
 hardware:
 
-  mode: mqtt             # mqtt (production broker mode) | serial (direct USB) | fake (testing)
+  mode: mqtt             # mqtt (production broker mode) | serial (direct USB) | fake (testing) | virtual (in-memory simulation)
   # When mode is serial, connect ESP32 via USB and configure serial_port or vid_pid
   vid_pid:
     - "10C4:EA60"        # Silicon Labs CP210x
