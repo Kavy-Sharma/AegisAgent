@@ -259,16 +259,35 @@ AegisAgent/
 ## ⚠️ Architectural Limitations
 
 1. **Administrator Lockout Recovery (VULN-03)**:
-   To prevent brute-force attacks and privilege escalation, administrator accounts are strictly subject to account lockout after 5 consecutive failed login attempts (5-minute cooldown). Administrator accounts are intentionally *not* exempted in code. If an administrator is locked out, recovery is performed locally via loopback CLI using `python scripts/reset_password.py`.
+   To reduces brute-force risk, administrator accounts are strictly subject to account lockout after 5 consecutive failed login attempts (5-minute cooldown). Administrator accounts are intentionally *not* exempted in code. If an administrator is locked out, recovery is performed locally via loopback CLI using `python scripts/reset_password.py`.
 
 2. **Head-of-Line Worker Thread Scheduling (VULN-11)**:
    The backend worker processes queued turns sequentially. When a high-risk tool (e.g. `unlock_door`) is triggered, the worker awaits an operator decision for up to the policy timeout (60 seconds). During this interval, subsequent commands wait in queue until the approval completes or expires.
 
-3. **Microcontroller Command Replay Defense**:
-   ESP32 firmware enforces local GPIO state bounds, non-blocking hardware watchdogs, auto-relock timers, and on-device command allowlisting (`light_on`, `light_off`, `unlock_door`, `alarm_on`, `alarm_off`, `ping`). However, firmware does not validate monotonic nonces; transport integrity relies on encrypted TLS and authenticated MQTT broker ACLs on the local network.
+3. **No TLS & Plaintext Transport**:
+   There is NO TLS encryption configured on local web or MQTT channels. Communication between the web server, Ollama, the MQTT broker, and the ESP32 runs over plaintext HTTP and raw TCP MQTT. Local network packet sniffing can observe messages in transit.
 
-4. **Regex / Rule-Based Detection Boundary**:
-   Heuristic and regex detection rules catch common prompt override patterns and known attack signatures. However, advanced evasion techniques—including homoglyphs, non-English translations (e.g., Hindi/Hinglish), and ROT13/base64 without trigger keywords—bypass the rule detector (16.7% rule detection on novel bypasses). System safety strictly relies on the downstream defense-in-depth stages: Intent Lock, RBAC policy gating, and Operator Authorization.
+4. **Same-OS-User Privilege Boundary**:
+   AegisAgent relies on file-system HMAC signatures (`AEGIS_WEB_SECRET`, `AEGIS_DASH_SECRET`) stored in `.env`. Any local process running as the same operating system user can read `.env` and forge signed requests or approval decisions.
 
-5. **Audit Log Suffix Truncation**:
-   The internal cryptographic hash chain (`prev_hash` -> `entry_hash`) reliably detects line tampering, reordering, and middle deletions. However, suffix truncation (deleting the last N entries) leaves the remaining chain internally consistent. Full truncation detection requires maintaining and validating against the external state anchor (`logs/audit_log.anchor.json`).
+5. **Flask Cookie Session Revocation**:
+   Authentication sessions use cryptographically signed client-side cookies. Logging out clears the cookie in the client browser, but previously issued session cookies cannot be invalidated server-side before idle expiration (`SESSION_IDLE_TIMEOUT` = 15 minutes).
+
+6. **Self-Approval by Administrator**:
+   An administrator who submits a high-risk action (such as `unlock_door`) can currently approve their own pending request in the authorization dashboard. The system does not enforce a mandatory two-person rule.
+
+7. **Microcontroller Command Replay Defense**:
+   ESP32 firmware enforces local GPIO state bounds, non-blocking hardware watchdogs, auto-relock timers, and on-device command allowlisting (`light_on`, `light_off`, `unlock_door`, `alarm_on`, `ping`). However, firmware does not validate monotonic nonces; replay protection depends on MQTT broker access controls and network isolation.
+
+8. **Weak Detection Against Obfuscated & Non-English Evasions**:
+   Regex and keyword detection rules achieve only 16.7% detection against novel adversarial bypasses. Measured detection rates per category:
+   - Hindi / Hinglish translation attacks: **0.0%** (0 / 10 detected)
+   - Homoglyphs / Unicode substitution: **0.0%** (0 / 8 detected)
+   - Base64 / Hex / ROT13 encoding: **10.0%** (1 / 10 detected)
+   - Role spoofing: **12.5%** (1 / 8 detected)
+   - Slow multi-turn split payloads: **25.0%** (2 / 8 detected)
+   - Markdown / JSON wrapping: **25.0%** (2 / 8 detected)
+   - Spacing / Whitespace insertion: **50.0%** (4 / 8 detected)
+
+9. **Audit Log External Anchor Boundary**:
+   The internal cryptographic hash chain (`prev_hash` -> `entry_hash`) detects line edits, reorderings, and middle deletions. Suffix truncation (dropping the last N entries) leaves the remaining chain valid. An on-disk anchor file (`logs/audit_log.anchor.json`) does not stop an attacker who has local write access to the disk (as they could rewrite the anchor file); only an anchor stored externally or verified offline (`python -m security.verify_log --check-anchor "<line>"`) detects truncation.
