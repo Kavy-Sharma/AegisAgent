@@ -509,6 +509,53 @@ def _process_direct_tool(req: dict, emit, outbox_file: Path):
         f.flush()
 
 
+def _process_attack_lab(req: dict, emit, outbox_file: Path):
+    import security.attack_lab
+    scenario_id = req.get("scenario_id", "")
+    username = req.get("username", "admin")
+    req_id = req.get("id", "")
+
+    scenario = security.attack_lab.get_scenario(scenario_id)
+    if not scenario:
+        err_entry = {
+            "final": True,
+            "kind": "attack_lab",
+            "error": f"Unknown scenario '{scenario_id}'",
+            "decision": "ERROR",
+            "owner": username,
+            "request_id": req_id,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+        with open(outbox_file, "a", encoding="utf-8") as f:
+            f.write(json.dumps(err_entry) + "\n")
+            f.flush()
+        return
+
+    unprotected = security.attack_lab.run_unprotected(scenario)
+    protected = security.attack_lab.run_protected(scenario, emit=emit, username="lab_admin")
+
+    lab_entry = {
+        "final": True,
+        "kind": "attack_lab",
+        "scenario": {
+            "id": scenario["id"],
+            "title": scenario["title"],
+            "prompt": scenario["prompt"],
+            "role": scenario.get("role", "guest"),
+            "expected_protected_stage": scenario.get("expected_protected_stage"),
+        },
+        "unprotected": unprotected,
+        "protected": protected,
+        "owner": username,
+        "request_id": req_id,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "source": "attack_lab",
+    }
+    with open(outbox_file, "a", encoding="utf-8") as f:
+        f.write(json.dumps(lab_entry) + "\n")
+        f.flush()
+
+
 def prune_stale_files(data_dir: Path | None = None):
     """
     Prunes files older than 24h from outbox and decisions, and purges expired pending approvals.
@@ -796,6 +843,8 @@ def run_worker():
             try:
                 if kind == "direct_tool":
                     _process_direct_tool(req, emit, outbox_file)
+                elif kind == "attack_lab":
+                    _process_attack_lab(req, emit, outbox_file)
                 else:
                     assigned_role = role
                     user_text = req.get("text", "")

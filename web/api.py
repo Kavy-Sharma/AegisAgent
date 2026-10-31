@@ -1399,6 +1399,178 @@ def api_console_release_quarantine():
 
 
 
+# 5d. Attack Lab: Run Scenario (Admin only)
+
+@api_bp.route("/attack_lab/run", methods=["POST"])
+@role_required("admin")
+@csrf_protect
+def api_attack_lab_run():
+    """
+    Submits an Attack Lab scenario run to the worker via signed IPC.
+    Admin only. Validates scenario_id against known lab scenarios.
+    Role is read strictly from session, never from client payload.
+    """
+    body = request.get_json(silent=True)
+    if not isinstance(body, dict):
+        return jsonify({"error": "Request body must be a valid JSON object"}), 400
+
+    scenario_id = body.get("scenario_id")
+    if not isinstance(scenario_id, str) or not scenario_id.strip():
+        return jsonify({"error": "Scenario ID must be a non-empty string"}), 400
+
+    scenario_id = scenario_id.strip()
+    import security.attack_lab
+    scenario = security.attack_lab.get_scenario(scenario_id)
+    if not scenario:
+        return jsonify({"error": "Unknown scenario ID"}), 404
+
+    # Check worker health if not testing
+    if not current_app.config.get("TESTING"):
+        health = security.health.get_system_health()
+        if not health.get("worker", {}).get("alive", False):
+            return jsonify({
+                "error": "Agent worker service is offline. Cannot process lab scenario.",
+                "status": "offline",
+            }), 503
+
+    username = session.get("username", "admin")
+    if security.quarantine.is_quarantined(username):
+        return jsonify({
+            "error": "Account is quarantined. Lab execution unavailable.",
+            "quarantined": True,
+        }), 423
+
+    role = session.get("role", "admin")
+    req_id = "lab_" + secrets.token_hex(12)
+    session_id = f"lab_{secrets.token_hex(8)}"
+    ts = time.time()
+    nonce = secrets.token_hex(16)
+
+    payload = {
+        "id": req_id,
+        "kind": "attack_lab",
+        "nonce": nonce,
+        "role": role,
+        "scenario_id": scenario_id,
+        "session_id": session_id,
+        "ts": ts,
+        "username": username,
+    }
+
+    sig = security.signing.sign(payload)
+    payload["signature"] = sig
+
+    inbox_dir = _get_data_dir() / "chat" / "inbox"
+    inbox_dir.mkdir(parents=True, exist_ok=True)
+
+    outbox_dir = _get_data_dir() / "chat" / "outbox"
+    outbox_dir.mkdir(parents=True, exist_ok=True)
+    outbox_init = outbox_dir / f"{req_id}.jsonl"
+    with open(outbox_init, "w", encoding="utf-8") as f:
+        f.write(json.dumps({
+            "owner": username,
+            "request_id": req_id,
+            "kind": "attack_lab",
+            "scenario_id": scenario_id,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }) + "\n")
+
+    inbox_file = inbox_dir / f"{req_id}.json"
+    tmp_file = inbox_dir / f"{req_id}.tmp.{secrets.token_hex(4)}"
+
+    try:
+        with open(tmp_file, "w", encoding="utf-8") as f:
+            f.write(json.dumps(payload, indent=2))
+        os.replace(tmp_file, inbox_file)
+    except Exception as e:
+        err_id = secrets.token_hex(4)
+        security.logger.log_event("attack_lab_submit_error", {"error_id": err_id, "error": str(e), "req_id": req_id})
+        return jsonify({"error": "Failed to submit attack lab scenario", "error_id": err_id}), 500
+
+    return jsonify({"req_id": req_id, "status": "queued"})
+
+
+# 5e. Attack Lab: Get Scenario Result (Admin only)
+
+@api_bp.route("/attack_lab/result/<req_id>", methods=["GET"])
+@role_required("admin")
+def api_attack_lab_result(req_id: str):
+    """
+    Polls the outbox file for attack lab results.
+    Admin only. Validates req_id pattern and owner check.
+    """
+    if not ID_REGEX.match(req_id):
+        return jsonify({"error": "Invalid request ID format"}), 400
+
+    outbox_dir = _get_data_dir() / "chat" / "outbox"
+    outbox_file = outbox_dir / f"{req_id}.jsonl"
+
+    current_user = session.get("username", "")
+    current_real_role = session.get("real_role", "")
+    owner = None
+
+    if outbox_file.exists():
+        try:
+            with open(outbox_file, "r", encoding="utf-8") as f_own:
+                for o_line in f_own:
+                    o_line = o_line.strip()
+                    if not o_line:
+                        continue
+                    try:
+                        o_entry = json.loads(o_line)
+                        if "owner" in o_entry:
+                            owner = o_entry["owner"]
+                            break
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
+    if not owner:
+        inbox_file = _get_data_dir() / "chat" / "inbox" / f"{req_id}.json"
+        if inbox_file.exists():
+            try:
+                with open(inbox_file, "r", encoding="utf-8") as f_in:
+                    inbox_data = json.load(f_in)
+                    owner = inbox_data.get("username")
+            except Exception:
+                pass
+
+    if owner and owner != current_user and current_real_role != "admin":
+        security.logger.log_event("idor_blocked", {
+            "req_id": req_id,
+            "owner": owner,
+            "attempted_by": current_user,
+            "real_role": current_real_role,
+        })
+        return jsonify({"error": "Forbidden: You do not have permission to view this request"}), 403
+
+    if not outbox_file.exists():
+        return jsonify({"status": "queued", "result": None})
+
+    final_entry = None
+    try:
+        with open(outbox_file, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    entry = json.loads(line)
+                    if entry.get("final") is True and entry.get("kind") == "attack_lab":
+                        final_entry = entry
+                except Exception:
+                    continue
+    except Exception as e:
+        err_id = secrets.token_hex(4)
+        security.logger.log_event("attack_lab_result_error", {"error_id": err_id, "error": str(e), "req_id": req_id})
+        return jsonify({"error": "Error reading attack lab result", "error_id": err_id}), 500
+
+    if final_entry:
+        return jsonify({"status": "completed", "result": final_entry})
+    return jsonify({"status": "running", "result": None})
+
+
 # 6. Worker Control: Start Worker (Admin only)
 
 @api_bp.route("/worker/start", methods=["POST"])
