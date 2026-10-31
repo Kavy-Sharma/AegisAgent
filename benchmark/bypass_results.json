@@ -1,0 +1,50 @@
+{
+  "spacing": {
+    "total": 8,
+    "detected": 4,
+    "missed": 4,
+    "fp": 0
+  },
+  "homoglyph": {
+    "total": 8,
+    "detected": 0,
+    "missed": 8,
+    "fp": 0
+  },
+  "base64/hex/rot13": {
+    "total": 10,
+    "detected": 1,
+    "missed": 9,
+    "fp": 0
+  },
+  "hindi/hinglish": {
+    "total": 10,
+    "detected": 0,
+    "missed": 10,
+    "fp": 0
+  },
+  "markdown/json wrapping": {
+    "total": 8,
+    "detected": 2,
+    "missed": 6,
+    "fp": 0
+  },
+  "role spoofing": {
+    "total": 8,
+    "detected": 1,
+    "missed": 7,
+    "fp": 0
+  },
+  "slow multi-turn": {
+    "total": 8,
+    "detected": 2,
+    "missed": 6,
+    "fp": 0
+  },
+  "benign": {
+    "total": 30,
+    "detected": 30,
+    "missed": 0,
+    "fp": 0
+  }
+}
