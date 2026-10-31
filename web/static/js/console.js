@@ -49,6 +49,7 @@
 
 
   var isQuarantineActive = false;
+  var isTurnRunning = false;
 
 
 
@@ -156,7 +157,7 @@
 
         chatTextarea.placeholder = "Dispatched command or prompt (e.g. 'Turn on the light', 'What is the temperature?')...";
 
-        chatTextarea.focus();
+        if (chatTextarea.focus) chatTextarea.focus();
 
       }
 
@@ -179,6 +180,7 @@
 
 
   function setTurnRunning(running) {
+    isTurnRunning = !!running;
 
     if (isQuarantineActive) {
 
@@ -196,7 +198,7 @@
 
     if (!running && chatTextarea) {
 
-      chatTextarea.focus();
+      if (chatTextarea.focus) chatTextarea.focus();
 
     }
 
@@ -1098,25 +1100,42 @@
 
 
 
-    // Arguments pre block
+    // Informative Action Impact & Parameters Block
+    var infoBox = document.createElement("div");
+    infoBox.className = "approval-info-box mt-xs p-xs rounded";
+    infoBox.style.cssText = "background: rgba(15, 23, 42, 0.4); border: 1px solid rgba(245, 158, 11, 0.25); border-radius: 6px; padding: 10px; margin-top: 8px;";
 
-    var argsLabel = document.createElement("div");
+    var hasArgs = toolArgs && typeof toolArgs === "object" && Object.keys(toolArgs).length > 0;
+    if (hasArgs) {
+      var argsTitle = document.createElement("div");
+      argsTitle.className = "text-xs font-semibold uppercase mb-xs";
+      argsTitle.style.cssText = "font-size: 11px; color: #f59e0b; margin-bottom: 4px; font-weight: 700;";
+      argsTitle.textContent = "Operation Parameters:";
+      infoBox.appendChild(argsTitle);
 
-    argsLabel.className = "text-xs font-semibold text-muted uppercase mt-xs";
-
-    argsLabel.textContent = "Arguments:";
-
-    body.appendChild(argsLabel);
-
-
-
-    var argsPre = document.createElement("pre");
-
-    argsPre.className = "code-block font-mono text-xs";
-
-    argsPre.textContent = JSON.stringify(toolArgs, null, 2);
-
-    body.appendChild(argsPre);
+      var argsList = document.createElement("div");
+      argsList.className = "text-xs font-mono";
+      for (var k in toolArgs) {
+        var row = document.createElement("div");
+        row.style.cssText = "padding: 2px 0;";
+        row.textContent = k + ": " + toolArgs[k];
+        argsList.appendChild(row);
+      }
+      infoBox.appendChild(argsList);
+    } else {
+      var desc = document.createElement("div");
+      desc.className = "text-xs";
+      desc.style.cssText = "font-size: 12px; line-height: 1.5; color: #cbd5e1;";
+      if (toolName.indexOf("door") !== -1) {
+        desc.innerHTML = "<strong style='color: #38bdf8;'>Physical Action:</strong> Door lock solenoid will pulse for 3 seconds to unlatch the front door, then auto-relock.<br><span style='color: #94a3b8; font-size: 11px;'>??? Aegis Zero-Trust Policy requires administrator authorization before actuating physical security locks.</span>";
+      } else if (toolName.indexOf("alarm") !== -1) {
+        desc.innerHTML = "<strong style='color: #f59e0b;'>Physical Action:</strong> Audible piezo buzzer siren and yellow strobe LED will activate on hardware.<br><span style='color: #94a3b8; font-size: 11px;'>??? High-risk audible siren requires operator verification.</span>";
+      } else {
+        desc.innerHTML = "<strong style='color: #38bdf8;'>Standard Action:</strong> Direct physical hardware actuation requested. Awaiting administrator signature.";
+      }
+      infoBox.appendChild(desc);
+    }
+    body.appendChild(infoBox);
 
 
 
@@ -1444,7 +1463,11 @@
 
         setTurnRunning(false);
 
-        turnUi.textEl.textContent = "Failed to dispatch request: " + err.message;
+        var msg = (err && err.message) || "Failed to dispatch request";
+        turnUi.textEl.textContent = "Failed to dispatch request: " + msg;
+        if (msg.toLowerCase().indexOf("quarantin") !== -1 || (err && err.status === 423)) {
+          setQuarantineLockdown(true);
+        }
 
       });
 
@@ -1584,7 +1607,7 @@
 
     history.replaceState(null, "", window.location.pathname);
 
-    chatTextarea.focus();
+    if (chatTextarea.focus) chatTextarea.focus();
 
   }
 
@@ -1596,6 +1619,38 @@
 
     setQuarantineLockdown(false);
 
+  });
+
+  if (!isQuarantineActive && chatTextarea) {
+    chatTextarea.disabled = false;
+    if (chatTextarea.focus) chatTextarea.focus();
+  }
+  if (!isQuarantineActive && chatSendBtn) {
+    chatSendBtn.disabled = false;
+  }
+
+  window.addEventListener("aegis:health", function (e) {
+    var health = e.detail;
+    if (health && health.worker) {
+      if (health.worker.alive) {
+        if (workerBanner) workerBanner.style.display = "none";
+        if (!isQuarantineActive && chatTextarea && chatTextarea.disabled && !isTurnRunning) {
+          chatTextarea.disabled = false;
+        }
+        if (!isQuarantineActive && chatSendBtn && chatSendBtn.disabled && !isTurnRunning) {
+          chatSendBtn.disabled = false;
+        }
+      } else {
+        if (workerBanner) workerBanner.style.display = "";
+      }
+    }
+    if (health && health.quarantined !== undefined) {
+      if (health.quarantined && !isQuarantineActive) {
+        setQuarantineLockdown(true);
+      } else if (!health.quarantined && isQuarantineActive) {
+        setQuarantineLockdown(false);
+      }
+    }
   });
 
 })();

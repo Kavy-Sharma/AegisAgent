@@ -56,7 +56,7 @@
   // 1. 3D Kinetic Particle Sphere Engine (Vibrant Multi-Spectral Glow)
   // =========================================================================
 
-  var numParticles = 640;
+  var numParticles = 240;
   var particles = [];
   var baseRadius = 140;
   var rotX = 0.25;
@@ -567,6 +567,9 @@
           lastStepCount = steps.length;
 
           if (data.final) {
+            if (!approvalTriggered && approvalAlert) {
+              approvalAlert.style.display = "none";
+            }
             var reply = data.final.reply || (data.final.error ? ("Blocked: " + data.final.error) : "Done.");
             lastSpokenText = reply;
             if (agentTextEl) agentTextEl.textContent = reply;
@@ -645,7 +648,19 @@
 
     var argsEl = document.getElementById("voice-approval-args");
     if (argsEl) {
-      argsEl.textContent = JSON.stringify(toolArgs, null, 2);
+      if (!toolArgs || Object.keys(toolArgs).length === 0) {
+        if (toolName.indexOf("door") !== -1) {
+          argsEl.textContent = "Physical Action: Door lock solenoid will pulse for 3 seconds to unlatch front door, then auto-relock.\nZero-Trust Policy: High-risk physical actuation requires administrator verification.";
+        } else if (toolName.indexOf("alarm") !== -1) {
+          argsEl.textContent = "Physical Action: Audible piezo buzzer siren and yellow strobe LED will activate.\nZero-Trust Policy: High-risk siren alert requires operator verification.";
+        } else {
+          argsEl.textContent = "Standard Operation: Direct physical hardware execution requested.";
+        }
+      } else {
+        var argLines = [];
+        for (var p in toolArgs) argLines.push(p + ": " + toolArgs[p]);
+        argsEl.textContent = argLines.join("\n");
+      }
     }
 
     if (agentTextEl) {
@@ -857,6 +872,8 @@
       hintEl.textContent = "Click microphone or press Spacebar to talk to Aura";
     }
   });
+
+  if (approvalAlert) approvalAlert.style.display = "none";
 
   // Greet on load (with fallback on first click if blocked by browser autoplay)
   setTimeout(function () {

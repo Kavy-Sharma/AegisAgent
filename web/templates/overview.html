@@ -148,7 +148,7 @@
         <svg class="icon text-accent" style="width: 22px; height: 22px;"><use href="/static/icons.svg#icon-memory"></use></svg>
         <div>
           <h2 class="card-title">IoT Hardware Controller (ESP32)</h2>
-          <p class="card-subtitle">Real-time plug-and-play actuation over direct USB Serial link</p>
+          <p class="card-subtitle">Direct hardware manual override {% if session.get('role') != 'admin' %}&bull; <span class="text-warn font-semibold">Admin role required for direct actuation</span>{% else %}&bull; Real-time actuation link{% endif %}</p>
         </div>
       </div>
       <div class="flex items-center gap-xs">

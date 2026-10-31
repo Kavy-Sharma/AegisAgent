@@ -116,46 +116,23 @@ var app = (function () {
 
 
 
-    closeBtn.addEventListener("click", function () {
+    function closeToast() {
+      if (toast.classList.contains("toast-dismissing")) return;
+      toast.classList.add("toast-dismissing");
+      setTimeout(function () {
+        if (toast.parentNode) toast.parentNode.removeChild(toast);
+      }, 260);
+    }
 
-      if (toast.parentNode) toast.parentNode.removeChild(toast);
-
-    });
-
-
+    closeBtn.addEventListener("click", closeToast);
 
     toast.appendChild(iconWrap);
-
     toast.appendChild(body);
-
     toast.appendChild(closeBtn);
-
     container.appendChild(toast);
 
-
-
     if (duration > 0) {
-
-      setTimeout(function () {
-
-        if (toast.parentNode) {
-
-          toast.style.setProperty("opacity", "0");
-
-          toast.style.setProperty("transform", "translateX(100%)");
-
-          toast.style.setProperty("transition", "all 150ms ease");
-
-          setTimeout(function () {
-
-            if (toast.parentNode) toast.parentNode.removeChild(toast);
-
-          }, 150);
-
-        }
-
-      }, duration);
-
+      setTimeout(closeToast, duration);
     }
 
   }
@@ -426,6 +403,10 @@ var app = (function () {
 
         }
 
+      
+        try {
+          window.dispatchEvent(new CustomEvent("aegis:health", { detail: health }));
+        } catch (_evErr) {}
       })
 
       .catch(function () {

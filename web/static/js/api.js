@@ -35,7 +35,10 @@ var api = (function () {
         return response.json().then(function (data) {
           if (!response.ok) {
             var errMsg = (data && data.error) || "Request failed (" + response.status + ")";
-            return Promise.reject(new Error(errMsg));
+            var err = new Error(errMsg);
+            err.status = response.status;
+            err.data = data;
+            return Promise.reject(err);
           }
           return data;
         });

@@ -85,14 +85,12 @@
           class="chat-textarea"
           rows="1"
           placeholder="Ask AegisAgent to interact with devices or run tools... (Enter to send, Shift+Enter for newline)"
-          {% if not worker_alive %}disabled{% endif %}
         ></textarea>
         <button
           type="button"
           class="btn btn-primary chat-send-btn"
           id="chat-send-btn"
           title="Send instruction to agent (Enter)"
-          {% if not worker_alive %}disabled{% endif %}
         >
           <svg class="icon"><use href="/static/icons.svg#icon-send"></use></svg>
         </button>
@@ -197,5 +195,5 @@
 {% endblock %}
 
 {% block extra_js %}
-<script src="/static/js/console.js?t=20261029b"></script>
+<script src="/static/js/console.js?t=20261031_v4"></script>
 {% endblock %}
