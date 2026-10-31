@@ -40,3 +40,7 @@ Thumbs.db
 # Editor junk
 .vscode/
 .idea/
+.coverage
+review_bundle.txt
+pytest_out.txt
+collected.txt
