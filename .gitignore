@@ -44,3 +44,9 @@ Thumbs.db
 review_bundle.txt
 pytest_out.txt
 collected.txt
+
+logs/
+pytest_out.txt
+collected.txt
+.coverage
+review_bundle*
