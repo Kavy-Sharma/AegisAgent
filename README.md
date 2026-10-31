@@ -174,6 +174,13 @@ Dispatch allowlisted commands to the hardware bridge:
 python scripts/try_hardware.py unlock_door
 ```
 
+### 6. Phase 9B Security Benchmark (100 Cases Across 4 Defensive Layers)
+Run the offline zero-trust benchmark across 50 attacks and 50 benign prompts in 4 security configurations (`rules only`, `rules+context`, `+Intent Lock`, `+provenance/approval`):
+```bash
+python -m benchmark.run
+```
+Outputs `benchmark/results.csv` and prints a complete markdown evaluation table comparing detection rates (TPR), false-positive rates (FPR), and per-category attack misses.
+
 ---
 
 ## 📡 MQTT Broker & ESP32 Setup (Hardware Mode)
@@ -201,6 +208,11 @@ AegisAgent/
 ├── agent/
 │   ├── agent.py               # Main Agent CLI & Ollama Integration
 │   └── tools.py               # Tool Dispatchers & Hardware Interfaces
+├── benchmark/
+│   ├── attacks.jsonl          # 50 Attack Prompts (7 categories)
+│   ├── benign.jsonl           # 50 Benign Prompts (trigger words & normal tasks)
+│   ├── results.csv            # 400 Benchmark Run Evaluations
+│   └── run.py                 # Benchmark Runner Across 4 Defensive Configurations
 ├── security/
 │   ├── approval.py            # Phase 6 Human Approval Framework
 │   ├── gateway.py             # Security Gateway Interception Engine
@@ -240,3 +252,23 @@ AegisAgent/
 ├── .env.example               # Environment Variables Template
 └── README.md                  # Project Documentation
 ```
+
+
+---
+
+## ⚠️ Architectural Limitations
+
+1. **Administrator Lockout Recovery (VULN-03)**:
+   To prevent brute-force attacks and privilege escalation, administrator accounts are strictly subject to account lockout after 5 consecutive failed login attempts (5-minute cooldown). Administrator accounts are intentionally *not* exempted in code. If an administrator is locked out, recovery is performed locally via loopback CLI using `python scripts/reset_password.py`.
+
+2. **Head-of-Line Worker Thread Scheduling (VULN-11)**:
+   The backend worker processes queued turns sequentially. When a high-risk tool (e.g. `unlock_door`) is triggered, the worker awaits an operator decision for up to the policy timeout (60 seconds). During this interval, subsequent commands wait in queue until the approval completes or expires.
+
+3. **Microcontroller Command Replay Defense**:
+   ESP32 firmware enforces local GPIO state bounds, non-blocking hardware watchdogs, auto-relock timers, and on-device command allowlisting (`light_on`, `light_off`, `unlock_door`, `alarm_on`, `alarm_off`, `ping`). However, firmware does not validate monotonic nonces; transport integrity relies on encrypted TLS and authenticated MQTT broker ACLs on the local network.
+
+4. **Regex / Rule-Based Detection Boundary**:
+   Heuristic and regex detection rules catch common prompt override patterns and known attack signatures. However, advanced evasion techniques—including homoglyphs, non-English translations (e.g., Hindi/Hinglish), and ROT13/base64 without trigger keywords—bypass the rule detector (16.7% rule detection on novel bypasses). System safety strictly relies on the downstream defense-in-depth stages: Intent Lock, RBAC policy gating, and Operator Authorization.
+
+5. **Audit Log Suffix Truncation**:
+   The internal cryptographic hash chain (`prev_hash` -> `entry_hash`) reliably detects line tampering, reordering, and middle deletions. However, suffix truncation (deleting the last N entries) leaves the remaining chain internally consistent. Full truncation detection requires maintaining and validating against the external state anchor (`logs/audit_log.anchor.json`).
