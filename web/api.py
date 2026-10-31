@@ -337,6 +337,8 @@ def api_health():
 
     health["pending_approvals"] = pending_count
 
+    health["quarantined"] = security.quarantine.is_quarantined(session.get("username", "guest"))
+
     return jsonify(health)
 
 
@@ -1290,6 +1292,10 @@ def api_console_clear_threat():
     session["console_session_id"] = new_sess
 
     security.gateway.reset_session_history(new_sess)
+    username = session.get("username", "guest")
+    security.quarantine.release_quarantine(username)
+    security.quarantine.release_quarantine(old_sess)
+    security.quarantine.release_quarantine(new_sess)
 
     security.logger.log_event("threat_window_cleared_by_admin", {
 

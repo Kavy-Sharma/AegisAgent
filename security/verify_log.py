@@ -5,8 +5,10 @@ WHAT THIS FILE DOES:
 Reads logs/audit_log.jsonl (or specified log file) line-by-line, recomputing SHA-256
 hashes and verifying the cryptographic chain of custody.
 Prints "LOG INTACT" or identifies tampered lines.
+Supports external anchoring and verification to detect truncation and history rewrite.
 """
 
+import argparse
 import hashlib
 import json
 from pathlib import Path
@@ -99,6 +101,69 @@ def verify_external_anchor(log_file: Path | str | None = None, anchor_file: Path
     return True, "ANCHOR VERIFIED"
 
 
+def export_anchor_line(log_file: Path | str | None = None) -> str:
+    """Returns a single-line external anchor string to copy elsewhere."""
+    p = Path(log_file) if log_file else security.logger.get_log_file()
+    anchor = create_anchor(p)
+    return f"ANCHOR:count={anchor['count']}:head_hash={anchor['head_hash']}"
+
+
+def check_anchor_line(line: str, log_file: Path | str | None = None) -> tuple[bool, str]:
+    """Verifies that the audit log matches a pasted one-line anchor string."""
+    p = Path(log_file) if log_file else security.logger.get_log_file()
+    ok_chain, msg_chain = check_audit_log_status(p)
+    if not ok_chain:
+        return False, f"CHAIN INTEGRITY FAILED: {msg_chain}"
+
+    clean = line.strip()
+    if clean.startswith("ANCHOR:"):
+        clean = clean[len("ANCHOR:"):].strip()
+
+    expected_count = None
+    expected_head = None
+
+    if clean.startswith("{"):
+        try:
+            data = json.loads(clean)
+            expected_count = int(data.get("count"))
+            expected_head = data.get("head_hash")
+        except Exception:
+            pass
+    else:
+        parts = clean.split(":")
+        for part in parts:
+            if "=" in part:
+                k, v = part.split("=", 1)
+                k = k.strip()
+                v = v.strip()
+                if k == "count":
+                    try:
+                        expected_count = int(v)
+                    except ValueError:
+                        pass
+                elif k == "head_hash":
+                    expected_head = v
+
+    if expected_count is None or expected_head is None:
+        return False, f"INVALID ANCHOR FORMAT: could not parse count and head_hash from '{line}'"
+
+    if not p.exists():
+        actual_count = 0
+        actual_head = "0" * 64
+    else:
+        with security.logger._file_lock(p):
+            lines = [l for l in p.read_text(encoding="utf-8").splitlines() if l.strip()]
+        actual_count = len(lines)
+        actual_head = json.loads(lines[-1]).get("entry_hash") if actual_count > 0 else "0" * 64
+
+    if actual_count != expected_count:
+        return False, f"ANCHOR MISMATCH (COUNT): Expected {expected_count}, got {actual_count}"
+    if actual_head != expected_head:
+        return False, f"ANCHOR MISMATCH (HEAD_HASH): Expected '{expected_head}', got '{actual_head}'"
+
+    return True, f"ANCHOR VERIFIED: Log matches external anchor (count: {actual_count}, head_hash: {actual_head})"
+
+
 def check_audit_log_status(log_file: Path | str | None = None, anchor_file: Path | str | None = None) -> tuple[bool, str]:
     """Verifies audit log integrity and returns (is_intact, status_message)."""
     if log_file is None:
@@ -163,8 +228,22 @@ def check_audit_log_status(log_file: Path | str | None = None, anchor_file: Path
 
 def verify_audit_log(log_file: Path | str | None = None, anchor_file: Path | str | None = None) -> bool:
     """Verifies audit log integrity by validating cryptographic hash chain."""
+    p = Path(log_file) if log_file else security.logger.get_log_file()
+    count = 0
+    head_hash = "0" * 64
+    if p.exists():
+        with security.logger._file_lock(p):
+            content = p.read_text(encoding="utf-8").strip()
+        lines = [l for l in content.splitlines() if l.strip()]
+        count = len(lines)
+        if count > 0:
+            try:
+                head_hash = json.loads(lines[-1]).get("entry_hash", "0" * 64)
+            except Exception:
+                head_hash = "CORRUPT"
+
     ok, msg = check_audit_log_status(log_file, anchor_file=anchor_file)
-    print(msg)
+    print(f"{msg} (count: {count}, head_hash: {head_hash})")
     return ok
 
 
@@ -175,4 +254,18 @@ def __getattr__(name):
 
 
 if __name__ == "__main__":
-    verify_audit_log()
+    parser = argparse.ArgumentParser(description="Cryptographic Audit Log Verifier")
+    parser.add_argument("--export-anchor", action="store_true", help="Print a one-line anchor to copy elsewhere")
+    parser.add_argument("--check-anchor", type=str, default=None, help="Verify audit log against a pasted anchor string")
+    parser.add_argument("--log-file", type=str, default=None, help="Path to audit log file")
+    args = parser.parse_args()
+
+    if args.export_anchor:
+        print(export_anchor_line(args.log_file))
+    elif args.check_anchor:
+        ok, msg = check_anchor_line(args.check_anchor, args.log_file)
+        print(msg)
+        sys.exit(0 if ok else 1)
+    else:
+        ok = verify_audit_log(args.log_file)
+        sys.exit(0 if ok else 1)

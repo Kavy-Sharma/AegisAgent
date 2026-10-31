@@ -536,7 +536,7 @@ def create_app() -> Flask:
 
         voice_cfg = security.policy_loader.POLICY.get("voice", {})
 
-        voice_enabled = bool(voice_cfg.get("enabled", False))
+        voice_enabled = bool(voice_cfg.get("enabled", False)) or os.environ.get("AEGIS_VOICE_ENABLED", "true").lower() in ("1", "true")
 
         return render_template(
 

@@ -503,6 +503,51 @@ def test_uniform_login_error_message():
     assert str(msg3) == "Invalid username or password"
 
 
+def test_audit_log_records_exact_lockout_reasons(tmp_path, monkeypatch):
+    """Exact failure reasons (user_not_found, bad_password, lockout_triggered, account_locked) in audit log while user message stays uniform."""
+    temp_log = tmp_path / "auth_audit.jsonl"
+    monkeypatch.setattr(security.logger, "get_log_file", lambda: temp_log)
+
+    test_user = "audit_lockout_user"
+    security.auth.create_user(test_user, "validpassword10", role="admin")
+
+    # 1. user_not_found
+    ok1, msg1 = security.auth.verify_login("ghost_user_999", "wrongpass10")
+    assert ok1 is False
+    assert msg1 == "Invalid username or password"
+
+    # 2. bad_password
+    ok2, msg2 = security.auth.verify_login(test_user, "badpass10_1")
+    assert ok2 is False
+    assert msg2 == "Invalid username or password"
+
+    # 3. 3 more bad attempts (total 4)
+    for i in range(2, 5):
+        ok, msg = security.auth.verify_login(test_user, f"badpass10_{i}")
+        assert ok is False
+        assert msg == "Invalid username or password"
+
+    # 4. 5th attempt triggers lockout
+    ok5, msg5 = security.auth.verify_login(test_user, "badpass10_5")
+    assert ok5 is False
+    assert msg5 == "Invalid username or password"
+
+    # 5. 6th attempt while locked
+    ok6, msg6 = security.auth.verify_login(test_user, "badpass10_6")
+    assert ok6 is False
+    assert msg6 == "Invalid username or password"
+
+    # Inspect audit log events
+    lines = [json.loads(l) for l in temp_log.read_text(encoding="utf-8").splitlines() if l.strip()]
+    login_events = [e for e in lines if e.get("event") == "login_failure"]
+    reasons = [e.get("reason") for e in login_events]
+
+    assert "user_not_found" in reasons
+    assert "bad_password" in reasons
+    assert "lockout_triggered" in reasons
+    assert "account_locked" in reasons
+
+
 def test_corrupt_last_log_line_raises_append_and_gateway_denies(tmp_path):
     """Corrupt last log line causes append to raise and the gateway denies the request (worker survives)."""
     log_file = security.logger.get_log_file()

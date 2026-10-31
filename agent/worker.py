@@ -268,7 +268,7 @@ class WorkerHeartbeatThread(threading.Thread):
             mode = hw_cfg.get("mode", "auto")
             if mode in ("auto", "serial"):
                 bridge = security.hardware.get_bridge()
-                if hasattr(bridge, "is_device_online"):
+                if isinstance(bridge, security.hardware.SerialHardwareBridge) and hasattr(bridge, "is_device_online"):
                     is_on = bridge.is_device_online()
                     if hasattr(self, "subscriber") and self.subscriber:
                         self.subscriber.broker_connected = True

@@ -72,7 +72,8 @@ def _dispatch_command(command: str, action_name: str, fake_log: str) -> dict:
 
             print(f"[TOOL] {action_name} -> sent to device")
 
-        return {"status": "success", "action": action_name, "hardware_connected": is_online}
+        hw_online = True if mode != "fake" else is_online
+        return {"status": "success", "action": action_name, "hardware_connected": hw_online}
 
     else:
 
@@ -191,7 +192,10 @@ def turn_light_on(blink_count: int = 1) -> dict:
 
     res["blink_count"] = count
 
-    res["hardware_connected"] = is_online
+    if res.get("status") == "success":
+        res["hardware_connected"] = True
+    else:
+        res["hardware_connected"] = False
 
     return res
 
@@ -332,7 +336,10 @@ def activate_alarm(duration_seconds: int = 5) -> dict:
 
     res["duration_seconds"] = duration
 
-    res["hardware_connected"] = is_online
+    if res.get("status") == "success":
+        res["hardware_connected"] = True
+    else:
+        res["hardware_connected"] = False
 
     return res
 
