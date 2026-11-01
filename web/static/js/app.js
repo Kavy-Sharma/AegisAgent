@@ -481,6 +481,10 @@ var app = (function () {
 
     { title: "Go to Approvals Queue", shortcut: "G A", action: function () { window.location.href = "/approvals"; } },
 
+    { title: "Go to Attack Lab", shortcut: "G L", action: function () { window.location.href = "/attack_lab"; } },
+
+    { title: "Go to Audit Log", shortcut: "G U", action: function () { window.location.href = "/audit"; } },
+
     { title: "Toggle Theme (Light / Dark)", shortcut: "T", action: function () {
 
       var nextTheme = document.documentElement.getAttribute("data-theme") === "dark" ? "light" : "dark";

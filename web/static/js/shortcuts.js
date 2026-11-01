@@ -84,6 +84,12 @@
       } else if (key === "a") {
         e.preventDefault();
         window.location.href = "/approvals";
+      } else if (key === "l") {
+        e.preventDefault();
+        window.location.href = "/attack_lab";
+      } else if (key === "u") {
+        e.preventDefault();
+        window.location.href = "/audit";
       }
     }
   });

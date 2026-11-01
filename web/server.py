@@ -85,6 +85,7 @@ import security.health
 import security.logger
 
 from web.api import api_bp
+from web.api_audit import audit_bp
 
 from web.guards import (
 
@@ -239,6 +240,7 @@ def create_app() -> Flask:
     # Register API Blueprint
 
     app.register_blueprint(api_bp)
+    app.register_blueprint(audit_bp)
 
 
 
@@ -529,6 +531,18 @@ def create_app() -> Flask:
     def attack_lab():
 
         return render_template("attack_lab.html", active_page="attack_lab")
+
+
+
+    @app.route("/audit", methods=["GET"])
+
+    @login_required
+
+    @role_required("admin")
+
+    def audit():
+
+        return render_template("audit.html", active_page="audit")
 
 
 

@@ -188,7 +188,7 @@
 
     panelEl.appendChild(video);
 
-    // Floating Security Telemetry Card (completely covers corner watermark with live status & fullscreen)
+    // Simulation Telemetry Card (Status, caption, and fullscreen control)
     var feedCard = document.createElement("div");
     feedCard.className = "sim-feed-card " + (side === "protected" ? "card-protected-feed" : "card-unprotected-feed");
 
@@ -241,7 +241,7 @@
     headerRow.appendChild(fsBtn);
     feedCard.appendChild(headerRow);
 
-    // Meta Row (2nd line): Status message that covers the higher star area
+    // Meta Row: Telemetry status details
     var metaRow = document.createElement("div");
     metaRow.className = "feed-card-meta";
 
@@ -256,6 +256,13 @@
     metaRow.appendChild(metaText);
 
     feedCard.appendChild(metaRow);
+
+    // Caption: AI-generated animation indicator
+    var captionEl = document.createElement("div");
+    captionEl.className = "feed-card-caption";
+    captionEl.textContent = "AI-generated animation";
+    feedCard.appendChild(captionEl);
+
     panelEl.appendChild(feedCard);
 
     if (side === "protected") {
@@ -486,19 +493,13 @@
   function scrollToStage() {
     var stageEl = document.getElementById("section-stage");
     if (stageEl) {
-      var topbar = document.querySelector(".topbar");
-      var topbarH = topbar ? topbar.offsetHeight : 64;
-      var rect = stageEl.getBoundingClientRect();
-      var targetY = window.pageYOffset + rect.top - topbarH - 12;
-      window.scrollTo({
-        top: Math.max(0, targetY),
-        behavior: "smooth"
-      });
+      stageEl.scrollIntoView({ behavior: "smooth", block: "start" });
     }
   }
 
   function selectScenario(scId) {
     selectedScenario = scId;
+    scrollToStage();
     var cards = document.querySelectorAll('.attack-card[data-scenario]');
     for (var i = 0; i < cards.length; i++) {
       var card = cards[i];

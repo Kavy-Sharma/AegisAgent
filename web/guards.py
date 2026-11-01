@@ -238,7 +238,7 @@ def verify_csrf():
 
 
 
-        provided = request.headers.get("X-CSRF-Token")
+        provided = request.headers.get("X-CSRF-Token") or request.headers.get("X-CSRFToken")
 
         if not provided and request.form:
 
