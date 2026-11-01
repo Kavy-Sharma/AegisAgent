@@ -18,10 +18,12 @@ import os
 from pathlib import Path
 import pytest
 
+import security.attack_lab
 import security.logger
 from security.logger import log_event
 from security.verify_log import check_audit_log_status, create_anchor, export_anchor_line
 from web.api_audit import (
+    classify_audit_decision,
     escape_csv_cell,
     format_plain_summary,
     read_entries_reverse,
@@ -451,3 +453,306 @@ def test_anchor_export_and_check(tmp_path, monkeypatch):
         assert trunc_result["verified"] is False
         assert "COUNT" in trunc_result["message"]
         assert "Expected 8, got 7" in trunc_result["message"]
+
+
+# =========================================================================
+# 8. Tamper Demo Block Statuses (Reset All Green, Edit/Delete Correct Index)
+# =========================================================================
+
+def test_tamper_demo_block_statuses_reset_edit_delete(tmp_path, monkeypatch):
+    """
+    Verifies that:
+    - 'reset' produces 100% valid blocks (all green, chain_intact=True).
+    - 'edit_line' marks target_idx+1 (block #4) as 'broken' and subsequent as 'orphaned'.
+    - 'delete_line' marks target_idx+1 (block #4) as 'broken' and subsequent as 'orphaned'.
+    """
+    real_log = tmp_path / "blocks_audit.jsonl"
+    _create_mock_chain(real_log, count=8)
+    monkeypatch.setenv("AEGIS_LOG_FILE", str(real_log))
+    security.logger.set_log_file(real_log)
+
+    app = create_app()
+    app.config["TESTING"] = True
+
+    with app.test_client() as client:
+        with client.session_transaction() as sess:
+            sess["username"] = "admin"
+            sess["role"] = "admin"
+            sess["csrf_token"] = "valid_csrf_token"
+
+        # 1. Action: Reset
+        res_reset = client.post(
+            "/api/audit/tamper_demo",
+            json={"action": "reset"},
+            headers={"X-CSRF-Token": "valid_csrf_token"},
+        )
+        assert res_reset.status_code == 200
+        data_reset = res_reset.get_json()
+        assert data_reset["chain_ok"] is True
+        assert data_reset["broken_index"] is None
+        assert data_reset["anchor_ok"] is True
+        blocks_reset = data_reset["chain_blocks"]
+        assert len(blocks_reset) == 6
+        assert all(b["status"] == "valid" for b in blocks_reset), f"Expected all green, got {[b['status'] for b in blocks_reset]}"
+
+        # 2. Action: Edit Line (target_idx is 3 -> block #4)
+        res_edit = client.post(
+            "/api/audit/tamper_demo",
+            json={"action": "edit_line"},
+            headers={"X-CSRF-Token": "valid_csrf_token"},
+        )
+        assert res_edit.status_code == 200
+        data_edit = res_edit.get_json()
+        assert data_edit["chain_ok"] is False
+        assert data_edit["broken_index"] == 4
+        # Middle edit: chain breaks, but anchor MATCHES because count and newest head hash are unchanged
+        assert data_edit["anchor_ok"] is True
+        blocks_edit = data_edit["chain_blocks"]
+        assert blocks_edit[0]["status"] == "valid"
+        assert blocks_edit[1]["status"] == "valid"
+        assert blocks_edit[2]["status"] == "valid"
+        assert blocks_edit[3]["status"] == "broken", f"Block 4 expected 'broken', got {blocks_edit[3]['status']}"
+        assert blocks_edit[4]["status"] == "after_break"
+        assert blocks_edit[5]["status"] == "after_break"
+
+        # 3. Action: Delete Line (target_idx is 3 -> block #4)
+        res_del = client.post(
+            "/api/audit/tamper_demo",
+            json={"action": "delete_line"},
+            headers={"X-CSRF-Token": "valid_csrf_token"},
+        )
+        assert res_del.status_code == 200
+        data_del = res_del.get_json()
+        assert data_del["chain_ok"] is False
+        assert data_del["broken_index"] == 4
+        assert data_del["anchor_ok"] is False
+        blocks_del = data_del["chain_blocks"]
+        assert blocks_del[0]["status"] == "valid"
+        assert blocks_del[1]["status"] == "valid"
+        assert blocks_del[2]["status"] == "valid"
+        assert blocks_del[3]["status"] == "broken", f"Block 4 expected 'broken', got {blocks_del[3]['status']}"
+        assert blocks_del[4]["status"] == "after_break"
+
+        # 4. Action: Truncate (Chain OK, Anchor Mismatch)
+        res_trunc = client.post(
+            "/api/audit/tamper_demo",
+            json={"action": "truncate"},
+            headers={"X-CSRF-Token": "valid_csrf_token"},
+        )
+        assert res_trunc.status_code == 200
+        data_trunc = res_trunc.get_json()
+        assert data_trunc["chain_ok"] is True
+        assert data_trunc["broken_index"] is None
+        assert data_trunc["anchor_ok"] is False
+        blocks_trunc = data_trunc["chain_blocks"]
+        assert all(b["status"] == "valid" for b in blocks_trunc)
+
+        # 5. Action: Rewrite (Chain OK, Anchor Mismatch)
+        res_rewrite = client.post(
+            "/api/audit/tamper_demo",
+            json={"action": "rewrite"},
+            headers={"X-CSRF-Token": "valid_csrf_token"},
+        )
+        assert res_rewrite.status_code == 200
+        data_rewrite = res_rewrite.get_json()
+        assert data_rewrite["chain_ok"] is True
+        assert data_rewrite["broken_index"] is None
+        assert data_rewrite["anchor_ok"] is False
+        blocks_rewrite = data_rewrite["chain_blocks"]
+        assert all(b["status"] == "valid" for b in blocks_rewrite)
+
+        # 6. Truth Table Matrix for all 5 actions
+        expected_table = {
+            "reset":       {"chain_ok": True,  "anchor_ok": True},
+            "edit_line":   {"chain_ok": False, "anchor_ok": True},
+            "delete_line": {"chain_ok": False, "anchor_ok": False},
+            "truncate":    {"chain_ok": True,  "anchor_ok": False},
+            "rewrite":     {"chain_ok": True,  "anchor_ok": False},
+        }
+
+        for act, exp in expected_table.items():
+            r = client.post(
+                "/api/audit/tamper_demo",
+                json={"action": act},
+                headers={"X-CSRF-Token": "valid_csrf_token"},
+            )
+            assert r.status_code == 200
+            d = r.get_json()
+            assert d["chain_ok"] is exp["chain_ok"], f"Action {act}: expected chain_ok={exp['chain_ok']}, got {d['chain_ok']}"
+            assert d["anchor_ok"] is exp["anchor_ok"], f"Action {act}: expected anchor_ok={exp['anchor_ok']}, got {d['anchor_ok']}"
+
+
+# =========================================================================
+# 9. Decision Badges: Informational Events Must Not Show Error
+# =========================================================================
+
+def test_decision_badge_classification_no_false_error():
+    """
+    Verifies that informational events (login success, role switch, intent scope, turn summary)
+    map to INFO, and only genuine failures/blocks map to ERROR/BLOCKED.
+    """
+    # 1. Informational lifecycle events
+    assert classify_audit_decision({"event": "login_success", "username": "admin"}) == "INFO"
+    assert classify_audit_decision({"event": "role_change", "old_role": "guest", "new_role": "admin"}) == "INFO"
+    assert classify_audit_decision({"event": "intent_scope", "scope": ["unlock_door"]}) == "INFO"
+    assert classify_audit_decision({"event": "turn_summary", "decision": ""}) == "INFO"
+    assert classify_audit_decision({"event": "turn_summary"}) == "INFO"
+
+    # 2. Genuine errors and security failures
+    assert classify_audit_decision({"event": "login_failure", "username": "attacker"}) == "ERROR"
+    assert classify_audit_decision({"event": "execution_error", "error": "Crash"}) == "ERROR"
+    assert classify_audit_decision({"event": "hardware_command", "command": "unlock", "ok": False}) == "ERROR"
+
+    # 3. Policy decisions
+    assert classify_audit_decision({"event": "tool_call", "decision": "ALLOW"}) == "ALLOWED"
+    assert classify_audit_decision({"event": "tool_call", "decision": "BLOCK"}) == "BLOCKED"
+    assert classify_audit_decision({"event": "approval_request", "decision": "REVIEW"}) == "WAITING"
+
+
+# =========================================================================
+# 10. Tamper Demo: Corrupted JSON Line Returns Clean 400 (Not 500)
+# =========================================================================
+
+def test_tamper_demo_corrupted_json_returns_clean_400(tmp_path, monkeypatch):
+    """
+    Verifies that if a line in the log contains corrupted non-JSON data,
+    the tamper demo returns HTTP 400 Bad Request with a clean error message, not 500.
+    """
+    corrupt_log = tmp_path / "corrupt_audit.jsonl"
+    corrupt_log.write_text("{\"valid\": 1}\nCORRUPTED_NON_JSON_LINE\n{\"valid\": 2}\n", encoding="utf-8")
+    monkeypatch.setenv("AEGIS_LOG_FILE", str(corrupt_log))
+    security.logger.set_log_file(corrupt_log)
+
+    app = create_app()
+    app.config["TESTING"] = True
+
+    with app.test_client() as client:
+        with client.session_transaction() as sess:
+            sess["username"] = "admin"
+            sess["role"] = "admin"
+            sess["csrf_token"] = "valid_csrf_token"
+
+        res = client.post(
+            "/api/audit/tamper_demo",
+            json={"action": "reset"},
+            headers={"X-CSRF-Token": "valid_csrf_token"},
+        )
+        assert res.status_code == 400
+        data = res.get_json()
+        assert data["status"] == "error"
+        assert "invalid JSON" in data["message"]
+
+
+# =========================================================================
+# 11. Attack Lab Source Tag: Every Entry Carries source=attack_lab
+# =========================================================================
+
+def test_attack_lab_all_entries_carry_attack_lab_source(tmp_path, monkeypatch):
+    """
+    Verifies that during an attack lab simulation run, EVERY audit entry written
+    carries source='attack_lab', without breaking the cryptographic hash chain.
+    """
+    lab_log = tmp_path / "attack_lab_audit.jsonl"
+    monkeypatch.setenv("AEGIS_LOG_FILE", str(lab_log))
+    security.logger.set_log_file(lab_log)
+
+    sc = security.attack_lab.SCENARIOS[0]  # direct_override
+    res = security.attack_lab.run_protected(sc, scratch_dir=tmp_path)
+    assert res["stopped_at"] == "detection"
+
+    lines = [json.loads(l) for l in lab_log.read_text(encoding="utf-8").splitlines() if l.strip()]
+    assert len(lines) >= 4, f"Expected at least 4 entries, got {len(lines)}"
+
+    # Assert EVERY line has source == "attack_lab"
+    for idx, entry in enumerate(lines, 1):
+        assert entry.get("source") == "attack_lab", f"Line {idx} ({entry.get('event')}) has source={entry.get('source')}"
+
+    # Assert hash chain is 100% valid
+    is_intact, verify_msg = check_audit_log_status(lab_log)
+    assert is_intact is True, f"Hash chain broken: {verify_msg}"
+
+
+# =========================================================================
+# 12. Attack Lab Isolation: Normal Request After Lab Run NOT Tagged attack_lab
+# =========================================================================
+
+def test_post_lab_run_isolation_not_tagged_attack_lab(tmp_path, monkeypatch):
+    """
+    Verifies that a normal request handled right after an attack lab run
+    is NOT tagged 'attack_lab' (source reverts cleanly to 'real').
+    """
+    isolation_log = tmp_path / "isolation_audit.jsonl"
+    monkeypatch.setenv("AEGIS_LOG_FILE", str(isolation_log))
+    security.logger.set_log_file(isolation_log)
+
+    # 1. Run lab simulation
+    sc = security.attack_lab.SCENARIOS[0]
+    security.attack_lab.run_protected(sc, scratch_dir=tmp_path)
+
+    # 2. Immediately log normal activity outside the lab context
+    security.logger.log_event("user_status_check", {"user": "admin", "source": "real"})
+
+    lines = [json.loads(l) for l in isolation_log.read_text(encoding="utf-8").splitlines() if l.strip()]
+    last_entry = lines[-1]
+
+    assert last_entry.get("event") == "user_status_check"
+    assert last_entry.get("source") != "attack_lab"
+    assert last_entry.get("source") == "real"
+
+
+# =========================================================================
+# 13. Rendered /audit HTML & Assets Contain No Overclaims
+# =========================================================================
+
+def test_rendered_audit_page_no_overclaims(tmp_path, monkeypatch):
+    """
+    Verifies that the rendered /audit HTML page, loaded scripts, and README
+    contain none of the forbidden overclaim words:
+    immutable, merkle, tamper-proof, guarantee, or 'instantly'.
+    """
+    test_log = tmp_path / "overclaim_test.jsonl"
+    _create_mock_chain(test_log, count=5)
+    monkeypatch.setenv("AEGIS_LOG_FILE", str(test_log))
+    security.logger.set_log_file(test_log)
+
+    app = create_app()
+    app.config["TESTING"] = True
+
+    with app.test_client() as client:
+        with client.session_transaction() as sess:
+            sess["username"] = "admin"
+            sess["role"] = "admin"
+            sess["csrf_token"] = "valid_csrf"
+
+        res = client.get("/audit")
+        assert res.status_code == 200
+        html = res.data.decode("utf-8")
+
+    forbidden = ["immutable", "merkle", "tamper-proof", "guarantee", "instantly"]
+    for word in forbidden:
+        assert word not in html.lower(), f"Forbidden word '{word}' found in rendered /audit HTML!"
+
+    # Verify README.md has no 'guarantee'
+    readme_text = Path("README.md").read_text(encoding="utf-8").lower()
+    assert "guarantee" not in readme_text, "Found 'guarantee' in README.md!"
+
+
+# =========================================================================
+# 14. Server-Side Categorization: Entries Include 'category'
+# =========================================================================
+
+def test_entries_contain_category_from_server(tmp_path, monkeypatch):
+    """
+    Verifies that the server populates 'category' on each entry so the frontend
+    does not need to duplicate categorization logic.
+    """
+    test_log = tmp_path / "category_test.jsonl"
+    _create_mock_chain(test_log, count=5)
+    monkeypatch.setenv("AEGIS_LOG_FILE", str(test_log))
+    security.logger.set_log_file(test_log)
+
+    items, _, _ = read_entries_reverse(test_log, limit=10, offset=0)
+    assert len(items) == 5
+    for item in items:
+        assert "category" in item
+        assert item["category"] in ("ALLOWED", "BLOCKED", "WAITING", "ERROR", "INFO")

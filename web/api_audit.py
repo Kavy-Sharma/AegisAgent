@@ -33,6 +33,12 @@ _tamper_rate_limits: dict[str, list[float]] = {}
 
 
 def _check_tamper_rate_limit(client_ip: str) -> bool:
+    try:
+        from flask import current_app
+        if current_app and current_app.config.get("TESTING") and not current_app.config.get("TEST_RATE_LIMIT"):
+            return True
+    except Exception:
+        pass
     now = time.time()
     history = _tamper_rate_limits.setdefault(client_ip, [])
     # Keep only requests within the last 60 seconds
@@ -269,6 +275,7 @@ def read_entries_reverse(
                     # Collect page slice
                     if total_matching > offset and len(collected_items) < limit:
                         entry["plain_summary"] = format_plain_summary(entry)
+                        entry["category"] = classify_audit_decision(entry)
                         collected_items.append(entry)
 
             # Process leftover remainder if cursor reached 0
@@ -280,6 +287,7 @@ def read_entries_reverse(
                         total_matching += 1
                         if total_matching > offset and len(collected_items) < limit:
                             entry["plain_summary"] = format_plain_summary(entry)
+                            entry["category"] = classify_audit_decision(entry)
                             collected_items.append(entry)
                 except Exception:
                     pass
@@ -486,6 +494,88 @@ def api_audit_anchor_check():
         return jsonify({"status": "error", "message": "Anchor verification failed", "detail": str(e)}), 500
 
 
+def classify_audit_decision(entry: dict[str, Any]) -> str:
+    """
+    Categorizes audit record into one of 5 distinct badge states:
+    ALLOWED, BLOCKED, WAITING, ERROR, or INFO.
+    Only genuine failures and execution faults are ERROR; informational lifecycle
+    events (login success, role switches, turn summaries) map to INFO.
+    """
+    raw_dec = str(entry.get("decision", "")).strip().upper()
+    event = str(entry.get("event", "")).strip().lower()
+    ok = entry.get("ok")
+
+    if raw_dec in ("ALLOW", "ALLOWED", "PERMIT"):
+        return "ALLOWED"
+    if raw_dec in ("BLOCK", "BLOCKED", "DENY", "DENIED", "REJECT", "REJECTED"):
+        return "BLOCKED"
+    if raw_dec in ("REVIEW", "WAITING", "PENDING", "HOLD"):
+        return "WAITING"
+    if raw_dec in ("ERROR", "FAIL", "FAILED") or event in ("error", "execution_error", "hardware_failure", "login_failure"):
+        return "ERROR"
+    if ok is False and raw_dec not in ("BLOCK", "BLOCKED"):
+        return "ERROR"
+    if ok is True and not raw_dec:
+        return "ALLOWED"
+    return "INFO"
+
+
+def _read_tail_entries(log_file: Path, n: int = 6) -> tuple[list[dict[str, Any]] | None, str | None]:
+    """
+    Reads the last n non-empty lines from EOF in blocks without loading the whole file.
+    Returns (entries, error_message). If corrupted JSON is found, returns (None, err_msg).
+    """
+    if not log_file.exists():
+        return [], None
+
+    block_size = 65536
+    raw_lines: list[str] = []
+
+    with _file_lock(log_file):
+        file_size = log_file.stat().st_size
+        if file_size == 0:
+            return [], None
+
+        with open(log_file, "rb") as f:
+            cursor = file_size
+            remainder = b""
+            while cursor > 0 and len(raw_lines) < n:
+                step = min(block_size, cursor)
+                cursor -= step
+                f.seek(cursor)
+                chunk = f.read(step) + remainder
+                parts = chunk.split(b"\n")
+                remainder = parts[0]
+                for p in reversed(parts[1:]):
+                    s = p.strip()
+                    if s:
+                        try:
+                            line_str = s.decode("utf-8")
+                        except Exception:
+                            return None, "Corrupted encoding in audit log"
+                        raw_lines.append(line_str)
+                        if len(raw_lines) >= n:
+                            break
+
+            if len(raw_lines) < n and remainder.strip():
+                try:
+                    raw_lines.append(remainder.strip().decode("utf-8"))
+                except Exception:
+                    return None, "Corrupted encoding in audit log"
+
+    raw_lines.reverse()
+
+    entries = []
+    for line_str in raw_lines:
+        try:
+            parsed = json.loads(line_str)
+            entries.append(parsed)
+        except Exception:
+            return None, f"Invalid JSON in audit line: {line_str[:40]}..."
+
+    return entries, None
+
+
 # =========================================================================
 # TAMPER DEMONSTRATION LAB (COPY-ONLY SANDBOX)
 # Operates strictly on a volatile temp file; NEVER touches real log.
@@ -498,71 +588,76 @@ def api_audit_tamper_demo():
     """
     Simulates attacks on a temporary copy of the audit log to demonstrate
     how the cryptographic hash chain breaks, and why external anchors are necessary.
-    Guaranteed: real audit_log.jsonl is NEVER written to.
+    Ensured: real audit_log.jsonl is NEVER written to.
     """
     client_ip = request.remote_addr or "127.0.0.1"
     if not _check_tamper_rate_limit(client_ip):
         return jsonify({"status": "error", "message": "Rate limit exceeded for tamper demo (max 15/min). Please wait."}), 429
 
     data = request.get_json(silent=True) or {}
-    action = data.get("action", "edit_line")  # edit_line, delete_line, truncate, rewrite
+    action = data.get("action", "edit_line")
 
     real_log = get_log_file()
     if not real_log.exists():
         return jsonify({"status": "error", "message": "Real audit log is empty or does not exist."}), 400
 
-    # Read last 6-10 lines to form a clean demonstration sandbox
-    with _file_lock(real_log):
-        all_lines = [l.strip() for l in real_log.read_text(encoding="utf-8").splitlines() if l.strip()]
+    # Memory-safe tail read: retrieve only last 6 lines from EOF without read_text
+    tail_entries, json_err = _read_tail_entries(real_log, n=6)
+    if json_err:
+        return jsonify({"status": "error", "message": f"Audit log contains invalid JSON line: {json_err}"}), 400
 
-    if len(all_lines) < 3:
+    if not tail_entries or len(tail_entries) < 3:
         return jsonify({"status": "error", "message": "Audit log needs at least 3 entries to run the tamper demo."}), 400
 
-    # Pick the last 6 entries for a clear visual chain
-    demo_lines = all_lines[-6:]
-    original_head = json.loads(demo_lines[-1]).get("entry_hash")
-    original_count = len(demo_lines)
+    # Build a clean, self-contained demonstration chain starting from genesis 0*64
+    demo_chain: list[dict[str, Any]] = []
+    prev_h = "0" * 64
+    for it in tail_entries:
+        clean_content = {k: v for k, v in it.items() if k not in ("prev_hash", "entry_hash", "plain_summary")}
+        payload = json.dumps(clean_content, sort_keys=True) + prev_h
+        entry_h = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+        entry_item = dict(clean_content)
+        entry_item["prev_hash"] = prev_h
+        entry_item["entry_hash"] = entry_h
+        demo_chain.append(entry_item)
+        prev_h = entry_h
 
-    # Perform action on isolated memory copy
-    tampered_lines = list(demo_lines)
+    original_head = demo_chain[-1]["entry_hash"]
+    original_count = len(demo_chain)
+
+    tampered_lines = [json.dumps(e) for e in demo_chain]
     explanation = ""
-    target_idx = max(1, len(tampered_lines) // 2)  # Middle item
+    target_idx = max(1, len(tampered_lines) // 2)
 
     if action == "edit_line":
-        # Modify line payload without updating entry_hash or prev_hash
         item = json.loads(tampered_lines[target_idx])
         item["decision"] = "ALLOW" if item.get("decision") == "BLOCK" else "BLOCK"
         item["reason"] = "TAMPERED: Unauthorized payload injection"
         tampered_lines[target_idx] = json.dumps(item)
-        explanation = f"Line {target_idx + 1} payload was modified. Its stored entry_hash no longer matches its contents."
+        explanation = f"Line {target_idx + 1} payload was modified. The internal chain check FAILS because the link broke, but the anchor check MATCHES because total count ({original_count}) and the newest hash are unchanged. This demonstrates why an anchor alone cannot catch middle-log tampering."
 
     elif action == "delete_line":
-        # Remove a line from the middle
         deleted_item = json.loads(tampered_lines.pop(target_idx))
         explanation = f"Line {target_idx + 1} was deleted. Line {target_idx + 1}'s prev_hash now points to a missing link."
 
     elif action == "truncate":
-        # Chop off the last entry
         tampered_lines = tampered_lines[:-1]
         explanation = "The last entry was deleted. Notice: The internal chain passes! But an EXTERNAL ANCHOR catches it immediately."
 
     elif action == "rewrite":
-        # Modify an entry and recalculate all hashes down the line
         item = json.loads(tampered_lines[target_idx])
         item["reason"] = "HISTORY REWRITTEN: Artificial benign record"
-        # Recompute chain from target_idx to end
         for i in range(target_idx, len(tampered_lines)):
             cur_item = json.loads(tampered_lines[i]) if i != target_idx else item
             prev_h = json.loads(tampered_lines[i - 1])["entry_hash"] if i > 0 else "0" * 64
             clean_item = {k: v for k, v in cur_item.items() if k not in ("prev_hash", "entry_hash")}
-            clean_item["prev_hash"] = prev_h
             payload = json.dumps(clean_item, sort_keys=True) + prev_h
+            clean_item["prev_hash"] = prev_h
             clean_item["entry_hash"] = hashlib.sha256(payload.encode("utf-8")).hexdigest()
             tampered_lines[i] = json.dumps(clean_item)
-        explanation = "An attacker altered line 3 and recomputed all subsequent hashes. The internal chain passes, but the EXTERNAL ANCHOR head_hash mismatches."
+        explanation = f"An attacker altered line {target_idx + 1} and recomputed all subsequent hashes. The internal chain passes, but the EXTERNAL ANCHOR head_hash mismatches."
 
     elif action == "reset":
-        # Leave tampered_lines identical to demo_lines
         explanation = "Sandbox demonstration restored to an authentic, unbroken copy of recent audit records. All cryptographic links valid."
 
     else:
@@ -580,6 +675,7 @@ def api_audit_tamper_demo():
         # Build visual node chain for the UI
         chain_blocks = []
         broken_found = False
+        broken_index = None
 
         for idx, line in enumerate(tampered_lines, start=1):
             entry = json.loads(line)
@@ -591,13 +687,20 @@ def api_audit_tamper_demo():
             payload = json.dumps({k: v for k, v in entry.items() if k not in ("prev_hash", "entry_hash")}, sort_keys=True) + ph
             calc_hash = hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
-            is_valid = (ph == expected_prev) and (eh == calc_hash) and not broken_found
-            if not is_valid:
+            link_ok = (ph == expected_prev) and (eh == calc_hash)
+
+            if not link_ok and not broken_found:
                 broken_found = True
+                broken_index = idx
+                status = "broken"
+            elif broken_found:
+                status = "after_break"
+            else:
+                status = "valid"
 
             chain_blocks.append({
                 "block_number": idx,
-                "status": "valid" if is_valid else ("broken" if not is_valid and (ph != expected_prev or eh != calc_hash) else "orphaned"),
+                "status": status,
                 "hash_short": f"{eh[:6]}...{eh[-4:]}" if len(eh) >= 10 else eh,
                 "prev_short": f"{ph[:6]}...{ph[-4:]}" if len(ph) >= 10 else ph,
                 "event": entry.get("event", entry.get("tool", "entry")),
@@ -607,12 +710,17 @@ def api_audit_tamper_demo():
         # Compare with external anchor
         new_head = json.loads(tampered_lines[-1])["entry_hash"] if tampered_lines else "0" * 64
         anchor_matches = (len(tampered_lines) == original_count) and (new_head == original_head)
+        # An anchor holds only {count, head_hash}. It matches if count and newest hash match.
+        anchor_ok = bool(anchor_matches)
         anchor_status = "Anchor Matches" if anchor_matches else "Anchor Mismatch Detected (History Tampered)"
 
         return jsonify({
             "status": "success",
             "action": action,
+            "chain_ok": is_intact,
             "chain_intact": is_intact,
+            "broken_index": broken_index,
+            "anchor_ok": anchor_ok,
             "verify_message": verify_msg,
             "explanation": explanation,
             "chain_blocks": chain_blocks,

@@ -9,6 +9,7 @@ and log rotation/archival.
 """
 
 from contextlib import contextmanager
+import contextvars
 from datetime import datetime, timezone
 import hashlib
 import json
@@ -18,6 +19,21 @@ import shutil
 import time
 
 _custom_log_file: Path | None = None
+_source_context: contextvars.ContextVar[str | None] = contextvars.ContextVar("_source_context", default=None)
+
+
+@contextmanager
+def audit_source_context(source: str):
+    """Context manager to attach a source tag (e.g. 'attack_lab') to all audit entries written within."""
+    token = _source_context.set(source)
+    try:
+        yield
+    finally:
+        _source_context.reset(token)
+
+
+def get_source_context() -> str | None:
+    return _source_context.get()
 
 
 def get_log_file() -> Path:
@@ -179,6 +195,14 @@ def _append_entry(entry_data: dict) -> dict:
     with _file_lock(log_file):
         prev_hash = _get_last_entry_hash(log_file)
         
+        # Apply active audit source context (e.g. "attack_lab") if active
+        active_source = get_source_context()
+        if active_source:
+            entry_data = dict(entry_data)
+            if "source" in entry_data and entry_data["source"] not in ("real", "virtual", "attack_lab"):
+                entry_data["check_source"] = entry_data["source"]
+            entry_data["source"] = active_source
+
         # Build entry without hash fields
         entry_without_hash = {k: v for k, v in entry_data.items() if k not in ("prev_hash", "entry_hash")}
         serialized_data = json.dumps(entry_without_hash, sort_keys=True)

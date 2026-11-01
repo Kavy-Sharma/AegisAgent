@@ -86,7 +86,8 @@
     dom.tamperEduTitle = document.getElementById("tamper-edu-title");
     dom.tamperEduText = document.getElementById("tamper-edu-text");
     dom.chainNodesContainer = document.getElementById("chain-nodes-container");
-    dom.anchorEvalText = document.getElementById("anchor-eval-text");
+    dom.tamperChainPill = document.getElementById("tamper-chain-pill");
+    dom.tamperAnchorPill = document.getElementById("tamper-anchor-pill");
 
     dom.csrfToken = document.getElementById("csrf-token-val");
   }
@@ -438,19 +439,17 @@
   }
 
   function getDecisionClass(entry) {
-    var dec = String(entry.decision || entry.ok || "").toUpperCase();
-    if (dec === "ALLOW" || dec === "ALLOWED" || dec === "TRUE" || dec === "OK") return "badge-allowed";
-    if (dec === "BLOCK" || dec === "BLOCKED" || dec === "DENY" || dec === "FALSE") return "badge-blocked";
-    if (dec === "REVIEW" || dec === "WAITING" || dec === "PENDING") return "badge-waiting";
-    return "badge-error";
+    var cat = String(entry.category || "INFO").toLowerCase();
+    return "badge-" + cat;
   }
 
   function getDecisionLabel(entry) {
-    var dec = String(entry.decision || entry.ok || "").toUpperCase();
-    if (dec === "ALLOW" || dec === "ALLOWED" || dec === "TRUE" || dec === "OK") return "Allowed";
-    if (dec === "BLOCK" || dec === "BLOCKED" || dec === "DENY" || dec === "FALSE") return "Blocked";
-    if (dec === "REVIEW" || dec === "WAITING" || dec === "PENDING") return "Waiting";
-    return "Error";
+    var cat = String(entry.category || "INFO").toUpperCase();
+    if (cat === "ALLOWED") return "Allowed";
+    if (cat === "BLOCKED") return "Blocked";
+    if (cat === "WAITING") return "Waiting";
+    if (cat === "ERROR") return "Error";
+    return "Info";
   }
 
   function getSourceClass(entry) {
@@ -599,7 +598,8 @@
         }
 
         var node = document.createElement("div");
-        node.className = "chain-node node-" + block.status;
+        var isAfterBreak = (block.status === "after_break" || block.status === "orphaned");
+        node.className = "chain-node " + (isAfterBreak ? "node-after_break" : "node-" + block.status);
 
         var header = document.createElement("div");
         header.className = "node-header";
@@ -611,7 +611,11 @@
 
         var statusTag = document.createElement("span");
         statusTag.className = "node-status-tag";
-        statusTag.textContent = block.status;
+        if (isAfterBreak) {
+          statusTag.textContent = "NOT TRUSTED";
+        } else {
+          statusTag.textContent = String(block.status).toUpperCase();
+        }
         header.appendChild(statusTag);
         node.appendChild(header);
 
@@ -646,10 +650,28 @@
       });
     }
 
-    if (dom.anchorEvalText && data.anchor_result) {
-      var ar = data.anchor_result;
-      var text = ar.status_text + " — Expected: " + ar.expected_count + " entries (" + ar.expected_head + ") vs Sandbox: " + ar.actual_count + " entries (" + ar.actual_head + ").";
-      dom.anchorEvalText.textContent = text;
+    // Dual status check pills
+    var chainOk = !!(data.chain_ok !== undefined ? data.chain_ok : data.chain_intact);
+    var anchorOk = !!data.anchor_ok;
+
+    if (dom.tamperChainPill) {
+      if (chainOk) {
+        dom.tamperChainPill.textContent = "OK";
+        dom.tamperChainPill.className = "check-pill pill-ok";
+      } else {
+        dom.tamperChainPill.textContent = "FAILED";
+        dom.tamperChainPill.className = "check-pill pill-failed";
+      }
+    }
+
+    if (dom.tamperAnchorPill) {
+      if (anchorOk) {
+        dom.tamperAnchorPill.textContent = "MATCH";
+        dom.tamperAnchorPill.className = "check-pill pill-ok";
+      } else {
+        dom.tamperAnchorPill.textContent = "MISMATCH";
+        dom.tamperAnchorPill.className = "check-pill pill-failed";
+      }
     }
   }
 
@@ -945,6 +967,7 @@
     initElements();
     bindEvents();
     fetchAuditEntries();
+    triggerTamperAction("reset");
   });
 
 })();

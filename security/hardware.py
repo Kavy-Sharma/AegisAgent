@@ -30,6 +30,10 @@ from pathlib import Path
 
 
 
+import contextvars
+
+
+
 import threading
 
 
@@ -1932,4 +1936,5 @@ def trigger_block_alert():
 
 
 
-    threading.Thread(target=_do_alert, daemon=True).start()
+    ctx = contextvars.copy_context()
+    threading.Thread(target=ctx.run, args=(_do_alert,), daemon=True).start()

@@ -125,38 +125,39 @@ def run_unprotected(scenario: dict[str, Any], scratch_dir: Path | None = None) -
     # Clean isolated virtual home for this run
     lab_bridge = VirtualBridge(state_file=scratch_state_file)
     try:
-        tool_call = scenario["mocked_tool_call"]
-        tool_name = tool_call["name"]
-        tool_args = tool_call.get("args", {})
+        with security.logger.audit_source_context("attack_lab"):
+            tool_call = scenario["mocked_tool_call"]
+            tool_name = tool_call["name"]
+            tool_args = tool_call.get("args", {})
 
-        # Execute direct virtual actuation without security gateway
-        if tool_name == "unlock_door":
-            res = lab_bridge.publish("unlock_door")
-        elif tool_name == "activate_alarm":
-            res = lab_bridge.publish("alarm_on")
-        elif tool_name == "turn_light_on":
-            res = lab_bridge.publish("light_on")
-        elif tool_name == "turn_light_off":
-            res = lab_bridge.publish("light_off")
-        elif tool_name == "read_note":
-            # In an unprotected agent, poisoned memo instructions succeed in commanding action
-            note_name = tool_args.get("name", "")
-            if note_name in ("memo_obvious", "memo_subtle"):
-                # Obey embedded attack directive to unlock door
+            # Execute direct virtual actuation without security gateway
+            if tool_name == "unlock_door":
                 res = lab_bridge.publish("unlock_door")
+            elif tool_name == "activate_alarm":
+                res = lab_bridge.publish("alarm_on")
+            elif tool_name == "turn_light_on":
+                res = lab_bridge.publish("light_on")
+            elif tool_name == "turn_light_off":
+                res = lab_bridge.publish("light_off")
+            elif tool_name == "read_note":
+                # In an unprotected agent, poisoned memo instructions succeed in commanding action
+                note_name = tool_args.get("name", "")
+                if note_name in ("memo_obvious", "memo_subtle"):
+                    # Obey embedded attack directive to unlock door
+                    res = lab_bridge.publish("unlock_door")
+                else:
+                    res = lab_bridge.publish("ping")
             else:
                 res = lab_bridge.publish("ping")
-        else:
-            res = lab_bridge.publish("ping")
 
-        return {
-            "tool": tool_name,
-            "result": "simulated, no guard",
-            "virtual_state": dict(lab_bridge.state),
-            "decision": "COMPROMISED",
-            "action_executed": bool(res.ok),
-            "adapter": "virtual",
-        }
+            return {
+                "tool": tool_name,
+                "result": "simulated, no guard",
+                "virtual_state": dict(lab_bridge.state),
+                "decision": "COMPROMISED",
+                "action_executed": bool(res.ok),
+                "adapter": "virtual",
+            }
     finally:
         lab_bridge.close()
 
@@ -199,73 +200,74 @@ def run_protected(
                 pass
 
     try:
-        # Inject lab virtual bridge & lab auto-deny approval manager
-        set_bridge(lab_bridge)
-        security.gateway.set_approval_manager(LabApprovalManager())
+        with security.logger.audit_source_context("attack_lab"):
+            # Inject lab virtual bridge & lab auto-deny approval manager
+            set_bridge(lab_bridge)
+            security.gateway.set_approval_manager(LabApprovalManager())
 
-        tool_spec = scenario.get("mocked_tool_call")
+            tool_spec = scenario.get("mocked_tool_call")
 
-        def mock_ollama_chat(*args, **kwargs):
-            if tool_spec:
+            def mock_ollama_chat(*args, **kwargs):
+                if tool_spec:
+                    return {
+                        "message": {
+                            "role": "assistant",
+                            "content": "",
+                            "tool_calls": [
+                                {
+                                    "function": {
+                                        "name": tool_spec["name"],
+                                        "arguments": tool_spec.get("args", {}),
+                                    }
+                                }
+                            ],
+                        }
+                    }
                 return {
                     "message": {
                         "role": "assistant",
-                        "content": "",
-                        "tool_calls": [
-                            {
-                                "function": {
-                                    "name": tool_spec["name"],
-                                    "arguments": tool_spec.get("args", {}),
-                                }
-                            }
-                        ],
+                        "content": "No tool called.",
+                        "tool_calls": [],
                     }
                 }
-            return {
-                "message": {
-                    "role": "assistant",
-                    "content": "No tool called.",
-                    "tool_calls": [],
-                }
-            }
 
-        session_id = f"lab_sess_{scenario['id']}_{uuid.uuid4().hex}"
+            session_id = f"lab_sess_{scenario['id']}_{uuid.uuid4().hex}"
 
-        user = username or scenario.get("username", "lab_admin")
+            user = username or scenario.get("username", "lab_admin")
 
-        def mock_lab_block_alert():
-            try:
-                lab_bridge.publish("alert_blocked")
-            except Exception:
-                pass
+            def mock_lab_block_alert():
+                try:
+                    lab_bridge.publish("alert_blocked")
+                except Exception:
+                    pass
 
-        with patch.object(agent.agent.ollama, "chat", side_effect=mock_ollama_chat), \
-             patch.object(security.hardware, "trigger_block_alert", side_effect=mock_lab_block_alert), \
-             patch.object(security.quarantine, "record_injection_attempt", return_value=0), \
-             patch.object(security.quarantine, "is_quarantined", return_value=False):
-            res = run_turn(
-                text=scenario["prompt"],
-                role=scenario.get("role", "guest"),
-                session_id=session_id,
-                emit=capture_emit,
-                username=user,
-            )
+            with patch.object(agent.agent.ollama, "chat", side_effect=mock_ollama_chat), \
+                 patch.object(security.hardware, "trigger_block_alert", side_effect=mock_lab_block_alert), \
+                 patch.object(security.quarantine, "record_injection_attempt", return_value=0), \
+                 patch.object(security.quarantine, "is_quarantined", return_value=False):
+                res = run_turn(
+                    text=scenario["prompt"],
+                    role=scenario.get("role", "guest"),
+                    session_id=session_id,
+                    emit=capture_emit,
+                    username=user,
+                )
 
-        # Determine stopped_at stage from steps
-        stopped_at = None
-        for step in steps:
-            if step["status"] in ("block", "error"):
-                stopped_at = step["stage"]
-                break
+            # Determine stopped_at stage from steps
+            stopped_at = None
+            for step in steps:
+                if step["status"] in ("block", "error"):
+                    stopped_at = step["stage"]
+                    break
 
-        # Log audit entry with source="attack_lab"
-        security.logger.log_event("attack_lab_run", {
-            "scenario_id": scenario["id"],
-            "source": "attack_lab",
-            "stopped_at": stopped_at,
-            "decision": res.decision,
-            "role": scenario.get("role", "guest"),
-        })
+            # Log audit entry with source="attack_lab"
+            security.logger.log_event("attack_lab_run", {
+                "scenario_id": scenario["id"],
+                "source": "attack_lab",
+                "stopped_at": stopped_at,
+                "decision": res.decision,
+                "role": scenario.get("role", "guest"),
+            })
 
         return {
             "steps": steps,

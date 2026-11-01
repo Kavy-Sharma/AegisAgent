@@ -11,7 +11,7 @@
       <svg class="icon"><use href="/static/icons.svg#icon-shield-check"></use></svg>
     </div>
     <div class="audit-trust-text">
-      <strong>Cryptographic Hash Chain Enforced:</strong> Every event is hashed with SHA-256 and chained to its predecessor. Any modification instantly breaks the chain.
+      Every event is chained to the one before; edits to old entries are detected; deleting the newest entries needs an external anchor to detect.
     </div>
   </div>
 
@@ -19,8 +19,8 @@
   <header class="audit-hero">
     <div class="audit-hero-titles">
       <div class="audit-hero-badge-row">
-        <span class="audit-tag tag-primary">Immutable Ledger</span>
-        <span class="audit-tag tag-muted" id="hero-chain-meta">SHA-256 Merkle-Linked</span>
+        <span class="audit-tag tag-primary">Tamper-Evident</span>
+        <span class="audit-tag tag-muted" id="hero-chain-meta">SHA-256 Hash Chain</span>
       </div>
       <h1 class="audit-main-title">Audit Log</h1>
       <p class="audit-hero-sentence">A tamper-evident record of everything the agent did. Change one line and the chain breaks.</p>
@@ -116,16 +116,28 @@
 
     <!-- Linked Chain Visualizer -->
     <div class="tamper-visual-stage" id="tamper-visual-stage">
-      <div class="stage-label">Demonstration Chain (Copy of Recent Log Entries)</div>
+      <div class="stage-header-group">
+        <div class="stage-label">Demonstration Chain (Copy of Recent Log Entries)</div>
+        <div class="stage-note">Demo chain is re-hashed from a copy of the last 6 entries, so its hashes differ from the real log.</div>
+      </div>
       <div class="chain-nodes-container" id="chain-nodes-container">
         <!-- Injected via JavaScript DOM APIs -->
       </div>
     </div>
 
-    <!-- Anchor Comparison Result -->
-    <div class="tamper-anchor-eval" id="tamper-anchor-eval">
-      <div class="anchor-eval-badge" id="anchor-eval-badge">Anchor Check</div>
-      <span class="anchor-eval-text" id="anchor-eval-text">Initial state: Anchor matches temporary sandbox.</span>
+    <!-- Dual Check Result: Chain Check + Anchor Check -->
+    <div class="tamper-checks-card" id="tamper-checks-card">
+      <div class="tamper-check-row">
+        <span class="check-row-label">Chain check:</span>
+        <span class="check-pill pill-ok" id="tamper-chain-pill">OK</span>
+      </div>
+      <div class="tamper-check-row">
+        <span class="check-row-label">Anchor check:</span>
+        <span class="check-pill pill-ok" id="tamper-anchor-pill">MATCH</span>
+      </div>
+      <div class="tamper-checks-sentence">
+        An anchor only catches deleted or rewritten newest entries; the chain check catches edits in the middle.
+      </div>
     </div>
   </section>
 
@@ -265,6 +277,7 @@
         <span class="legend-item"><span class="legend-dot dot-blocked"></span> Blocked</span>
         <span class="legend-item"><span class="legend-dot dot-waiting"></span> Waiting</span>
         <span class="legend-item"><span class="legend-dot dot-error"></span> Error</span>
+        <span class="legend-item"><span class="legend-dot dot-info"></span> Info</span>
       </div>
     </div>
 

@@ -3220,6 +3220,7 @@ html:not([data-theme="dark"]) .voice-orb-card {
   box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.2);
 }
 
+.chain-node.node-after_break,
 .chain-node.node-orphaned {
   border-color: #FEDF89;
   background: #FFFAEB;
@@ -3255,6 +3256,7 @@ html:not([data-theme="dark"]) .voice-orb-card {
   color: var(--danger-text);
 }
 
+.node-after_break .node-status-tag,
 .node-orphaned .node-status-tag {
   background: #FEDF89;
   color: var(--warn-text);
@@ -3301,28 +3303,114 @@ html:not([data-theme="dark"]) .voice-orb-card {
   user-select: none;
 }
 
-.tamper-anchor-eval {
+.stage-header-group {
   display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  padding: 8px 14px;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: var(--space-2);
+}
+
+.stage-note {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.tamper-checks-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 16px;
   background: var(--surface-2);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
+}
+
+.tamper-check-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
   font-size: var(--text-sm);
 }
 
-.anchor-eval-badge {
-  padding: 2px 8px;
-  background: var(--accent-soft);
-  color: var(--accent-text);
-  border-radius: var(--radius-pill);
-  font-size: var(--text-xs);
-  font-weight: 700;
+.check-row-label {
+  min-width: 105px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  font-size: 13px;
 }
 
-.anchor-eval-text {
-  color: var(--text-secondary);
+.check-pill {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 10px;
+  border-radius: var(--radius-pill);
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  display: inline-flex;
+  align-items: center;
+}
+
+.check-pill.pill-ok {
+  background: #ECFDF3;
+  color: var(--ok-text, #027A48);
+  border: 1px solid #A6F4C5;
+}
+
+.check-pill.pill-failed {
+  background: #FEF3F2;
+  color: var(--danger-text, #B42318);
+  border: 1px solid #FECDCA;
+}
+
+.tamper-checks-sentence {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 2px;
+  line-height: 1.4;
+}
+
+[data-theme="dark"] .chain-node.node-valid {
+  background: rgba(16, 185, 129, 0.1);
+  border-color: rgba(16, 185, 129, 0.3);
+}
+
+[data-theme="dark"] .chain-node.node-broken {
+  background: rgba(239, 68, 68, 0.12);
+  border-color: rgba(239, 68, 68, 0.35);
+}
+
+[data-theme="dark"] .chain-node.node-after_break,
+[data-theme="dark"] .chain-node.node-orphaned {
+  background: rgba(245, 158, 11, 0.1);
+  border-color: rgba(245, 158, 11, 0.3);
+}
+
+[data-theme="dark"] .node-valid .node-status-tag {
+  background: rgba(16, 185, 129, 0.2);
+  color: #6EE7B7;
+}
+
+[data-theme="dark"] .node-broken .node-status-tag {
+  background: rgba(239, 68, 68, 0.2);
+  color: #FCA5A5;
+}
+
+[data-theme="dark"] .node-after_break .node-status-tag,
+[data-theme="dark"] .node-orphaned .node-status-tag {
+  background: rgba(245, 158, 11, 0.2);
+  color: #FCD34D;
+}
+
+[data-theme="dark"] .check-pill.pill-ok {
+  background: rgba(16, 185, 129, 0.15);
+  color: #6EE7B7;
+  border-color: rgba(16, 185, 129, 0.3);
+}
+
+[data-theme="dark"] .check-pill.pill-failed {
+  background: rgba(239, 68, 68, 0.15);
+  color: #FCA5A5;
+  border-color: rgba(239, 68, 68, 0.3);
 }
 
 /* External Anchor Verification Drawer */
@@ -3645,7 +3733,8 @@ html:not([data-theme="dark"]) .voice-orb-card {
 .dot-allowed { background: #10B981; }
 .dot-blocked { background: #EF4444; }
 .dot-waiting { background: #F59E0B; }
-.dot-error { background: #64748B; }
+.dot-error { background: #DC2626; }
+.dot-info { background: #94A3B8; }
 
 .table-responsive-wrapper {
   overflow-x: auto;
@@ -3766,6 +3855,12 @@ html:not([data-theme="dark"]) .voice-orb-card {
 }
 
 .badge-decision.badge-error {
+  background: var(--danger-bg);
+  border: 1px solid var(--danger-border);
+  color: var(--danger-text);
+}
+
+.badge-decision.badge-info {
   background: var(--surface-2);
   border: 1px solid var(--border);
   color: var(--muted);
@@ -3991,4 +4086,45 @@ html:not([data-theme="dark"]) .voice-orb-card {
 
 @keyframes spinRing {
   to { transform: rotate(360deg); }
+}
+
+/* Chain Node Contrast Enhancements for Dark Mode */
+html[data-theme="dark"] .chain-node {
+  background: var(--surface);
+  border-color: var(--border);
+}
+html[data-theme="dark"] .chain-node.node-valid {
+  border-color: rgba(16, 185, 129, 0.5);
+  background: rgba(16, 185, 129, 0.12);
+}
+html[data-theme="dark"] .chain-node.node-broken {
+  border-color: rgba(239, 68, 68, 0.65);
+  background: rgba(239, 68, 68, 0.16);
+  box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.35);
+}
+html[data-theme="dark"] .chain-node.node-orphaned {
+  border-color: rgba(245, 158, 11, 0.5);
+  background: rgba(245, 158, 11, 0.12);
+}
+html[data-theme="dark"] .node-valid .node-status-tag {
+  background: rgba(16, 185, 129, 0.25);
+  color: #34D399;
+}
+html[data-theme="dark"] .node-broken .node-status-tag {
+  background: rgba(239, 68, 68, 0.3);
+  color: #F87171;
+}
+html[data-theme="dark"] .node-orphaned .node-status-tag {
+  background: rgba(245, 158, 11, 0.25);
+  color: #FBBF24;
+}
+html[data-theme="dark"] .node-hashes {
+  color: #94A3B8;
+}
+html[data-theme="dark"] .node-hash-label {
+  color: #E2E8F0;
+}
+html[data-theme="dark"] .node-event {
+  color: #F8FAFC;
+  border-top-color: rgba(255, 255, 255, 0.12);
 }

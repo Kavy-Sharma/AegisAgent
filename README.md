@@ -83,7 +83,7 @@ AegisAgent is a security gateway positioned between a local LLM agent (**Ollama*
 
 ### 5. Cryptographic Audit Logging
 - All gateway decisions, prompt inspections, approval requests, role switches, and hardware dispatches are chained using SHA-256 hashes in `logs/audit_log.jsonl`.
-- Immutable audit chain verified via `python security/verify_log.py`.
+- Tamper-evident audit chain verified via `python security/verify_log.py`.
 
 ---
 
