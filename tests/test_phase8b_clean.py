@@ -134,3 +134,49 @@ def test_format_ist_correct_offset():
     ist_str = _format_ist(utc_dt)
     assert "05:30:00 IST" in ist_str
     assert "IST" in ist_str
+
+
+# ============================================================================
+# 5. CONSOLE SANITIZATION & CLIENT-SIDE TEXTCONTENT SAFETY TESTS
+# ============================================================================
+
+def test_sanitize_for_console_strips_ansi_and_control_codes():
+    """Verifies that terminal injection vectors (ANSI escapes, control codes) are stripped."""
+    from security.approval import sanitize_for_console
+
+    # ANSI color and cursor jump sequence
+    ansi_input = "\x1b[31;1mCRITICAL ALERT\x1b[0m\x1b[2J"
+    clean = sanitize_for_console(ansi_input)
+    assert "\x1b" not in clean
+    assert "CRITICAL ALERT" in clean
+
+    # Dangerous control characters (null byte, bell, backspace)
+    ctrl_input = "Admin\x00_Operation\x07\x08_Confirmed"
+    clean_ctrl = sanitize_for_console(ctrl_input)
+    assert "\x00" not in clean_ctrl
+    assert "\x07" not in clean_ctrl
+    assert "\x08" not in clean_ctrl
+    assert clean_ctrl == "Admin_Operation_Confirmed"
+
+    # Truncation cap to prevent console buffer flooding
+    huge_input = "X" * 1000
+    truncated = sanitize_for_console(huge_input, max_len=150)
+    assert "... [truncated]" in truncated
+    assert len(truncated) <= 150 + len("... [truncated]")
+
+
+def test_audit_js_uses_textcontent_without_innerhtml():
+    """Verifies that audit.js strictly uses textContent and safe DOM construction with 0 innerHTML calls."""
+    audit_js_path = Path(__file__).resolve().parent.parent / "web" / "static" / "js" / "audit.js"
+    assert audit_js_path.exists()
+    content = audit_js_path.read_text(encoding="utf-8")
+
+    # Audit page must never call innerHTML
+    lines_with_innerhtml = [
+        f"L{i+1}: {line.strip()}"
+        for i, line in enumerate(content.splitlines())
+        if ".innerHTML" in line and not line.strip().startswith("//") and not line.strip().startswith("*")
+    ]
+    assert len(lines_with_innerhtml) == 0, f"Unexpected innerHTML calls in audit.js: {lines_with_innerhtml}"
+    assert "textContent" in content
+

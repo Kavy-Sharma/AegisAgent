@@ -1,8 +1,8 @@
 """
-AegisAgent Phase 8 -- Manual Dashboard Approval CLI Tool (No Ollama needed)
+AegisAgent Phase 8 -- Manual Web Approvals CLI Test Tool (No Ollama needed)
 
 Dispatches a HIGH-risk approval request to DashboardApprovalProvider so you can
-test approving or denying it in the Streamlit dashboard interface.
+test approving or denying it in the Web Control Room (/approvals).
 """
 
 from pathlib import Path
@@ -17,7 +17,7 @@ import security.policy_loader
 
 def main():
     print("=" * 60)
-    print(" AegisAgent Phase 8 — Dashboard Approval Test ".center(60, "="))
+    print(" AegisAgent Phase 8 — Web Approval Test ".center(60, "="))
     print("=" * 60)
 
     timeout = float(security.policy_loader.POLICY.get("approval", {}).get("timeout_seconds", 30.0))
@@ -32,7 +32,7 @@ def main():
         risk="HIGH",
         reasons=[
             "Physical entry actuation requested (HIGH-risk)",
-            "Manual operator verification required via Dashboard",
+            "Manual operator verification required via Control Room",
         ],
     )
 
@@ -43,9 +43,9 @@ def main():
     print(f"  Arguments    : {req.args}")
     print(f"  Reasons      : {req.reasons}")
     print(f"  Pending File : data/approvals/pending/{req.request_id}.json")
-    print(f"\n--> Open the Streamlit Dashboard at http://127.0.0.1:8501")
-    print(f"    (Run: streamlit run dashboard/app.py --server.address 127.0.0.1)")
-    print(f"\nWaiting up to {timeout:.0f}s for your decision in the dashboard...")
+    print(f"\n--> Open the Web Control Room at http://127.0.0.1:8501/approvals")
+    print(f"    (Ensure the server is running via: python start.py)")
+    print(f"\nWaiting up to {timeout:.0f}s for your decision in the web interface...")
 
     result = manager.request(req)
 

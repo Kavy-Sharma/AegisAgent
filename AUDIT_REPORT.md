@@ -84,7 +84,7 @@ flowchart TD
     ```
   - CSP forbids `'unsafe-inline'` in `script-src` and `style-src`. External CDN scripts and frame embeds are blocked.
 - **Console Threat Window State:** When prompt injection is detected, the UI locks the input field, transitions the pipeline diagram to red, and displays an admin override action. Non-admin users cannot dismiss threat containment.
-- **Polling Intervals & Backoff:** Overview dashboard polls at 3,000ms; approval card polls at 1,000ms; voice turn completion polls at 1,000ms with a strict 75s timeout (exceeding approval timeout + 10s).
+- **Polling Intervals & Backoff:** Overview dashboard polls at 3,000ms; approval card polls at 1,000ms; voice turn completion polls at 1,000ms with a strict 75s timeout (exceeding approval timeout + 10s). *(Note: legacy Streamlit dashboard removed; replaced by web/)*
 
 ### A9. Neural Voice Gateway (Aura)
 - **Policy Default:** Set `voice.enabled: false` by default in `policy.yaml`.
@@ -105,7 +105,7 @@ flowchart TD
 ### A11. Test Suite Quality, Stability & Coverage
 - **Semantic Diff of 8 Modified Lines:**
   - 5 lines in `tests/test_dashboard_approval.py`: Added mandatory `decided_by` parameter to `_write_decision` helper to conform to HMAC signature verification.
-  - 3 lines in `tests/test_phase8b.py`: Updated login lockout assertions to verify uniform `"Invalid username or password"` response strings, eliminating username enumeration oracle.
+  - 3 lines in `tests/test_phase8b.py`: Updated login lockout assertions to verify uniform `"Invalid username or password"` response strings, eliminating username enumeration oracle. *(Note: legacy Streamlit dashboard removed; replaced by web/ and tests/test_phase8b_clean.py)*
 - **Test Stability (3 Consecutive Clean Runs - Re-run):**
   - Run 1: 218 passed in 33.92s (re-run)
   - Run 2: 218 passed in 27.81s (re-run)

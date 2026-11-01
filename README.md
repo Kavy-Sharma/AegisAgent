@@ -158,6 +158,8 @@ AegisAgent is a security gateway positioned between a local LLM agent (**Ollama*
    ```
    *Note on First-Run Setup*: When opening `http://127.0.0.1:8501`, the system automatically redirects to `/setup` if no registered users exist in `data/users.json`. Register the initial administrator account (minimum 10-character password). Once any user account exists, `/setup` redirects to `/login`. If user data is reset, `/setup` re-opens until initialized.
 
+   > **No hardware?** Set `hardware.mode: virtual` in `policy.yaml`. The Mosquitto 'passwd' message and 'device offline' entries are normal when no ESP32/broker is set up.
+
 ---
 
 ## 💻 Installation & Setup
@@ -207,7 +209,7 @@ python -m agent.agent --role admin
 
 ## 🛠️ Testing & Harness Scripts
 
-### 1. Run Complete Automated Test Suite (250+ tests)
+### 1. Run Complete Automated Test Suite (about 250 tests)
 ```bash
 pytest -v
 ```
@@ -369,4 +371,4 @@ AegisAgent/
 11. **Browser speech recognition cloud routing**: Browser-based speech recognition on the Voice page relies on the Web Speech API; depending on the browser vendor (e.g. Chrome / Edge), captured audio may be transmitted to cloud speech-to-text servers.
 12. **Inconsistent LLM tool-calling**: Smaller local LLMs (e.g. `llama3.1:8b`) may exhibit inconsistent tool calling behavior, syntax formatting errors in function arguments, or occasional instruction hallucinations.
 13. **MQTT dispatch vs. device-side confirmation**: A successful MQTT publish status only confirms that the local broker accepted the packet; physical hardware confirmation requires waiting for the asynchronous device ACK event.
-14. **Attack Lab worker simulation scope**: The Attack Lab simulator temporarily patches the session quarantine and hardware bridge inside the single backend worker process to run side-by-side simulations; this isolation is safe only because the worker handles requests strictly one at a time via its inbox lock.
+14. **Attack Lab worker simulation scope**: The Attack Lab simulator temporarily patches the session quarantine and hardware bridge inside the single backend worker process to run side-by-side simulations; this isolation is safe only because the worker handles one request at a time.
