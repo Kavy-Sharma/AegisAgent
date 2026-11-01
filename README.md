@@ -17,20 +17,32 @@ AegisAgent is a security gateway positioned between a local LLM agent (**Ollama*
               │
               ▼
 ┌───────────────────────────┐
+│        Intent Lock        │ ──► Bounds Permitted Actions to Declared User Intent Scope
+│    (security/intent.py)   │ ──► Blocks Tool Execution Outside Scope Post-RBAC
+└─────────────┬─────────────┘
+              │
+              ▼
+┌───────────────────────────┐
 │     Ollama LLM Agent      │ ──► Model Tool Calling (llama3.1)
 └─────────────┬─────────────┘
               │
               ▼
 ┌───────────────────────────┐
-│     Security Gateway      │ ──► 1. Tool Existence Check
+│     Security Gateway      │ ──► 1. Tool Existence & Schema Check
 │        (gateway.py)       │ ──► 2. Role-Based Access Control (RBAC: guest / admin)
 └─────────────┬─────────────┘ ──► 3. Sliding-Window Rate Limiter
               │               ──► 4. Human-in-the-Loop Approval (One-Time Request Hash)
               ▼
 ┌───────────────────────────┐
-│  Hardware Bridge / Broker │ ──► Authenticated Local MQTT Broker (Mosquitto)
-│     (security/hardware)   │ ──► Command Allowlist Check (Defense in Depth)
+│  Hardware Bridge / Broker │ ──► Authenticated MQTT Broker (default: mqtt) or Virtual Home
+│     (security/hardware)   │ ──► Command Allowlist Check & 3s Door Auto-Relock
 └─────────────┬─────────────┘ ──► Physical Attack Blocked LED Trigger (2s Debounce)
+              │
+              ▼
+┌───────────────────────────┐
+│        Output Scan        │ ──► Inspects Untrusted Tool Outputs (e.g. read_note)
+│     (agent/agent.py)      │ ──► Blocks Indirect Prompt Injections Before User Reply
+└─────────────┬─────────────┘
               │
               ▼
 ┌───────────────────────────┐
@@ -90,8 +102,8 @@ AegisAgent is a security gateway positioned between a local LLM agent (**Ollama*
 - The protected run uses the real Aegis pipeline with a mock model that always obeys the attacker, so the demo does not depend on Ollama.
 
 ### 7. Virtual Home vs ESP32
-- **Virtual home (software simulation) is the default mode**, requiring no physical hardware or MQTT broker.
-- **ESP32 is optional hardware** supported via the authenticated MQTT hardware bridge for physical LEDs (green, red, yellow) and buzzer actuation.
+- **Shipped Hardware Mode**: `policy.yaml` defaults to `hardware.mode: mqtt` (production broker mode with ESP32).
+- **Virtual Home Simulation**: For testing without physical hardware or a running Mosquitto broker, set `hardware.mode: virtual` in `policy.yaml`. Virtual Home runs an in-memory smart home simulator supporting all device actions.
 
 ---
 
@@ -144,7 +156,7 @@ AegisAgent is a security gateway positioned between a local LLM agent (**Ollama*
    ```bash
    python start.py
    ```
-   *Note on First-Run Setup*: When opening `http://127.0.0.1:8501`, the system automatically redirects to `/setup` if no users exist. Register the initial administrator account (minimum 10-character password). Once registered, `/setup` is permanently locked out and the full control room opens.
+   *Note on First-Run Setup*: When opening `http://127.0.0.1:8501`, the system automatically redirects to `/setup` if no registered users exist in `data/users.json`. Register the initial administrator account (minimum 10-character password). Once any user account exists, `/setup` redirects to `/login`. If user data is reset, `/setup` re-opens until initialized.
 
 ---
 
@@ -228,7 +240,7 @@ Run the offline zero-trust benchmark across 50 attacks and 50 benign prompts in 
 ```bash
 python -m benchmark.run
 ```
-Outputs `benchmark/results.csv` and prints a complete markdown evaluation table comparing detection rates (TPR), false-positive rates (FPR), and per-category attack misses.
+*Note on Benchmark Methodology*: The benchmark uses a MOCKED model / deterministic simulation to measure the Aegis defensive layers directly against standardized adversarial and benign inputs without depending on live LLM variability. A full end-to-end benchmark against live LLMs has not been performed yet. Outputs `benchmark/results.csv` and prints a markdown evaluation table.
 
 ---
 
@@ -255,21 +267,29 @@ Outputs `benchmark/results.csv` and prints a complete markdown evaluation table 
 ```
 AegisAgent/
 ├── agent/
-│   ├── agent.py               # Main Agent CLI & Ollama Integration
-│   └── tools.py               # Tool Dispatchers & Hardware Interfaces
+│   ├── agent.py               # Main Agent CLI, Pipeline Dispatch & Ollama Integration
+│   ├── tools.py               # Tool Dispatchers & Hardware Interfaces
+│   └── worker.py              # Background Worker Service (Inbox/Outbox IPC)
 ├── benchmark/
 │   ├── attacks.jsonl          # 50 Attack Prompts (7 categories)
 │   ├── benign.jsonl           # 50 Benign Prompts (trigger words & normal tasks)
 │   ├── results.csv            # 400 Benchmark Run Evaluations
 │   └── run.py                 # Benchmark Runner Across 4 Defensive Configurations
 ├── security/
-│   ├── approval.py            # Phase 6 Human Approval Framework
+│   ├── approval.py            # Phase 6 Human Approval Framework & IPC
+│   ├── attack_lab.py          # Attack Lab Scenario Engine & Simulation
+│   ├── auth.py                # User Authentication, Password Hashing & Lockout
 │   ├── gateway.py             # Security Gateway Interception Engine
 │   ├── hardware.py            # Phase 7 Hardware Bridge & MQTT Client
+│   ├── health.py              # Subsystem Health Checks
+│   ├── intent.py              # Intent Lock Scope Calculator
 │   ├── logger.py              # SHA-256 Tamper-Evident Audit Logger
 │   ├── policy_loader.py       # policy.yaml Configuration Loader
+│   ├── quarantine.py          # Session Quarantine on Repeated Attacks
 │   ├── rate_limiter.py        # Sliding-Window Rate Limiter
+│   ├── signing.py             # HMAC-SHA256 Request & Decision Signing
 │   ├── verify_log.py          # Cryptographic Audit Log Verifier
+│   ├── virtual_home.py        # In-Memory Smart Home Simulation (Default)
 │   ├── detection/
 │   │   ├── base.py            # Detection Dataclasses & Interfaces
 │   │   ├── normalizer.py      # Multi-View Text Normalizer
@@ -278,6 +298,13 @@ AegisAgent/
 │   │   └── engine.py          # Detection Engine Orchestrator
 │   └── rules/
 │       └── injection_rules.yaml # Prompt Injection Rule Specifications
+├── web/
+│   ├── server.py              # Flask Web Server (127.0.0.1:8501)
+│   ├── api.py                 # Core REST API (Chat, Overview, Approvals, Attack Lab)
+│   ├── api_audit.py           # Audit Log Viewer & Tamper Demo API
+│   ├── guards.py              # Auth Decorators, CSRF Verification & Host Validation
+│   ├── static/                # CSS Tokens, Vanilla JS Modules, Icons & Media
+│   └── templates/             # Jinja2 Templates (Overview, Approvals, Attack Lab, Audit)
 ├── esp32/
 │   ├── secrets.example.h      # ESP32 Secrets Template
 │   └── aegis_device/
@@ -287,13 +314,20 @@ AegisAgent/
 │   ├── acl.conf               # Topic Access Control List
 │   └── README_mosquitto.md    # Mosquitto Setup & Verification Guide
 ├── scripts/
+│   ├── create_user.py         # Admin User Creation CLI
+│   ├── reset_password.py      # Lockout Recovery & Password Reset CLI
 │   ├── try_approval.py        # Approval System REPL
 │   ├── try_detection.py       # Detection Engine REPL
 │   └── try_hardware.py        # Hardware Dispatch CLI
 ├── tests/
 │   ├── test_approval.py       # Pytest Approval Suite
+│   ├── test_attack_lab.py     # Attack Lab Scenarios & API Suite
+│   ├── test_audit_page.py     # Audit Log Viewer & Tamper Demo Suite
+│   ├── test_benchmark.py      # Benchmark Verification Suite
 │   ├── test_detection.py      # Pytest Prompt Injection Suite
-│   └── test_hardware.py       # Pytest Hardware & Alert Suite
+│   ├── test_hardware.py       # Pytest Hardware & Alert Suite
+│   ├── test_phase8b_clean.py  # Ported Auth Lockout, Signing & IST Suite
+│   └── test_virtual_home.py   # Virtual Home Simulation Suite
 ├── logs/
 │   └── audit_log.jsonl        # Cryptographic Audit Log File
 ├── policy.yaml                # Master Security Policy Configuration
@@ -332,3 +366,7 @@ AegisAgent/
 8. **Single worker blocked up to 60 s by a pending approval**: The backend worker processes queued turns sequentially. When a high-risk action (such as `unlock_door`) is triggered, the worker is blocked for up to the 60-second approval timeout awaiting operator action.
 9. **Probabilistic detection**: Rule and heuristic injection detection is probabilistic and may miss novel or sophisticated adversarial inputs.
 10. **Weak on Hindi, homoglyphs & encoding**: Rule engine shows high miss rates against non-English prompts (0.0% on Hindi/Hinglish), Unicode homoglyph substitutions (0.0%), and encoded payloads (10.0%).
+11. **Browser speech recognition cloud routing**: Browser-based speech recognition on the Voice page relies on the Web Speech API; depending on the browser vendor (e.g. Chrome / Edge), captured audio may be transmitted to cloud speech-to-text servers.
+12. **Inconsistent LLM tool-calling**: Smaller local LLMs (e.g. `llama3.1:8b`) may exhibit inconsistent tool calling behavior, syntax formatting errors in function arguments, or occasional instruction hallucinations.
+13. **MQTT dispatch vs. device-side confirmation**: A successful MQTT publish status only confirms that the local broker accepted the packet; physical hardware confirmation requires waiting for the asynchronous device ACK event.
+14. **Attack Lab worker simulation scope**: The Attack Lab simulator temporarily patches the session quarantine and hardware bridge inside the single backend worker process to run side-by-side simulations; this isolation is safe only because the worker handles requests strictly one at a time via its inbox lock.
