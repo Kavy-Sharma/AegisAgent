@@ -26,6 +26,7 @@
     datePreset: "all",
     expandedRowId: null,
     tamperLabOpen: false,
+    heroCountedUp: false,
     anchorDrawerOpen: false,
     selectedAnchorFile: null,
     searchDebounceTimer: null
@@ -89,6 +90,12 @@
     dom.tamperChainPill = document.getElementById("tamper-chain-pill");
     dom.tamperAnchorPill = document.getElementById("tamper-anchor-pill");
 
+    dom.heroStatTotal = document.getElementById("hero-stat-total");
+    dom.heroStatBlocked = document.getElementById("hero-stat-blocked");
+    dom.heroStatStatusText = document.getElementById("hero-stat-status-text");
+    dom.heroStatusDot = document.getElementById("hero-status-dot");
+    dom.auditTableCard = document.querySelector(".audit-table-card");
+
     dom.csrfToken = document.getElementById("csrf-token-val");
   }
 
@@ -99,6 +106,30 @@
   // =========================================================================
   // UTILITY HELPERS
   // =========================================================================
+
+  function animateCountUp(element, target, duration) {
+    if (!element) return;
+    target = Number(target) || 0;
+    if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      element.textContent = target.toLocaleString();
+      return;
+    }
+    var startTime = null;
+    var dur = duration || 650;
+    function step(timestamp) {
+      if (!startTime) startTime = timestamp;
+      var progress = Math.min((timestamp - startTime) / dur, 1);
+      var eased = progress === 1 ? 1 : 1 - Math.pow(2, -10 * progress);
+      var current = Math.floor(eased * target);
+      element.textContent = current.toLocaleString();
+      if (progress < 1) {
+        requestAnimationFrame(step);
+      } else {
+        element.textContent = target.toLocaleString();
+      }
+    }
+    requestAnimationFrame(step);
+  }
 
   function formatIstTimestamp(utcIsoString) {
     if (!utcIsoString) return "—";
@@ -221,6 +252,19 @@
         state.totalPages = data.total_pages || 1;
         state.totalMatching = data.total_matching || 0;
         state.totalLines = data.total_lines || 0;
+
+        if (!state.heroCountedUp) {
+          state.heroCountedUp = true;
+          animateCountUp(dom.heroStatTotal, data.total_lines || 0, 700);
+          fetch("/api/audit/entries?decision=BLOCKED&limit=1")
+            .then(function (r) { return r.json(); })
+            .then(function (bData) {
+              if (bData && bData.total_matching !== undefined) {
+                animateCountUp(dom.heroStatBlocked, bData.total_matching, 700);
+              }
+            })
+            .catch(function () {});
+        }
 
         renderPagination();
         renderTableRows(data.entries || []);
@@ -475,6 +519,7 @@
 
     dom.btnVerifyChain.disabled = true;
     if (dom.btnVerifyLabel) dom.btnVerifyLabel.textContent = "Verifying sequence...";
+    if (dom.auditTableCard) dom.auditTableCard.classList.add("sweeping");
 
     fetch("/api/audit/verify")
       .then(function (res) {
@@ -484,11 +529,15 @@
       .then(function (data) {
         dom.btnVerifyChain.disabled = false;
         if (dom.btnVerifyLabel) dom.btnVerifyLabel.textContent = "Verify chain";
+        if (dom.auditTableCard) dom.auditTableCard.classList.remove("sweeping");
 
         if (dom.verifyCard) dom.verifyCard.hidden = false;
 
         var isIntact = Boolean(data.intact);
         var totalEntries = data.total_entries || data.count || state.totalLines || 0;
+
+        if (dom.heroStatStatusText) dom.heroStatStatusText.textContent = isIntact ? "Intact" : "Tampered";
+        if (dom.heroStatusDot) dom.heroStatusDot.className = "status-indicator-dot " + (isIntact ? "dot-live" : "dot-alert");
 
         if (dom.verifyCard) {
           dom.verifyCard.className = "audit-verify-result-card " + (isIntact ? "status-intact" : "status-tampered");
@@ -516,6 +565,7 @@
       .catch(function (err) {
         dom.btnVerifyChain.disabled = false;
         if (dom.btnVerifyLabel) dom.btnVerifyLabel.textContent = "Verify chain";
+        if (dom.auditTableCard) dom.auditTableCard.classList.remove("sweeping");
         showToast("Verification Error", "Could not verify log: " + err.message, "danger");
       });
   }
@@ -575,12 +625,12 @@
       } else if (data.action === "rewrite") {
         dom.tamperEduTitle.textContent = "Attack Simulated: Complete Hash Chain Rewrite";
       } else {
-        dom.tamperEduTitle.textContent = "Sandbox Restored to Intact Log Copy";
+        dom.tamperEduTitle.textContent = "Intact demo chain loaded";
       }
     }
 
     if (dom.tamperEduText) {
-      dom.tamperEduText.textContent = data.explanation || "Chain integrity evaluated.";
+      dom.tamperEduText.textContent = data.explanation || "All 6 blocks link correctly. Press an attack button to see what breaks.";
     }
 
     if (dom.chainNodesContainer) {
@@ -590,13 +640,6 @@
 
       var blocks = data.chain_blocks || [];
       blocks.forEach(function (block, idx) {
-        if (idx > 0) {
-          var arrow = document.createElement("div");
-          arrow.className = "chain-arrow";
-          arrow.textContent = "→";
-          dom.chainNodesContainer.appendChild(arrow);
-        }
-
         var node = document.createElement("div");
         var isAfterBreak = (block.status === "after_break" || block.status === "orphaned");
         node.className = "chain-node " + (isAfterBreak ? "node-after_break" : "node-" + block.status);
@@ -645,6 +688,15 @@
         ev.className = "node-event";
         ev.textContent = block.event + " (" + block.decision + ")";
         node.appendChild(ev);
+
+        // Arrow stays between blocks and hides where row wraps or at end
+        if (idx < blocks.length - 1) {
+          var arrow = document.createElement("div");
+          arrow.className = "chain-arrow";
+          arrow.setAttribute("aria-hidden", "true");
+          arrow.textContent = "→";
+          node.appendChild(arrow);
+        }
 
         dom.chainNodesContainer.appendChild(node);
       });

@@ -582,6 +582,110 @@ def test_tamper_demo_block_statuses_reset_edit_delete(tmp_path, monkeypatch):
             assert d["anchor_ok"] is exp["anchor_ok"], f"Action {act}: expected anchor_ok={exp['anchor_ok']}, got {d['anchor_ok']}"
 
 
+def test_tamper_demo_edit_line_anchor_match_chain_failed(tmp_path, monkeypatch):
+    """
+    JS-free test verifying that edit_line returns anchor_ok=True and chain_ok=False.
+    Editing a middle log line breaks the sequential cryptographic hash chain,
+    but an external anchor (which only stores the log line count and head hash)
+    still matches because count and newest head hash are unchanged.
+    """
+    real_log = tmp_path / "edit_line_test.jsonl"
+    _create_mock_chain(real_log, count=6)
+    monkeypatch.setenv("AEGIS_LOG_FILE", str(real_log))
+    security.logger.set_log_file(real_log)
+
+    app = create_app()
+    app.config["TESTING"] = True
+
+    with app.test_client() as client:
+        with client.session_transaction() as sess:
+            sess["username"] = "admin"
+            sess["role"] = "admin"
+            sess["csrf_token"] = "valid_csrf_token"
+
+        res = client.post(
+            "/api/audit/tamper_demo",
+            json={"action": "edit_line"},
+            headers={"X-CSRF-Token": "valid_csrf_token"},
+        )
+        assert res.status_code == 200
+        data = res.get_json()
+        assert data["anchor_ok"] is True
+        assert data["chain_ok"] is False
+        assert data["anchor_status"] == "Anchor Matches"
+        assert data["broken_index"] == 4
+
+
+def test_hero_stats_total_and_blocked_count_match_log(tmp_path, monkeypatch):
+    """
+    Verifies that 'Total entries' (total_lines) and 'Blocked actions' (total_matching for decision=BLOCKED)
+    count the entire file via reverse stream, not just a single pagination slice.
+    """
+    real_log = tmp_path / "hero_stats_audit.jsonl"
+    prev_h = "0" * 64
+    decisions = [
+        "ALLOWED", "BLOCKED", "ALLOWED", "WAITING", "BLOCKED",
+        "ALLOWED", "BLOCKED", "ALLOWED", "ALLOWED", "WAITING"
+    ]
+    with open(real_log, "w", encoding="utf-8") as f:
+        for idx, dec in enumerate(decisions, start=1):
+            body = {
+                "line_no": idx,
+                "timestamp": f"2026-11-01T12:0{idx}:00Z",
+                "event": "tool_execution" if dec in ("ALLOWED", "BLOCKED") else "supervisor_review",
+                "tool": "smart_lock" if dec == "BLOCKED" else "read_note",
+                "role": "agent",
+                "decision": dec,
+                "prev_hash": prev_h,
+            }
+            raw = json.dumps(body, sort_keys=True)
+            h = hashlib.sha256(raw.encode("utf-8")).hexdigest()
+            body["entry_hash"] = h
+            prev_h = h
+            f.write(json.dumps(body) + "\n")
+
+    monkeypatch.setenv("AEGIS_LOG_FILE", str(real_log))
+    security.logger.set_log_file(real_log)
+
+    app = create_app()
+    app.config["TESTING"] = True
+
+    with app.test_client() as client:
+        with client.session_transaction() as sess:
+            sess["username"] = "admin"
+            sess["role"] = "admin"
+            sess["csrf_token"] = "valid_csrf_token"
+
+        # 1. Total lines check with page limit = 3
+        res_all = client.get("/api/audit/entries?limit=3&page=1")
+        assert res_all.status_code == 200
+        d_all = res_all.get_json()
+        assert len(d_all["entries"]) == 3, "Page slice should only have 3 items"
+        assert d_all["total_lines"] == 10, "Total lines must count the whole log (10), not just page size (3)"
+        assert d_all["total_matching"] == 10
+
+        # 2. Blocked actions check with limit = 1 (matching hero count query)
+        res_blocked = client.get("/api/audit/entries?decision=BLOCKED&limit=1")
+        assert res_blocked.status_code == 200
+        d_blocked = res_blocked.get_json()
+        assert len(d_blocked["entries"]) == 1, "Page slice should only have 1 item"
+        assert d_blocked["total_matching"] == 3, "Total blocked must count all 3 blocked actions in whole log"
+        assert d_blocked["total_lines"] == 10
+
+        # Also support decision=BLOCK alias
+        res_block_alias = client.get("/api/audit/entries?decision=BLOCK&limit=1")
+        assert res_block_alias.status_code == 200
+        assert res_block_alias.get_json()["total_matching"] == 3
+
+        # 3. Verify against direct manual file count
+        with open(real_log, "r", encoding="utf-8") as f:
+            lines = [json.loads(l) for l in f if l.strip()]
+        expected_total = len(lines)
+        expected_blocked = sum(1 for e in lines if e.get("decision") in ("BLOCK", "BLOCKED"))
+        assert d_all["total_lines"] == expected_total == 10
+        assert d_blocked["total_matching"] == expected_blocked == 3
+
+
 # =========================================================================
 # 9. Decision Badges: Informational Events Must Not Show Error
 # =========================================================================

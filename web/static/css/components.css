@@ -212,12 +212,16 @@
 }
 
 .btn-primary {
-  background-color: var(--accent);
+  background: var(--gradient-primary, var(--accent));
   color: #FFFFFF;
+  border-color: rgba(255, 255, 255, 0.12);
+  box-shadow: 0 1px 3px rgba(14, 124, 114, 0.25), 0 3px 8px rgba(67, 56, 202, 0.18);
 }
 
 .btn-primary:hover:not(:disabled) {
-  background-color: var(--accent-hover);
+  background: var(--gradient-primary-hover, var(--accent-hover));
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(14, 124, 114, 0.35), 0 6px 14px rgba(67, 56, 202, 0.22);
 }
 
 .btn-secondary {

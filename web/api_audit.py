@@ -159,15 +159,15 @@ def _matches_filters(
     # 1. Decision Filter
     entry_dec = str(entry.get("decision", entry.get("ok", ""))).upper()
     if dec_upper:
-        if dec_upper == "ALLOWED" and entry_dec not in ("ALLOW", "ALLOWED", "TRUE", "OK"):
+        if dec_upper in ("ALLOWED", "ALLOW") and entry_dec not in ("ALLOW", "ALLOWED", "TRUE", "OK"):
             return False
-        elif dec_upper == "BLOCKED" and entry_dec not in ("BLOCK", "BLOCKED", "DENY", "FALSE"):
+        elif dec_upper in ("BLOCKED", "BLOCK") and entry_dec not in ("BLOCK", "BLOCKED", "DENY", "FALSE"):
             return False
-        elif dec_upper == "WAITING" and entry_dec not in ("REVIEW", "WAITING", "PENDING"):
+        elif dec_upper in ("WAITING", "WAIT") and entry_dec not in ("REVIEW", "WAITING", "PENDING"):
             return False
-        elif dec_upper == "ERROR" and entry_dec not in ("ERROR", "FAIL"):
+        elif dec_upper in ("ERROR", "FAIL") and entry_dec not in ("ERROR", "FAIL"):
             return False
-        elif dec_upper not in ("ALLOWED", "BLOCKED", "WAITING", "ERROR") and entry_dec != dec_upper:
+        elif dec_upper not in ("ALLOWED", "ALLOW", "BLOCKED", "BLOCK", "WAITING", "WAIT", "ERROR", "FAIL") and entry_dec != dec_upper:
             return False
 
     # 2. Role / Actor Filter
@@ -658,7 +658,7 @@ def api_audit_tamper_demo():
         explanation = f"An attacker altered line {target_idx + 1} and recomputed all subsequent hashes. The internal chain passes, but the EXTERNAL ANCHOR head_hash mismatches."
 
     elif action == "reset":
-        explanation = "Sandbox demonstration restored to an authentic, unbroken copy of recent audit records. All cryptographic links valid."
+        explanation = "All 6 blocks link correctly. Press an attack button to see what breaks."
 
     else:
         return jsonify({"status": "error", "message": f"Unknown tamper action '{action}'"}), 400
@@ -721,6 +721,7 @@ def api_audit_tamper_demo():
             "chain_intact": is_intact,
             "broken_index": broken_index,
             "anchor_ok": anchor_ok,
+            "anchor_status": anchor_status,
             "verify_message": verify_msg,
             "explanation": explanation,
             "chain_blocks": chain_blocks,

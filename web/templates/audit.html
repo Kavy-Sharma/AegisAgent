@@ -5,6 +5,66 @@
 
 {% block content %}
 <div class="audit-page">
+  <!-- Hero Control Room Strip (FIRST on Page) -->
+  <header class="audit-hero-control-strip">
+    <div class="hero-top-row">
+      <div class="hero-text-block">
+        <div class="hero-pill-badge">
+          <span class="hero-dot-pulse"></span>
+          <span>TAMPER-EVIDENT CONTROL LEDGER</span>
+          <span class="hero-pill-sep">&bull;</span>
+          <span id="hero-chain-meta">SHA-256 HASH CHAIN</span>
+        </div>
+        <h1 class="hero-heading">Audit Log</h1>
+        <p class="hero-subline">A tamper-evident record of everything the agent did. Change one line and the chain breaks.</p>
+      </div>
+      <div class="hero-actions-group">
+        <button type="button" class="btn btn-hero-primary" id="btn-verify-chain" title="Verify cryptographic integrity of every line in sequence">
+          <svg class="icon"><use href="/static/icons.svg#icon-shield-check"></use></svg>
+          <span id="btn-verify-label">Verify chain</span>
+        </button>
+        <button type="button" class="btn btn-hero-secondary" id="btn-export-csv" title="Download filtered audit entries as an injection-safe CSV spreadsheet">
+          <svg class="icon"><use href="/static/icons.svg#icon-arrow-down-right"></use></svg>
+          <span>Export CSV</span>
+        </button>
+        <button type="button" class="btn btn-hero-secondary" id="btn-export-anchor" title="Download external custody anchor containing head hash and count">
+          <svg class="icon"><use href="/static/icons.svg#icon-lock"></use></svg>
+          <span>Export anchor</span>
+        </button>
+        <button type="button" class="btn btn-hero-secondary" id="btn-toggle-anchor-modal" title="Compare log against an external anchor record">
+          <svg class="icon"><use href="/static/icons.svg#icon-search"></use></svg>
+          <span>Check anchor</span>
+        </button>
+        <button type="button" class="btn btn-hero-outline" id="btn-toggle-tamper-lab" title="Launch the isolated copy-only tamper demonstration">
+          <svg class="icon"><use href="/static/icons.svg#icon-terminal"></use></svg>
+          <span id="tamper-lab-toggle-text">Tamper demo</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- 3 Live Metrics Cards in Hero -->
+    <div class="hero-metrics-grid">
+      <div class="hero-stat-card">
+        <div class="hero-stat-label">Total Logged Entries</div>
+        <div class="hero-stat-value tabular-nums" id="hero-stat-total">0</div>
+        <div class="hero-stat-sub">Cryptographic chain lines</div>
+      </div>
+      <div class="hero-stat-card">
+        <div class="hero-stat-label">Chain State</div>
+        <div class="hero-stat-value hero-stat-status" id="hero-stat-status">
+          <span class="status-indicator-dot dot-live" id="hero-status-dot"></span>
+          <span id="hero-stat-status-text">Intact</span>
+        </div>
+        <div class="hero-stat-sub" id="hero-stat-status-sub">SHA-256 sequential links</div>
+      </div>
+      <div class="hero-stat-card">
+        <div class="hero-stat-label">Blocked actions (all time)</div>
+        <div class="hero-stat-value tabular-nums" id="hero-stat-blocked">0</div>
+        <div class="hero-stat-sub">Security policy intercepts</div>
+      </div>
+    </div>
+  </header>
+
   <!-- Top Trust & Integrity Banner -->
   <div class="audit-trust-banner" role="status">
     <div class="audit-trust-icon">
@@ -14,40 +74,6 @@
       Every event is chained to the one before; edits to old entries are detected; deleting the newest entries needs an external anchor to detect.
     </div>
   </div>
-
-  <!-- Hero Header -->
-  <header class="audit-hero">
-    <div class="audit-hero-titles">
-      <div class="audit-hero-badge-row">
-        <span class="audit-tag tag-primary">Tamper-Evident</span>
-        <span class="audit-tag tag-muted" id="hero-chain-meta">SHA-256 Hash Chain</span>
-      </div>
-      <h1 class="audit-main-title">Audit Log</h1>
-      <p class="audit-hero-sentence">A tamper-evident record of everything the agent did. Change one line and the chain breaks.</p>
-    </div>
-    <div class="audit-hero-actions">
-      <button type="button" class="btn btn-primary" id="btn-verify-chain" title="Verify cryptographic integrity of every line in sequence">
-        <svg class="icon"><use href="/static/icons.svg#icon-shield-check"></use></svg>
-        <span id="btn-verify-label">Verify chain</span>
-      </button>
-      <button type="button" class="btn btn-secondary" id="btn-export-csv" title="Download filtered audit entries as an injection-safe CSV spreadsheet">
-        <svg class="icon"><use href="/static/icons.svg#icon-arrow-down-right"></use></svg>
-        <span>Export CSV</span>
-      </button>
-      <button type="button" class="btn btn-secondary" id="btn-export-anchor" title="Download external custody anchor containing head hash and count">
-        <svg class="icon"><use href="/static/icons.svg#icon-lock"></use></svg>
-        <span>Export anchor</span>
-      </button>
-      <button type="button" class="btn btn-secondary" id="btn-toggle-anchor-modal" title="Compare log against an external anchor record">
-        <svg class="icon"><use href="/static/icons.svg#icon-search"></use></svg>
-        <span>Check anchor</span>
-      </button>
-      <button type="button" class="btn btn-outline" id="btn-toggle-tamper-lab" title="Launch the isolated copy-only tamper demonstration">
-        <svg class="icon"><use href="/static/icons.svg#icon-terminal"></use></svg>
-        <span id="tamper-lab-toggle-text">Tamper demo</span>
-      </button>
-    </div>
-  </header>
 
   <!-- Live Verification Result Banner (Dynamic) -->
   <section class="audit-verify-result-card" id="audit-verify-card" hidden aria-live="polite">
@@ -78,23 +104,23 @@
         </p>
       </div>
       <div class="tamper-actions-bar">
-        <button type="button" class="btn btn-sm btn-danger" id="btn-tamper-edit" title="Simulate altering a line's payload without updating hash">
+        <button type="button" class="btn btn-sm btn-tamper-danger" id="btn-tamper-edit" title="Simulate altering a line's payload without updating hash">
           <svg class="icon"><use href="/static/icons.svg#icon-alert-triangle"></use></svg>
           <span>Edit a line</span>
         </button>
-        <button type="button" class="btn btn-sm btn-danger" id="btn-tamper-delete" title="Simulate dropping an entry from the ledger">
+        <button type="button" class="btn btn-sm btn-tamper-danger" id="btn-tamper-delete" title="Simulate dropping an entry from the ledger">
           <svg class="icon"><use href="/static/icons.svg#icon-x-circle"></use></svg>
           <span>Delete a line</span>
         </button>
-        <button type="button" class="btn btn-sm btn-warn" id="btn-tamper-truncate" title="Simulate removing the most recent line">
+        <button type="button" class="btn btn-sm btn-tamper-warn" id="btn-tamper-truncate" title="Simulate removing the most recent line">
           <svg class="icon"><use href="/static/icons.svg#icon-block"></use></svg>
           <span>Truncate end</span>
         </button>
-        <button type="button" class="btn btn-sm btn-warn" id="btn-tamper-rewrite" title="Simulate an attacker who alters a line and recomputes all downstream hashes">
+        <button type="button" class="btn btn-sm btn-tamper-warn" id="btn-tamper-rewrite" title="Simulate an attacker who alters a line and recomputes all downstream hashes">
           <svg class="icon"><use href="/static/icons.svg#icon-refresh-cw"></use></svg>
           <span>Rewrite & recompute</span>
         </button>
-        <button type="button" class="btn btn-sm btn-secondary" id="btn-tamper-reset" title="Reset demonstration to intact copy">
+        <button type="button" class="btn btn-sm btn-tamper-neutral" id="btn-tamper-reset" title="Reset demonstration to intact copy">
           <svg class="icon"><use href="/static/icons.svg#icon-refresh"></use></svg>
           <span>Reset demo</span>
         </button>
@@ -107,9 +133,9 @@
         <svg class="icon"><use href="/static/icons.svg#icon-lightbulb"></use></svg>
       </div>
       <div class="edu-body">
-        <h4 class="edu-title" id="tamper-edu-title">How Hash Chains Detect Tampering</h4>
+        <h4 class="edu-title" id="tamper-edu-title">Intact demo chain loaded</h4>
         <p class="edu-text" id="tamper-edu-text">
-          Click an attack above to watch how a single modification breaks the hash chain, and why external anchors are essential for complete protection.
+          All 6 blocks link correctly. Press an attack button to see what breaks.
         </p>
       </div>
     </div>
