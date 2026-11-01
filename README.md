@@ -50,8 +50,8 @@ AegisAgent is a security gateway positioned between a local LLM agent (**Ollama*
 - [x] **Phase 5** — Data-Driven Multi-Turn Prompt Injection Detection (`security/detection/`)
 - [x] **Phase 6** — Human-in-the-Loop Approval System & Sanitization (`security/approval.py`)
 - [x] **Phase 7** — Authenticated MQTT Hardware Bridge, ESP32 Sketch & Physical Attack LED (`security/hardware.py`, `esp32/`, `mosquitto/`)
-- [ ] **Phase 8** — Web Dashboard Interface
-- [ ] **Phase 9** — Automated Security Attack Test Suite
+- [x] **Phase 8** — Web Dashboard Interface & Audit Log Page
+- [x] **Phase 9** — Attack Lab Simulation & Security Benchmark Suite
 - [ ] **Phase 10** — Final Project Technical Report
 
 ---
@@ -75,15 +75,22 @@ AegisAgent is a security gateway positioned between a local LLM agent (**Ollama*
 - Terminal output sanitization strips ANSI escapes and control codes, truncating parameters to 200 chars to prevent prompt spoofing.
 - Cross-platform timeout polling (`msvcrt` on Windows / `select` on POSIX). Fail-closed architecture on error, timeout, or cancellation.
 
-### 4. Hardware Integration & Attack LED (Phase 7)
-- Dual-mode support (`fake` for offline testing/CI, `mqtt` for real ESP32 hardware).
-- Secure MQTT communication over QoS 1 using `paho-mqtt` with authentication credentials loaded from environment variables or local `.env`.
+### 4. Hardware Integration & Virtual Home (Phase 7)
+- Dual-mode support (`fake`/`virtual` for offline testing/CI, `mqtt` for real ESP32 hardware).
 - Physical Red "Attack Blocked" LED triggered on block decisions with a 2-second rate debounce filter.
 - ESP32 firmware featuring non-blocking `millis()` execution, Last Will & Testament (LWT) tracking, and on-device command allowlisting.
 
-### 5. Cryptographic Audit Logging
+### 5. Cryptographic Audit Logging & Audit Log Page
 - All gateway decisions, prompt inspections, approval requests, role switches, and hardware dispatches are chained using SHA-256 hashes in `logs/audit_log.jsonl`.
 - Tamper-evident audit chain verified via `python security/verify_log.py`.
+- **Audit Log Page**: A tamper-evident, SHA-256 hash-chained log viewer with live verification, external anchor export/check, and an isolated copy-only tamper demonstration.
+
+### 6. Attack Lab Simulation Environment
+- **Attack Lab**: Interactive side-by-side simulator demonstrating unmitigated agent prompt injections vs. multi-layer Aegis security defenses across realistic smart-home scenarios.
+
+### 7. Virtual Home vs ESP32
+- **Virtual home (software simulation) is the default mode**, requiring no physical hardware or MQTT broker.
+- **ESP32 is optional hardware** supported via the authenticated MQTT hardware bridge for physical LEDs, buzzer, and servo actuation.
 
 ---
 
@@ -146,7 +153,7 @@ python -m agent.agent --role admin
 
 ## 🛠️ Testing & Harness Scripts
 
-### 1. Run Complete Automated Test Suite (30 Pytest Tests)
+### 1. Run Complete Automated Test Suite (255 Pytest Tests)
 ```bash
 pytest -v
 ```
@@ -256,38 +263,28 @@ AegisAgent/
 
 ---
 
-## ⚠️ Architectural Limitations
+## 📈 Measured Results
 
-1. **Administrator Lockout Recovery (VULN-03)**:
-   To reduces brute-force risk, administrator accounts are strictly subject to account lockout after 5 consecutive failed login attempts (5-minute cooldown). Administrator accounts are intentionally *not* exempted in code. If an administrator is locked out, recovery is performed locally via loopback CLI using `python scripts/reset_password.py`.
+- **Rule detector alone**: Detects **16.7%** of 60 novel adversarial bypasses (10/60), with **0/30 false positives** on benign operational inputs.
+  - Hindi / Hinglish translation attacks: **0.0%** (0 / 10 detected)
+  - Homoglyphs / Unicode substitution: **0.0%** (0 / 8 detected)
+  - Base64 / Hex / ROT13 encoding: **10.0%** (1 / 10 detected)
+  - Role spoofing: **12.5%** (1 / 8 detected)
+  - Slow multi-turn split payloads: **25.0%** (2 / 8 detected)
+  - Markdown / JSON wrapping: **25.0%** (2 / 8 detected)
+  - Spacing / Whitespace insertion: **50.0%** (4 / 8 detected)
+- **Ablation test suite**: Evaluated against a MOCKED model in automated testing.
+- **Full pipeline benchmark**: An end-to-end benchmark against live LLM models has not been performed yet.
 
-2. **Head-of-Line Worker Thread Scheduling (VULN-11)**:
-   The backend worker processes queued turns sequentially. When a high-risk tool (e.g. `unlock_door`) is triggered, the worker awaits an operator decision for up to the policy timeout (60 seconds). During this interval, subsequent commands wait in queue until the approval completes or expires.
+---
 
-3. **No TLS & Plaintext Transport**:
-   There is NO TLS encryption configured on local web or MQTT channels. Communication between the web server, Ollama, the MQTT broker, and the ESP32 runs over plaintext HTTP and raw TCP MQTT. Local network packet sniffing can observe messages in transit.
+## ⚠️ Honest Limitations
 
-4. **Same-OS-User Privilege Boundary**:
-   AegisAgent relies on file-system HMAC signatures (`AEGIS_WEB_SECRET`, `AEGIS_DASH_SECRET`) stored in `.env`. Any local process running as the same operating system user can read `.env` and forge signed requests or approval decisions.
-
-5. **Flask Cookie Session Revocation**:
-   Authentication sessions use cryptographically signed client-side cookies. Logging out clears the cookie in the client browser, but previously issued session cookies cannot be invalidated server-side before idle expiration (`SESSION_IDLE_TIMEOUT` = 15 minutes).
-
-6. **Self-Approval by Administrator**:
-   An administrator who submits a high-risk action (such as `unlock_door`) can currently approve their own pending request in the authorization dashboard. The system does not enforce a mandatory two-person rule.
-
-7. **Microcontroller Command Replay Defense**:
-   ESP32 firmware enforces local GPIO state bounds, non-blocking hardware watchdogs, auto-relock timers, and on-device command allowlisting (`light_on`, `light_off`, `unlock_door`, `alarm_on`, `ping`). However, firmware does not validate monotonic nonces; replay protection depends on MQTT broker access controls and network isolation.
-
-8. **Weak Detection Against Obfuscated & Non-English Evasions**:
-   Regex and keyword detection rules achieve only 16.7% detection against novel adversarial bypasses. Measured detection rates per category:
-   - Hindi / Hinglish translation attacks: **0.0%** (0 / 10 detected)
-   - Homoglyphs / Unicode substitution: **0.0%** (0 / 8 detected)
-   - Base64 / Hex / ROT13 encoding: **10.0%** (1 / 10 detected)
-   - Role spoofing: **12.5%** (1 / 8 detected)
-   - Slow multi-turn split payloads: **25.0%** (2 / 8 detected)
-   - Markdown / JSON wrapping: **25.0%** (2 / 8 detected)
-   - Spacing / Whitespace insertion: **50.0%** (4 / 8 detected)
-
-9. **Audit Log External Anchor Boundary**:
-   The internal cryptographic hash chain (`prev_hash` -> `entry_hash`) detects line edits, reorderings, and middle deletions. Suffix truncation (dropping the last N entries) leaves the remaining chain valid. An on-disk anchor file (`logs/audit_log.anchor.json`) does not stop an attacker who has local write access to the disk (as they could rewrite the anchor file); only an anchor stored externally or verified offline (`python -m security.verify_log --check-anchor "<line>"`) detects truncation.
+1. **No TLS; local network only**: There is no TLS/HTTPS encryption implemented for web or MQTT transport; communication is designed strictly for local network operation.
+2. **Probabilistic detection**: Rule and heuristic injection detection is probabilistic and may miss novel or sophisticated adversarial inputs.
+3. **Weak on Hindi/homoglyph/encoding**: Rule engine shows high miss rates against non-English prompts (0.0% on Hindi/Hinglish), Unicode homoglyph substitutions (0.0%), and encoded payloads (10.0%).
+4. **Cookie sessions not revocable**: Authentication uses signed client-side cookies; logging out clears the client browser cookie, but active session cookies cannot be invalidated server-side before idle expiration (15 minutes).
+5. **Admin can approve own request**: An administrator who submits a high-risk request can approve their own pending request in the authorization dashboard (no mandatory two-person rule).
+6. **Audit chain is tamper-evident, not immune to host compromise**: The SHA-256 audit log is tamper-evident (detects modifications, reorderings, and middle deletions); it cannot resist an attacker with physical or root write access to the host disk.
+7. **Anchor must be stored off-computer**: Suffix truncation of the audit log leaves the remaining chain valid; detecting truncation requires storing the anchor hash off-computer (an attacker with local disk write access can rewrite local anchor files).
+8. **Single worker blocked up to 60 s by a pending approval**: The backend worker processes queued turns sequentially. When a high-risk action (such as `unlock_door`) is triggered, the worker is blocked for up to the 60-second approval timeout awaiting operator action.
