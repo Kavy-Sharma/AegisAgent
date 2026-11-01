@@ -51,7 +51,7 @@ AegisAgent is a security gateway positioned between a local LLM agent (**Ollama*
 - [x] **Phase 6** — Human-in-the-Loop Approval System & Sanitization (`security/approval.py`)
 - [x] **Phase 7** — Authenticated MQTT Hardware Bridge, ESP32 Sketch & Physical Attack LED (`security/hardware.py`, `esp32/`, `mosquitto/`)
 - [x] **Phase 8** — Web Dashboard Interface & Audit Log Page
-- [x] **Phase 9** — Attack Lab Simulation & Security Benchmark Suite
+- [x] **Phase 9** — Attack Lab simulation (done); full pipeline benchmark (not done)
 - [ ] **Phase 10** — Final Project Technical Report
 
 ---
@@ -87,22 +87,64 @@ AegisAgent is a security gateway positioned between a local LLM agent (**Ollama*
 
 ### 6. Attack Lab Simulation Environment
 - **Attack Lab**: Interactive side-by-side simulator demonstrating unmitigated agent prompt injections vs. multi-layer Aegis security defenses across realistic smart-home scenarios.
+- The protected run uses the real Aegis pipeline with a mock model that always obeys the attacker, so the demo does not depend on Ollama.
 
 ### 7. Virtual Home vs ESP32
 - **Virtual home (software simulation) is the default mode**, requiring no physical hardware or MQTT broker.
-- **ESP32 is optional hardware** supported via the authenticated MQTT hardware bridge for physical LEDs, buzzer, and servo actuation.
+- **ESP32 is optional hardware** supported via the authenticated MQTT hardware bridge for physical LEDs (green, red, yellow) and buzzer actuation.
 
 ---
 
 ## ⚙️ Tools & Security Matrix
 
-| Tool Name | Risk Level | Description | Allowed Roles |
-| :--- | :--- | :--- | :--- |
-| `turn_light_on` | LOW | Turns LED light on | guest, admin |
-| `turn_light_off` | LOW | Turns LED light off | guest, admin |
-| `read_temperature` | LOW | Reads ambient temperature sensor | guest, admin |
-| `activate_alarm` | HIGH | Sounds buzzer alarm (Requires Approval) | admin |
-| `unlock_door` | HIGH | Unlocks door lock (Requires Approval) | admin |
+### Policy Tools (`policy.yaml`)
+| Tool Name | Risk Level | Description | Allowed Roles | ESP32 Firmware Command |
+| :--- | :--- | :--- | :--- | :--- |
+| `turn_light_on` | LOW | Turns LED light on | guest, admin | `light_on` |
+| `turn_light_off` | LOW | Turns LED light off | guest, admin | `light_off` |
+| `read_temperature` | LOW | Reads ambient temperature sensor (simulated) | guest, admin | *(simulated)* |
+| `activate_alarm` | HIGH | Sounds buzzer alarm (Requires Approval) | admin | `alarm_on` |
+| `unlock_door` | HIGH | Unlocks door lock (Requires Approval, 3s auto-relock) | admin | `unlock_door` |
+| `read_note` | LOW | Reads user notes (untrusted content scanner) | guest, admin | *(local disk)* |
+| `disable_security_perimeter` | HONEYPOT | Trap tool to catch injection attempts | (none — auto-quarantines) | *(none)* |
+
+### ESP32 Firmware Allowed Commands (`esp32/aegis_device/aegis_device.ino`)
+- `light_on` — Turns Green LED on (`digitalWrite(GREEN_LED, HIGH)`)
+- `light_off` — Turns Green LED off (`digitalWrite(GREEN_LED, LOW)`)
+- `unlock_door` — Pulses Green LED for 3000 ms auto-relock
+- `alarm_on` — Activates piezo buzzer alarm
+- `alert_blocked` — Turns Red LED on for 5000 ms on attack block
+- `ping` / `status` — Emits `STATUS:online` heartbeat ACK
+
+---
+
+## ⚡ Quick Start
+
+1. **Clone the repository**:
+   ```bash
+   git clone https://github.com/Kavy-Sharma/AegisAgent.git
+   cd AegisAgent
+   ```
+
+2. **Create and activate a virtual environment**:
+   ```bash
+   python -m venv venv
+   # On Windows:
+   .\venv\Scripts\activate
+   # On Linux/macOS:
+   source venv/bin/activate
+   ```
+
+3. **Install dependencies**:
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+4. **Start AegisAgent**:
+   ```bash
+   python start.py
+   ```
+   *Note on First-Run Setup*: When opening `http://127.0.0.1:8501`, the system automatically redirects to `/setup` if no users exist. Register the initial administrator account (minimum 10-character password). Once registered, `/setup` is permanently locked out and the full control room opens.
 
 ---
 
@@ -110,16 +152,16 @@ AegisAgent is a security gateway positioned between a local LLM agent (**Ollama*
 
 ### 1. Prerequisites
 - **Python 3.10+**
-- **Ollama** (`ollama pull llama3.1`)
-- **Mosquitto MQTT Broker** (for hardware mode)
+- **Ollama** (`ollama pull llama3.1`) — optional, needed only for live CLI chat; Attack Lab uses mock models
+- **Mosquitto MQTT Broker** — optional, needed only for physical ESP32 mode
 
 ### 2. Install Dependencies
 ```bash
-pip install ollama paho-mqtt pytest pyyaml
+pip install -r requirements.txt
 ```
 
-### 3. Environment Credentials Configuration
-Create a local `.env` file at the root directory:
+### 3. Environment Credentials Configuration (Optional)
+Secrets and HMAC tokens are auto-generated on launch if missing. To set custom MQTT credentials:
 ```bash
 cp .env.example .env
 ```
@@ -153,7 +195,7 @@ python -m agent.agent --role admin
 
 ## 🛠️ Testing & Harness Scripts
 
-### 1. Run Complete Automated Test Suite (255 Pytest Tests)
+### 1. Run Complete Automated Test Suite (250+ tests)
 ```bash
 pytest -v
 ```
@@ -280,11 +322,13 @@ AegisAgent/
 
 ## ⚠️ Honest Limitations
 
-1. **No TLS; local network only**: There is no TLS/HTTPS encryption implemented for web or MQTT transport; communication is designed strictly for local network operation.
-2. **Probabilistic detection**: Rule and heuristic injection detection is probabilistic and may miss novel or sophisticated adversarial inputs.
-3. **Weak on Hindi/homoglyph/encoding**: Rule engine shows high miss rates against non-English prompts (0.0% on Hindi/Hinglish), Unicode homoglyph substitutions (0.0%), and encoded payloads (10.0%).
-4. **Cookie sessions not revocable**: Authentication uses signed client-side cookies; logging out clears the client browser cookie, but active session cookies cannot be invalidated server-side before idle expiration (15 minutes).
-5. **Admin can approve own request**: An administrator who submits a high-risk request can approve their own pending request in the authorization dashboard (no mandatory two-person rule).
-6. **Audit chain is tamper-evident, not immune to host compromise**: The SHA-256 audit log is tamper-evident (detects modifications, reorderings, and middle deletions); it cannot resist an attacker with physical or root write access to the host disk.
-7. **Anchor must be stored off-computer**: Suffix truncation of the audit log leaves the remaining chain valid; detecting truncation requires storing the anchor hash off-computer (an attacker with local disk write access can rewrite local anchor files).
+1. **Plaintext HTTP and MQTT**: There is no TLS/HTTPS encryption implemented for web or MQTT transport; someone on the same network could read the traffic. Local network only.
+2. **Secrets live in .env**: Secrets (`AEGIS_WEB_SECRET`, `AEGIS_DASH_SECRET`, MQTT password) live in `.env`; any process running as the same OS user can read them and forge signed requests.
+3. **No device-side replay protection**: No device-side replay protection on the ESP32 beyond the timestamp; relies on broker access control and network isolation.
+4. **Admin accounts not exempt from lockout**: Admin accounts are not exempt from lockout (5 failed logins); recovery is performed locally via loopback CLI with `python scripts/reset_password.py`.
+5. **Cookie sessions not revocable**: Authentication uses signed client-side cookies; logging out clears the client browser cookie, but active session cookies cannot be invalidated server-side before idle expiration (15 minutes).
+6. **Admin can approve own request**: An administrator who submits a high-risk action can approve their own pending request in the authorization dashboard (no mandatory two-person rule).
+7. **Audit chain truncation requires external anchor**: The audit chain detects edited or deleted older entries. It cannot detect deletion of the newest entries unless the anchor is stored off this computer. Someone with write access to the disk can rewrite both log and anchor.
 8. **Single worker blocked up to 60 s by a pending approval**: The backend worker processes queued turns sequentially. When a high-risk action (such as `unlock_door`) is triggered, the worker is blocked for up to the 60-second approval timeout awaiting operator action.
+9. **Probabilistic detection**: Rule and heuristic injection detection is probabilistic and may miss novel or sophisticated adversarial inputs.
+10. **Weak on Hindi, homoglyphs & encoding**: Rule engine shows high miss rates against non-English prompts (0.0% on Hindi/Hinglish), Unicode homoglyph substitutions (0.0%), and encoded payloads (10.0%).
