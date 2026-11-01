@@ -520,6 +520,18 @@ def create_app() -> Flask:
 
 
 
+    @app.route("/attack_lab", methods=["GET"])
+
+    @login_required
+
+    @role_required("admin")
+
+    def attack_lab():
+
+        return render_template("attack_lab.html", active_page="attack_lab")
+
+
+
 
 
 

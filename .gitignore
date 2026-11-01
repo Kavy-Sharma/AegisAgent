@@ -24,6 +24,7 @@ logs/archive/
 # Approvals IPC & runtime status files
 data/approvals/
 data/chat/
+data/attack_lab/
 data/*.json
 data/*.jsonl
 data/*.tmp*

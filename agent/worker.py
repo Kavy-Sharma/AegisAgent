@@ -733,7 +733,7 @@ def run_worker():
 
             # Validate kind
             kind = req.get("kind", "chat")
-            is_kind_valid = kind in ("chat", "direct_tool")
+            is_kind_valid = kind in ("chat", "direct_tool", "attack_lab")
 
             # Validate role defined in policy.yaml
             valid_roles = set(security.policy_loader.POLICY.get("roles", {}).keys())
