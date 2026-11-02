@@ -30,7 +30,12 @@ def compute_scope(
         policy = policy_loader.POLICY
 
     intent_lock_cfg = policy.get("intent_lock", {})
-    default_scope = list(intent_lock_cfg.get("default_scope", ["read_temperature", "read_note"]))
+    if "default_scope" in intent_lock_cfg:
+        default_scope = list(intent_lock_cfg["default_scope"])
+    else:
+        import logging
+        logging.getLogger("aegis.intent").warning("intent_lock.default_scope missing from policy; failing closed with empty scope")
+        default_scope = []
     intents = policy.get("intents", {})
 
     if not user_text or not isinstance(user_text, str):
