@@ -104,11 +104,9 @@ def load_dataset(path: Path) -> list[dict[str, Any]]:
 
 
 def compute_file_sha256(path: Path) -> str:
-    h = hashlib.sha256()
-    with open(path, "rb") as f:
-        while chunk := f.read(65536):
-            h.update(chunk)
-    return h.hexdigest()
+    """Computes SHA-256 of file content with LF-normalized line endings."""
+    raw = Path(path).read_bytes().replace(b"\r\n", b"\n")
+    return hashlib.sha256(raw).hexdigest()
 
 
 def get_git_commit() -> str:

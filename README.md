@@ -280,7 +280,7 @@ AegisAgent/
 ├── benchmark/
 │   ├── attacks.jsonl          # 50 Attack Prompts (7 categories)
 │   ├── benign.jsonl           # 50 Benign Prompts (trigger words & normal tasks)
-│   ├── benign_paraphrase.jsonl # 66 Paraphrased Benign Prompts
+│   ├── benign_paraphrase.jsonl # 66 Paraphrased Benign Prompts (frozen SHA-256: 501c5e919519710f28a8161062c965c2ecc057cc828dfa7d3cb6c470675bed60; hash is of the LF-normalised file)
 │   ├── pipeline_meta.json     # Full Pipeline Benchmark Metadata
 │   ├── pipeline_results.csv   # 226 Full Pipeline Benchmark Run Evaluations
 │   ├── pipeline_run.py        # Full Pipeline Benchmark Runner

@@ -18,7 +18,7 @@ import security.hardware
 import security.logger
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
-FROZEN_PARAPHRASE_SHA256 = "acce4b61186cd3e2d72fb3def371b17b4906f248a2fb131b359c5bf4b61667dc"
+FROZEN_PARAPHRASE_SHA256 = "501c5e919519710f28a8161062c965c2ecc057cc828dfa7d3cb6c470675bed60"  # LF-normalised file hash
 
 
 def test_tiny_slice_deterministic(tmp_path):
