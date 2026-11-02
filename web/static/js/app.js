@@ -94,13 +94,26 @@ var app = (function () {
 
 
 
+    body.style.flex = "1";
+    body.style.minWidth = "0";
+
     var closeBtn = document.createElement("button");
-
     closeBtn.className = "toast-close";
-
     closeBtn.type = "button";
-
     closeBtn.setAttribute("aria-label", "Close notification");
+    closeBtn.style.background = "transparent";
+    closeBtn.style.border = "none";
+    closeBtn.style.outline = "none";
+    closeBtn.style.boxShadow = "none";
+    closeBtn.style.cursor = "pointer";
+    closeBtn.style.marginLeft = "auto";
+    closeBtn.style.padding = "4px";
+    closeBtn.style.display = "inline-flex";
+    closeBtn.style.alignItems = "center";
+    closeBtn.style.justifyContent = "center";
+    closeBtn.style.borderRadius = "6px";
+    closeBtn.style.color = "inherit";
+    closeBtn.style.opacity = "0.7";
 
     var closeSvg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
 
@@ -601,23 +614,24 @@ var app = (function () {
 
 
 
+  function filterCommands(query) {
+    var q = (query || "").toLowerCase().trim();
+    if (!q) return commands;
+    var qClean = q.replace(/\s+/g, "");
+    return commands.filter(function (cmd) {
+      var title = (cmd.title || "").toLowerCase();
+      var sc = (cmd.shortcut || "").toLowerCase();
+      var scClean = sc.replace(/\s+/g, "");
+      return title.indexOf(q) !== -1 || sc.indexOf(q) !== -1 || (qClean && scClean.indexOf(qClean) !== -1);
+    });
+  }
+
   function renderPaletteResults(query) {
-
     var container = document.getElementById("palette-results-list");
-
     if (!container) return;
-
     container.innerHTML = "";
 
-
-
-    var q = (query || "").toLowerCase().trim();
-
-    var filtered = commands.filter(function (cmd) {
-
-      return !q || cmd.title.toLowerCase().indexOf(q) !== -1;
-
-    });
+    var filtered = filterCommands(query);
 
 
 
@@ -766,23 +780,11 @@ var app = (function () {
           }
 
         } else if (e.key === "Enter") {
-
           e.preventDefault();
-
-          var q = (input.value || "").toLowerCase().trim();
-
-          var filtered = commands.filter(function (cmd) {
-
-            return !q || cmd.title.toLowerCase().indexOf(q) !== -1;
-
-          });
-
+          var filtered = filterCommands(input.value);
           if (filtered[selectedIndex]) {
-
             closePalette();
-
             filtered[selectedIndex].action();
-
           }
 
         } else if (e.key === "Escape") {
@@ -1235,11 +1237,11 @@ var app = (function () {
 
 window.AegisApp = app;
 
-window.showToast = function (msg, type) {
-
-  var normalizedType = (type === "error") ? "danger" : (type || "info");
-
-  app.showToast(msg, "", normalizedType, 4000);
-
+window.showToast = function (title, desc, type, duration) {
+  if (arguments.length === 2 && (desc === "ok" || desc === "danger" || desc === "warn" || desc === "info" || desc === "error")) {
+    app.showToast(title, "", desc, 4000);
+  } else {
+    app.showToast(title, desc || "", type || "info", duration || 4000);
+  }
 };
 

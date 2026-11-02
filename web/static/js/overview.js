@@ -190,6 +190,9 @@
   function updateLastRequest(req) {
     const idEl = document.getElementById("last-req-id");
     const stEl = document.getElementById("last-req-status");
+    const promptEl = document.getElementById("last-req-prompt");
+    const userEl = document.getElementById("last-req-user");
+    const timeEl = document.getElementById("last-req-time");
 
     if (!req) {
       if (idEl) idEl.textContent = "No requests yet";
@@ -197,14 +200,59 @@
         stEl.textContent = "Idle";
         stEl.className = "pill pill-muted text-xs";
       }
+      if (promptEl) promptEl.textContent = "System standing by for instructions.";
+      if (userEl) userEl.textContent = "Role: --";
+      if (timeEl) timeEl.textContent = "--:--:-- IST";
       return;
     }
 
     if (idEl) idEl.textContent = `Req: ${(req.id || "").slice(0, 16)} (${req.tool || "action"})`;
     if (stEl) {
+      const dec = (req.decision || "").toUpperCase();
       stEl.textContent = req.decision || "--";
-      stEl.className = req.decision === "BLOCK" ? "pill pill-danger text-xs" : "pill pill-ok text-xs";
+      if (dec === "ALLOW") {
+        stEl.className = "pill pill-ok text-xs font-bold";
+      } else if (dec === "BLOCK") {
+        stEl.className = "pill pill-danger text-xs font-bold";
+      } else if (dec === "WAITING") {
+        stEl.className = "pill pill-warn text-xs font-bold";
+      } else {
+        stEl.className = "pill pill-muted text-xs font-bold";
+      }
     }
+    if (promptEl) {
+      promptEl.textContent = req.prompt ? `"${req.prompt}"` : (req.reason || `Tool: ${req.tool}`);
+    }
+    if (userEl) {
+      userEl.textContent = `Role: ${req.role || "--"} • Tool: ${req.tool || "chat"}`;
+    }
+    if (timeEl) {
+      timeEl.textContent = req.time_ist || "--:--:-- IST";
+    }
+
+    // Dynamic stepper stage visualization
+    const stages = ["detect", "intent", "llm", "rbac", "rate", "hw"];
+    const stoppedAt = (req.stopped_at || "").toLowerCase();
+    let blockedFound = false;
+
+    stages.forEach(function (stage) {
+      const stepEl = document.getElementById("step-" + stage);
+      if (!stepEl) return;
+      stepEl.className = "mini-step";
+
+      if (req.decision === "BLOCK") {
+        if (!blockedFound && (stoppedAt.indexOf(stage) !== -1 || (stage === "detect" && stoppedAt.indexOf("detector") !== -1))) {
+          stepEl.classList.add("step-block");
+          blockedFound = true;
+        } else if (!blockedFound) {
+          stepEl.classList.add("step-pass");
+        } else {
+          stepEl.classList.add("step-skip");
+        }
+      } else {
+        stepEl.classList.add("step-pass");
+      }
+    });
   }
 
   function initDrawer() {

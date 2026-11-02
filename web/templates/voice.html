@@ -47,25 +47,23 @@
 
 
   {% if voice_enabled %}
-
-  <div class="voice-privacy-notice p-xs mb-sm rounded flex items-center gap-xs" id="voice-privacy-notice" style="font-size: 12px; background: rgba(56, 189, 248, 0.1); border: 1px solid rgba(56, 189, 248, 0.3); color: #bae6fd;">
-
-    <svg class="icon icon-xs"><use href="/static/icons.svg#icon-info"></use></svg>
-
-    <span>Speech recognition uses the browser's speech service and may send audio to the browser vendor; not offline</span>
-
+  <div class="voice-privacy-notice" id="voice-privacy-notice">
+    <div class="voice-notice-icon">
+      <svg class="icon"><use href="/static/icons.svg#icon-info"></use></svg>
+    </div>
+    <div class="voice-notice-text">
+      <strong>Browser Speech Privacy Notice:</strong> Speech recognition uses the browser's speech service and may send audio to the browser vendor; not offline. Downstream AI reasoning and hardware actuation remain strictly local on AegisAgent.
+    </div>
   </div>
-
   {% else %}
-
-  <div class="voice-disabled-notice p-xs mb-sm rounded flex items-center gap-xs" id="voice-disabled-notice" style="font-size: 12px; background: rgba(245, 158, 11, 0.1); border: 1px solid rgba(245, 158, 11, 0.3); color: #fde68a;">
-
-    <svg class="icon icon-xs"><use href="/static/icons.svg#icon-shield-alert"></use></svg>
-
-    <span>Voice interface is currently disabled in policy.yaml (voice.enabled: false).</span>
-
+  <div class="voice-disabled-notice" id="voice-disabled-notice">
+    <div class="voice-notice-icon">
+      <svg class="icon"><use href="/static/icons.svg#icon-shield-alert"></use></svg>
+    </div>
+    <div class="voice-notice-text">
+      <strong>Voice Mode Disabled:</strong> Voice interface is currently disabled in policy.yaml (<code>voice.enabled: false</code>).
+    </div>
   </div>
-
   {% endif %}
 
 
@@ -542,7 +540,7 @@
 
 {% block extra_js %}
 
-<script src="/static/js/voice_sphere.js?t=20261031_v4"></script>
+<script src="/static/js/voice_sphere.js?t=20261102b"></script>
 
 {% endblock %}
 

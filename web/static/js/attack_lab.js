@@ -276,8 +276,117 @@
     };
   }
 
+  function hideEndCard() {
+    var oldOverlays = document.querySelectorAll(".stage-end-overlay");
+    for (var i = 0; i < oldOverlays.length; i++) {
+      if (oldOverlays[i].parentNode) oldOverlays[i].parentNode.removeChild(oldOverlays[i]);
+    }
+  }
+
+  function showEndCard(scenarioId) {
+    hideEndCard();
+    var boxUnprot = document.getElementById("scene-box-unprotected");
+    var boxProt = document.getElementById("scene-box-protected");
+    if (!boxUnprot || !boxProt) return;
+
+    var story = SCENARIO_STORIES[scenarioId] || SCENARIO_STORIES["direct_override"];
+
+    // Left End Card (Unprotected Compromised)
+    var overLeft = document.createElement("div");
+    overLeft.className = "stage-end-overlay overlay-unprotected";
+
+    var contentLeft = document.createElement("div");
+    contentLeft.className = "end-card-content";
+
+    var badgeLeft = document.createElement("span");
+    badgeLeft.className = "badge badge-danger text-xs font-mono mb-xs";
+    badgeLeft.textContent = "BREACH CONFIRMED";
+    contentLeft.appendChild(badgeLeft);
+
+    var titleLeft = document.createElement("h4");
+    titleLeft.className = "end-card-title text-danger";
+    titleLeft.textContent = "Unprotected Hub Compromised";
+    contentLeft.appendChild(titleLeft);
+
+    var descLeft = document.createElement("p");
+    descLeft.className = "end-card-desc text-xs text-muted mb-sm";
+    descLeft.textContent = story.res_unprot || "Malicious instruction executed directly without zero-trust validation.";
+    contentLeft.appendChild(descLeft);
+
+    var actionsLeft = document.createElement("div");
+    actionsLeft.className = "end-card-actions flex gap-xs";
+
+    var btnReplayLeft = document.createElement("button");
+    btnReplayLeft.type = "button";
+    btnReplayLeft.className = "btn btn-secondary btn-xs end-card-replay-btn";
+    var btnTextLeft = document.createElement("span");
+    btnTextLeft.textContent = "Replay Attack";
+    btnReplayLeft.appendChild(btnTextLeft);
+    actionsLeft.appendChild(btnReplayLeft);
+
+    contentLeft.appendChild(actionsLeft);
+    overLeft.appendChild(contentLeft);
+
+    // Right End Card (Aegis 100% Protected)
+    var overRight = document.createElement("div");
+    overRight.className = "stage-end-overlay overlay-protected";
+
+    var contentRight = document.createElement("div");
+    contentRight.className = "end-card-content";
+
+    var badgeRight = document.createElement("span");
+    badgeRight.className = "badge badge-ok text-xs font-mono mb-xs";
+    badgeRight.textContent = "100% CONTAINED";
+    contentRight.appendChild(badgeRight);
+
+    var titleRight = document.createElement("h4");
+    titleRight.className = "end-card-title text-ok";
+    titleRight.textContent = "Aegis Gateway Defended";
+    contentRight.appendChild(titleRight);
+
+    var descRight = document.createElement("p");
+    descRight.className = "end-card-desc text-xs text-muted mb-sm";
+    descRight.textContent = story.res_prot || "Zero-trust inspection halted execution. Physical hardware remained secure.";
+    contentRight.appendChild(descRight);
+
+    var actionsRight = document.createElement("div");
+    actionsRight.className = "end-card-actions flex gap-xs";
+
+    var btnReplayRight = document.createElement("button");
+    btnReplayRight.type = "button";
+    btnReplayRight.className = "btn btn-primary btn-xs end-card-replay-btn";
+    var btnTextRight = document.createElement("span");
+    btnTextRight.textContent = "Replay Simulation";
+    btnReplayRight.appendChild(btnTextRight);
+    actionsRight.appendChild(btnReplayRight);
+
+    var auditLink = document.createElement("a");
+    auditLink.href = "/audit";
+    auditLink.className = "btn btn-secondary btn-xs font-semibold";
+    var auditLinkText = document.createElement("span");
+    auditLinkText.textContent = "Inspect Audit Log →";
+    auditLink.appendChild(auditLinkText);
+    actionsRight.appendChild(auditLink);
+
+    contentRight.appendChild(actionsRight);
+    overRight.appendChild(contentRight);
+
+    boxUnprot.appendChild(overLeft);
+    boxProt.appendChild(overRight);
+
+    // Bind replay buttons
+    var replayBtns = document.querySelectorAll(".end-card-replay-btn");
+    for (var r = 0; r < replayBtns.length; r++) {
+      replayBtns[r].addEventListener("click", function () {
+        hideEndCard();
+        playScene(scenarioId);
+      });
+    }
+  }
+
   function playScene(scenarioId, onComplete) {
     cancelTimeline();
+    hideEndCard();
 
     var story = SCENARIO_STORIES[scenarioId] || SCENARIO_STORIES["direct_override"];
 
@@ -292,7 +401,7 @@
     var leftScene = buildScene(boxUnprot, scenarioId, "unprotected");
     var rightScene = buildScene(boxProt, scenarioId, "protected");
 
-    // Rewind and play synchronized videos
+    // Rewind and play synchronized videos from start (0.0s)
     if (leftScene && leftScene.video) {
       leftScene.video.playbackRate = speedMultiplier;
       try {
@@ -306,29 +415,6 @@
         rightScene.video.currentTime = 0;
         rightScene.video.play();
       } catch (e) {}
-    }
-
-    var prefersReduced = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-
-    if (prefersReduced) {
-      if (leftScene && leftScene.video) {
-        try {
-          leftScene.video.currentTime = 3.5;
-          leftScene.video.pause();
-        } catch (e) {}
-      }
-      if (rightScene && rightScene.video) {
-        try {
-          rightScene.video.currentTime = 3.5;
-          rightScene.video.pause();
-        } catch (e) {}
-      }
-      if (resLeft) resLeft.textContent = story.res_unprot;
-      if (resRight) resRight.textContent = story.res_prot;
-      if (capLeft) capLeft.textContent = story.t3_unprot;
-      if (capRight) capRight.textContent = story.t3_prot;
-      if (onComplete) onComplete();
-      return;
     }
 
     function startBeats(dur) {
@@ -360,10 +446,13 @@
         if (capRight) capRight.textContent = story.t3_prot;
       });
 
-      // BEAT 4 (~94%): Story Complete & Final Big Result Line
+      // BEAT 4 (~94%): Story Complete, Final Result & End Card Overlay
       scheduleStep(d * 0.94, function () {
         if (resLeft) resLeft.textContent = story.res_unprot;
         if (resRight) resRight.textContent = story.res_prot;
+        showEndCard(scenarioId);
+        var replayBtn = document.getElementById("btn-stage-replay");
+        if (replayBtn) replayBtn.disabled = false;
         if (onComplete) onComplete();
       });
     }
@@ -493,13 +582,21 @@
   function scrollToStage() {
     var stageEl = document.getElementById("section-stage");
     if (stageEl) {
-      stageEl.scrollIntoView({ behavior: "smooth", block: "start" });
+      var topbar = document.querySelector(".topbar, .app-topbar");
+      var topbarHeight = (topbar ? topbar.getBoundingClientRect().height : 56) + 20;
+      var targetY = stageEl.getBoundingClientRect().top + window.pageYOffset - topbarHeight;
+      window.scrollTo({
+        top: Math.max(0, targetY),
+        behavior: "smooth"
+      });
     }
   }
 
-  function selectScenario(scId) {
+  function selectScenario(scId, shouldScroll) {
     selectedScenario = scId;
-    scrollToStage();
+    if (shouldScroll) {
+      scrollToStage();
+    }
     var cards = document.querySelectorAll('.attack-card[data-scenario]');
     for (var i = 0; i < cards.length; i++) {
       var card = cards[i];
@@ -730,8 +827,8 @@
 
   // Document Ready Initialization
   document.addEventListener("DOMContentLoaded", function () {
-    // Select initial scenario
-    selectScenario("direct_override");
+    // Select initial scenario without auto-scrolling
+    selectScenario("direct_override", false);
 
     // Scenario Cards & Card Run Buttons
     var cards = document.querySelectorAll('.attack-card[data-scenario]');
@@ -796,12 +893,15 @@
     if (speedBtn) {
       speedBtn.addEventListener("click", function () {
         if (speedMultiplier === 1.0) {
+          speedMultiplier = 1.5;
+        } else if (speedMultiplier === 1.5) {
+          speedMultiplier = 2.0;
+        } else if (speedMultiplier === 2.0) {
           speedMultiplier = 0.5;
-          if (speedLabel) speedLabel.textContent = "Speed: 0.5x";
         } else {
           speedMultiplier = 1.0;
-          if (speedLabel) speedLabel.textContent = "Speed: 1x";
         }
+        if (speedLabel) speedLabel.textContent = "Speed: " + speedMultiplier + "x";
 
         // Live update active videos playback rate
         if (currentLeftVideo) currentLeftVideo.playbackRate = speedMultiplier;

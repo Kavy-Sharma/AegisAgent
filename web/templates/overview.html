@@ -261,16 +261,25 @@
           <span class="text-xs font-mono text-muted" id="last-req-id">No requests yet</span>
           <span class="pill pill-muted text-xs" id="last-req-status">Idle</span>
         </div>
-        <div class="mini-stepper">
-          <div class="mini-step step-pass" title="Detection">Detect</div>
+        <div class="mini-stepper" id="mini-stepper-stages">
+          <div class="mini-step step-pass" id="step-detect" title="Prompt Injection Detectors">Detect</div>
           <div class="mini-connector"></div>
-          <div class="mini-step step-pass" title="LLM Engine">LLM</div>
+          <div class="mini-step step-pass" id="step-intent" title="Intent Lock Guard">Intent</div>
           <div class="mini-connector"></div>
-          <div class="mini-step step-pass" title="RBAC Policy">RBAC</div>
+          <div class="mini-step step-pass" id="step-llm" title="Ollama Model Inference">LLM</div>
           <div class="mini-connector"></div>
-          <div class="mini-step step-pass" title="Rate Limiter">Rate</div>
+          <div class="mini-step step-pass" id="step-rbac" title="Role-Based Access Control">RBAC</div>
           <div class="mini-connector"></div>
-          <div class="mini-step step-pass" title="Hardware Link">HW</div>
+          <div class="mini-step step-pass" id="step-rate" title="Sliding Window Rate Limiter">Rate</div>
+          <div class="mini-connector"></div>
+          <div class="mini-step step-pass" id="step-hw" title="IoT Hardware Actuation">HW</div>
+        </div>
+        <div class="last-req-detail mt-xs p-xs rounded bg-surface-2 text-xs border border-subtle" id="last-req-detail-box">
+          <div class="flex justify-between text-muted mb-xs">
+            <span id="last-req-user">Role: --</span>
+            <span id="last-req-time">--:--:-- IST</span>
+          </div>
+          <div class="font-mono text-ellipsis overflow-hidden whitespace-nowrap text-xs" id="last-req-prompt">System standing by for instructions.</div>
         </div>
       </div>
     </div>

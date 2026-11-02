@@ -331,16 +331,36 @@
     const actionGroup = document.createElement("div");
     actionGroup.className = "flex items-center gap-sm";
 
+    const userRole = (document.body && document.body.getAttribute("data-role")) || "guest";
+    const isGuest = userRole === "guest";
+
+    if (isGuest) {
+      const guestBadge = document.createElement("span");
+      guestBadge.className = "pill pill-warn text-xs";
+      guestBadge.textContent = "Guest Mode (Read-Only) — Admin Required to Decide";
+      actionGroup.appendChild(guestBadge);
+    }
+
     const denyBtn = document.createElement("button");
     denyBtn.className = "btn btn-danger btn-sm";
     denyBtn.textContent = "Deny";
-    denyBtn.addEventListener("click", () => handleDecision(req.request_id, req.request_hash, false, denyBtn, approveBtn));
+    if (isGuest) {
+      denyBtn.disabled = true;
+      denyBtn.title = "Administrative privileges required to deny operations";
+    } else {
+      denyBtn.addEventListener("click", () => handleDecision(req.request_id, req.request_hash, false, denyBtn, approveBtn));
+    }
     actionGroup.appendChild(denyBtn);
 
     const approveBtn = document.createElement("button");
     approveBtn.className = "btn btn-primary btn-sm";
     approveBtn.textContent = "Authorize Action";
-    approveBtn.addEventListener("click", () => handleDecision(req.request_id, req.request_hash, true, approveBtn, denyBtn));
+    if (isGuest) {
+      approveBtn.disabled = true;
+      approveBtn.title = "Administrative privileges required to authorize operations";
+    } else {
+      approveBtn.addEventListener("click", () => handleDecision(req.request_id, req.request_hash, true, approveBtn, denyBtn));
+    }
     actionGroup.appendChild(approveBtn);
 
     footer.appendChild(actionGroup);

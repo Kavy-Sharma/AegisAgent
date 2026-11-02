@@ -16,8 +16,11 @@
       return;
     }
 
-    // 2. Escape: Close palette, ledger modal, or alert drawer
+    // 2. Escape: Close palette, ledger modal, or alert drawer; blur focused inputs
     if (e.key === "Escape") {
+      if (document.activeElement && typeof document.activeElement.blur === "function") {
+        document.activeElement.blur();
+      }
       if (typeof app !== "undefined" && app && app.closePalette) {
         app.closePalette();
       }
@@ -60,13 +63,13 @@
       return;
     }
 
-    // 5. 'g' sequences: g then o, g then c, g then a
+    // 5. 'g' sequences: g then o, g then c, g then a, g then l, g then u
     if (e.key.toLowerCase() === "g" && !gPressed && !e.ctrlKey && !e.altKey && !e.metaKey) {
       gPressed = true;
       clearTimeout(gTimeout);
       gTimeout = setTimeout(function () {
         gPressed = false;
-      }, 1000);
+      }, 1800);
       return;
     }
 

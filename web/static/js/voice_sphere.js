@@ -85,11 +85,12 @@
 
     var cx = canvas.width / 2;
     var cy = canvas.height / 2;
+    var isLight = document.documentElement.getAttribute("data-theme") === "light";
 
-    // Soft atmospheric radial bloom background inside canvas
+    // Atmospheric radial bloom background inside canvas
     var bloom = ctx.createRadialGradient(cx, cy, 20, cx, cy, 210);
-    bloom.addColorStop(0, "rgba(52, 224, 210, 0.09)");
-    bloom.addColorStop(0.45, "rgba(168, 85, 247, 0.05)");
+    bloom.addColorStop(0, isLight ? "rgba(14, 165, 233, 0.15)" : "rgba(52, 224, 210, 0.10)");
+    bloom.addColorStop(0.45, isLight ? "rgba(168, 85, 247, 0.08)" : "rgba(168, 85, 247, 0.05)");
     bloom.addColorStop(1, "rgba(0, 0, 0, 0)");
     ctx.fillStyle = bloom;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -165,7 +166,7 @@
     });
 
     // Connecting kinetic mesh web between nearby particles
-    ctx.lineWidth = 0.7;
+    ctx.lineWidth = isLight ? 0.9 : 0.7;
     for (var i = 0; i < projected.length; i += 3) {
       var p1 = projected[i];
       for (var j = i + 1; j < Math.min(i + 12, projected.length); j++) {
@@ -174,8 +175,8 @@
         var dy = p1.y - p2.y;
         var dist = dx * dx + dy * dy;
         if (dist < 900) {
-          var meshAlpha = (1 - dist / 900) * 0.28 * p1.depth;
-          ctx.strokeStyle = "rgba(52, 224, 210, " + meshAlpha + ")";
+          var meshAlpha = (1 - dist / 900) * (isLight ? 0.38 : 0.28) * p1.depth;
+          ctx.strokeStyle = isLight ? "rgba(2, 132, 199, " + meshAlpha + ")" : "rgba(52, 224, 210, " + meshAlpha + ")";
           ctx.beginPath();
           ctx.moveTo(p1.x, p1.y);
           ctx.lineTo(p2.x, p2.y);
@@ -187,35 +188,45 @@
     // Luminous kinetic particle dots with glowing multi-color spectrum
     for (var i = 0; i < projected.length; i++) {
       var pt = projected[i];
-      var size = Math.max(1.4, 3.8 * pt.scale * pt.depth);
+      var size = Math.max(1.6, (isLight ? 4.2 : 3.8) * pt.scale * pt.depth);
 
       var rCol, gCol, bCol;
       if (currentState === "thinking") {
         // High-energy amber & electric violet during policy scan
-        rCol = Math.floor(180 + 70 * pt.depth);
-        gCol = Math.floor(90 + 40 * pt.depth);
-        bCol = 245;
-      } else if (currentState === "speaking") {
-        // Radiant voice resonance: cyan and neon magenta
-        if (pt.variant % 2 === 0) {
-          rCol = 52;  gCol = 224; bCol = 210; // Cyan
+        if (isLight) {
+          rCol = 217; gCol = 119; bCol = 6;
         } else {
-          rCol = 236; gCol = 72;  bCol = 153; // Magenta
+          rCol = Math.floor(180 + 70 * pt.depth);
+          gCol = Math.floor(90 + 40 * pt.depth);
+          bCol = 245;
+        }
+      } else if (currentState === "speaking") {
+        // Radiant voice resonance: azure and vivid magenta
+        if (pt.variant % 2 === 0) {
+          if (isLight) { rCol = 2; gCol = 132; bCol = 199; }
+          else { rCol = 52; gCol = 224; bCol = 210; }
+        } else {
+          if (isLight) { rCol = 219; gCol = 39; bCol = 119; }
+          else { rCol = 236; gCol = 72; bCol = 153; }
         }
       } else {
-        // Standby & Listening: Cyan, Blue, Emerald, Violet
+        // Standby & Listening
         if (pt.variant === 0) {
-          rCol = 52;  gCol = 224; bCol = 210; // Cyan
+          if (isLight) { rCol = 2; gCol = 132; bCol = 199; } // Azure
+          else { rCol = 52; gCol = 224; bCol = 210; } // Cyan
         } else if (pt.variant === 1) {
-          rCol = 59;  gCol = 130; bCol = 246; // Electric Blue
+          if (isLight) { rCol = 79; gCol = 70; bCol = 229; } // Indigo
+          else { rCol = 59; gCol = 130; bCol = 246; } // Electric Blue
         } else if (pt.variant === 2) {
-          rCol = 14;  gCol = 124; bCol = 114; // Aegis Emerald
+          if (isLight) { rCol = 5; gCol = 150; bCol = 105; } // Emerald
+          else { rCol = 14; gCol = 124; bCol = 114; } // Deep Emerald
         } else {
-          rCol = 168; gCol = 85;  bCol = 247; // Violet
+          if (isLight) { rCol = 147; gCol = 51; bCol = 234; } // Purple
+          else { rCol = 168; gCol = 85; bCol = 247; } // Violet
         }
       }
 
-      var dotAlpha = Math.min(1.0, 0.4 + 0.6 * pt.depth);
+      var dotAlpha = isLight ? Math.min(1.0, 0.6 + 0.4 * pt.depth) : Math.min(1.0, 0.4 + 0.6 * pt.depth);
       ctx.fillStyle = "rgba(" + rCol + ", " + gCol + ", " + bCol + ", " + dotAlpha + ")";
       ctx.beginPath();
       ctx.arc(pt.x, pt.y, Math.max(1.0, size), 0, Math.PI * 2);
@@ -494,12 +505,9 @@
     primeAudio();
     setOrbState("thinking", "SCANNING POLICY & INTENT...");
 
-    // 1. Pick a selected witty loading line and SPEAK IT ALOUD to the user!
-    var loadingLines = currentLang === "hi" ? SPOKEN_LOADING_LINES_HI : SPOKEN_LOADING_LINES_EN;
-    var chosenLine = loadingLines[Math.floor(Math.random() * loadingLines.length)];
-    speakText(chosenLine);
-
-    if (hintEl) hintEl.textContent = "🧠 " + chosenLine;
+    if (hintEl) {
+      hintEl.textContent = currentLang === "hi" ? "अनुरोध का विश्लेषण और नीति सत्यापन हो रहा है..." : "Analyzing request and verifying security policies...";
+    }
 
     // Reset UI transcript states immediately
     if (stepperContainer) stepperContainer.style.display = "block";
