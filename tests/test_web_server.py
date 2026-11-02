@@ -404,3 +404,67 @@ def test_console_clear_threat_endpoint(client, tmp_path):
     assert data["status"] == "ok"
     assert "session_id" in data
     assert data["session_id"] != "sess_prior123"
+
+
+def test_overview_last_req_role_redaction(client):
+    """Task D: guest gets last_req without prompt/reason; admin gets them."""
+    import security.logger
+    test_event = {
+        "event": "turn_summary",
+        "request_id": "req_redaction_test_999",
+        "tool": "turn_light_on",
+        "decision": "ALLOW",
+        "prompt": "turn on the lamp in the bedroom",
+        "role": "admin",
+        "reason": "Authorized by policy",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+    security.logger.log_event("turn_summary", test_event)
+
+    # 1. Guest session: receives last_req, but prompt and reason are redacted on server
+    with client.session_transaction() as sess:
+        sess["username"] = "guest_user"
+        sess["role"] = "guest"
+        sess["last_activity"] = time.time()
+        sess["csrf_token"] = "test_csrf_token"
+
+    res_guest = client.get("/api/overview")
+    assert res_guest.status_code == 200
+    data_guest = res_guest.get_json()
+    last_req_guest = data_guest.get("last_request")
+    assert last_req_guest is not None
+    assert "prompt" not in last_req_guest
+    assert "reason" not in last_req_guest
+    assert last_req_guest["id"] == "req_redaction_test_999"
+
+    # 2. Admin session: receives both prompt and reason
+    with client.session_transaction() as sess:
+        sess["username"] = "admin_user"
+        sess["role"] = "admin"
+        sess["last_activity"] = time.time()
+        sess["csrf_token"] = "test_csrf_token"
+
+    res_admin = client.get("/api/overview")
+    assert res_admin.status_code == 200
+    data_admin = res_admin.get_json()
+    last_req_admin = data_admin.get("last_request")
+    assert last_req_admin is not None
+    assert last_req_admin.get("prompt") == "turn on the lamp in the bedroom"
+    assert last_req_admin.get("reason") == "Authorized by policy"
+
+
+def test_guest_forbidden_pages_403(client):
+    """Task E: guest GET /audit, /attack_lab, /approvals -> status 403, body contains 'Administrative Privileges Required', not a 500."""
+    with client.session_transaction() as sess:
+        sess["username"] = "guest_user"
+        sess["role"] = "guest"
+        sess["last_activity"] = time.time()
+        sess["csrf_token"] = "test_csrf_token"
+
+    for path in ("/audit", "/attack_lab", "/approvals"):
+        resp = client.get(path)
+        assert resp.status_code == 403, f"{path} did not return 403 for guest"
+        body = resp.get_data(as_text=True)
+        assert "Administrative Privileges Required" in body, f"{path} did not contain required message"
+        assert "500 Internal Server Error" not in body
+

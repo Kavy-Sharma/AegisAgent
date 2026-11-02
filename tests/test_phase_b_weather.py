@@ -72,3 +72,36 @@ def test_weather_mocked_injection_triggers_output_scan():
                 # Output scan must flag or withhold the injected output
                 assert res.decision == "BLOCK" or "[tool output withheld" in (res.reply or "") or res.tainted is True
 
+
+def test_weather_offline_paris_no_network():
+    """(1) online False + city 'Paris' -> urlopen is never called and safe simulated result returned."""
+    with patch("urllib.request.urlopen") as mock_urlopen:
+        with patch.dict(security.policy_loader.POLICY.get("tools", {}).get("read_temperature", {}), {"online": False}):
+            res = read_temperature(location="Paris")
+            mock_urlopen.assert_not_called()
+            assert res.get("status") == "success"
+            assert "simulated" in res.get("source", "").lower() or "(simulated)" in res.get("location", "")
+            assert res.get("value_celsius") == 24.5
+
+
+def test_weather_online_paris_urlopen_handled():
+    """(2) online True + 'Paris' -> urlopen is called, mocked small JSON handled."""
+    small_payload = json.dumps({
+        "current_condition": [{"temp_C": "18.5", "weatherDesc": [{"value": "Partly Cloudy"}], "humidity": "65"}],
+        "nearest_area": [{"areaName": [{"value": "Paris"}], "country": [{"value": "France"}]}]
+    }).encode("utf-8")
+
+    mock_resp = MagicMock()
+    mock_resp.read.return_value = small_payload
+    mock_resp.__enter__.return_value = mock_resp
+
+    with patch("urllib.request.urlopen", return_value=mock_resp) as mock_urlopen:
+        with patch.dict(security.policy_loader.POLICY.get("tools", {}).get("read_temperature", {}), {"online": True}):
+            res = read_temperature(location="Paris")
+            mock_urlopen.assert_called()
+            assert res.get("status") == "success"
+            assert res.get("value_celsius") == 18.5
+            assert res.get("condition") == "Partly Cloudy"
+            assert "Paris" in res.get("location", "")
+
+

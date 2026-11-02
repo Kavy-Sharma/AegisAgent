@@ -197,9 +197,9 @@ def _matches_filters(
         if end_dt and entry_dt > end_dt:
             return False
 
-    # 5. Search Query (free text in reason, text, tool, event, entry_hash)
+    # 5. Search Query (free text across all fields: decision, tool, reason, summary, text, hash)
     if q_lower:
-        haystack = f"{entry.get('tool', '')} {entry.get('reason', '')} {entry.get('text', '')} {entry.get('event', '')} {entry.get('entry_hash', '')} {entry.get('role', '')}".lower()
+        haystack = f"{entry.get('decision', '')} {entry.get('tool', '')} {entry.get('reason', '')} {entry.get('plain_summary', '')} {entry.get('text', '')} {entry.get('event', '')} {entry.get('entry_hash', '')} {entry.get('role', '')} {entry.get('username', '')}".lower()
         if q_lower not in haystack:
             return False
 

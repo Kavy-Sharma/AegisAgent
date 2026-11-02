@@ -35,3 +35,14 @@ def test_voice_polling_timeout_greater_than_policy_plus_10s():
 
     assert timeout_sec >= required_min, f"Voice polling timeout ({timeout_sec}s) is less than required ({required_min}s)"
 
+
+def test_sanitize_spoken_text_parenthesised_notes():
+    """Only remove parenthesised notes; preserve plain mentions."""
+    plain_text = "The door is unlocked. ESP32 board ok"
+    assert sanitize_spoken_text(plain_text) == "The door is unlocked. ESP32 board ok"
+
+    bracketed_text = "Done (Note: ESP32 hardware is not connected)."
+    cleaned = sanitize_spoken_text(bracketed_text)
+    assert cleaned == "Done."
+
+

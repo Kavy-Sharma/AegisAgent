@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+
+{% block title %}Access Restricted — AegisAgent{% endblock %}
+{% block breadcrumb %}Access Restricted{% endblock %}
+
+{% block content %}
+<div class="card flex flex-col items-center justify-center text-center my-xl forbidden-container">
+  <div class="status-icon-wrap mb-md forbidden-icon-wrap">
+    <svg class="icon text-warn forbidden-icon"><use href="/static/icons.svg#icon-shield-alert"></use></svg>
+  </div>
+  <h2 class="text-xl font-bold mb-xs">Administrative Privileges Required</h2>
+  <p class="text-muted text-sm mb-lg forbidden-desc">
+    This security section (Attack Lab, Audit Log, or Approvals Authorization) is restricted to Administrator accounts. You are currently signed in with <strong>{{ session.get('role', 'guest')|upper }}</strong> privileges.
+  </p>
+  <div class="flex items-center gap-sm">
+    <a href="/overview" class="btn btn-primary btn-sm flex items-center gap-xs">
+      <svg class="icon icon-xs"><use href="/static/icons.svg#icon-dashboard"></use></svg>
+      <span>Return to Overview</span>
+    </a>
+    <a href="/console" class="btn btn-secondary btn-sm flex items-center gap-xs">
+      <svg class="icon icon-xs"><use href="/static/icons.svg#icon-terminal"></use></svg>
+      <span>Open Console</span>
+    </a>
+  </div>
+</div>
+{% endblock %}

@@ -611,7 +611,7 @@ def create_app() -> Flask:
 
             return jsonify({"error": "Forbidden", "detail": "Access denied"}), 403
 
-        return "<h3>403 Access Denied</h3><p>Administrative privileges are required to access this resource.</p>", 403
+        return render_template("forbidden.html", active_page=None), 403
 
 
 

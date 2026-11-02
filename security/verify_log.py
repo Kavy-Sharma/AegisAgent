@@ -92,11 +92,19 @@ def verify_external_anchor(log_file: Path | str | None = None, anchor_file: Path
         else:
             actual_head_hash = "0" * 64
 
-    if actual_count != expected_count:
+    if actual_count < expected_count:
         return False, f"ANCHOR MISMATCH (COUNT): Expected {expected_count} entries, found {actual_count} (truncation or missing entries detected)"
 
-    if actual_head_hash != expected_head_hash:
-        return False, f"ANCHOR MISMATCH (HEAD_HASH): Expected head hash '{expected_head_hash}', got '{actual_head_hash}' (rewrite or history modification detected)"
+    anchor_entry_hash = "0" * 64
+    if expected_count > 0 and len(lines) >= expected_count:
+        try:
+            anchor_entry = json.loads(lines[expected_count - 1])
+            anchor_entry_hash = anchor_entry.get("entry_hash", "0" * 64)
+        except Exception:
+            anchor_entry_hash = "0" * 64
+
+    if anchor_entry_hash != expected_head_hash:
+        return False, f"ANCHOR MISMATCH (HEAD_HASH): Expected head hash '{expected_head_hash}', got '{anchor_entry_hash}' (rewrite or history modification detected)"
 
     return True, "ANCHOR VERIFIED"
 
@@ -150,18 +158,33 @@ def check_anchor_line(line: str, log_file: Path | str | None = None) -> tuple[bo
     if not p.exists():
         actual_count = 0
         actual_head = "0" * 64
+        lines = []
     else:
         with security.logger._file_lock(p):
             lines = [l for l in p.read_text(encoding="utf-8").splitlines() if l.strip()]
         actual_count = len(lines)
         actual_head = json.loads(lines[-1]).get("entry_hash") if actual_count > 0 else "0" * 64
 
-    if actual_count != expected_count:
+    if actual_count < expected_count:
         return False, f"ANCHOR MISMATCH (COUNT): Expected {expected_count}, got {actual_count}"
-    if actual_head != expected_head:
-        return False, f"ANCHOR MISMATCH (HEAD_HASH): Expected '{expected_head}', got '{actual_head}'"
 
-    return True, f"ANCHOR VERIFIED: Log matches external anchor (count: {actual_count}, head_hash: {actual_head})"
+    # Verify that the entry hash at the anchor snapshot index matches the expected head hash
+    anchor_entry_hash = "0" * 64
+    if expected_count > 0 and len(lines) >= expected_count:
+        try:
+            anchor_entry = json.loads(lines[expected_count - 1])
+            anchor_entry_hash = anchor_entry.get("entry_hash", "0" * 64)
+        except Exception:
+            anchor_entry_hash = "0" * 64
+
+    if anchor_entry_hash != expected_head:
+        return False, f"ANCHOR MISMATCH (HEAD_HASH): Expected '{expected_head}', got '{anchor_entry_hash}'"
+
+    if actual_count == expected_count:
+        return True, f"ANCHOR VERIFIED: Log matches external anchor (count: {actual_count}, head_hash: {actual_head})"
+    else:
+        appended_entries = actual_count - expected_count
+        return True, f"ANCHOR VERIFIED: Historical anchor verified at entry {expected_count} ({appended_entries} newer entries appended since anchor)"
 
 
 def check_audit_log_status(log_file: Path | str | None = None, anchor_file: Path | str | None = None) -> tuple[bool, str]:

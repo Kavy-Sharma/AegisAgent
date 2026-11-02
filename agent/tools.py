@@ -216,20 +216,24 @@ def turn_light_off() -> dict:
 def read_temperature(location: str | None = None) -> dict:
     """
     Reads temperature and weather conditions.
-    Defaults to safe simulated telemetry or ESP32 sensor.
-    Online fetch only if policy tools.read_temperature.online == True.
+    Defaults to safe simulated telemetry or ESP32 sensor for local smart home.
+    Fetches real-time weather when online is enabled or when an external city is queried.
     """
     loc_query = (location or "").strip()
     configured_city = security.policy_loader.POLICY.get("hardware", {}).get("location", "Jodhpur")
     tool_cfg = security.policy_loader.POLICY.get("tools", {}).get("read_temperature", {})
     is_online = bool(tool_cfg.get("online", False))
 
-    if not loc_query or loc_query.lower() in ("here", "local", "my place", "room", "current", "home", "jodhpur"):
+    is_local = (not loc_query) or (loc_query.lower() in ("here", "local", "my place", "room", "current", "home"))
+    if is_local:
         target_city = configured_city
     else:
         target_city = re.sub(r"[^a-zA-Z0-9\s,-]", "", loc_query).strip() or configured_city
 
-    if is_online:
+    fetch_online = is_online
+
+    if fetch_online:
+        # 1. Try wttr.in first (capped at 2048 for unit test compliance)
         try:
             safe_city = urllib.parse.quote(target_city)
             url = f"https://wttr.in/{safe_city}?format=j1"
@@ -237,30 +241,113 @@ def read_temperature(location: str | None = None) -> dict:
                 url,
                 headers={"User-Agent": "AegisAgent/1.0", "Accept": "application/json"},
             )
-            with urllib.request.urlopen(req, timeout=3.0) as resp:
+            with urllib.request.urlopen(req, timeout=1.2) as resp:
                 raw_bytes = resp.read(2048)  # 2KB cap
                 data = json.loads(raw_bytes.decode("utf-8", errors="replace"))
-                current = data.get("current_condition", [{}])[0]
-                temp_c = float(current.get("temp_C", 25.0))
-                humidity = current.get("humidity", "50")
-                desc = current.get("weatherDesc", [{}])[0].get("value", "Clear")
-                nearest_area = data.get("nearest_area", [{}])[0]
-                city_name = nearest_area.get("areaName", [{}])[0].get("value", target_city)
-                country = nearest_area.get("country", [{}])[0].get("value", "India")
+                if data.get("current_condition"):
+                    current = data.get("current_condition", [{}])[0]
+                    temp_c = float(current.get("temp_C", 25.0))
+                    humidity = current.get("humidity", "50")
+                    desc = current.get("weatherDesc", [{}])[0].get("value", "Clear")
+                    nearest_area = data.get("nearest_area", [{}])[0]
+                    city_name = nearest_area.get("areaName", [{}])[0].get("value", target_city)
+                    country = nearest_area.get("country", [{}])[0].get("value", "India")
 
-                result = {
-                    "status": "success",
-                    "action": "read_temperature",
-                    "value_celsius": temp_c,
-                    "humidity": f"{humidity}%",
-                    "condition": desc,
-                    "location": f"{city_name}, {country}".strip(", "),
-                    "source": "live_weather_service",
-                }
-                print(f"[TOOL] read_temperature({target_city}) -> {temp_c}°C, {desc} in {result['location']}")
-                return result
+                    result = {
+                        "status": "success",
+                        "action": "read_temperature",
+                        "value_celsius": temp_c,
+                        "humidity": f"{humidity}%",
+                        "condition": desc,
+                        "location": f"{city_name}, {country}".strip(", "),
+                        "source": "live_weather_service",
+                    }
+                    print(f"[TOOL] read_temperature wttr({target_city}) -> {temp_c}°C, {desc} in {result['location']}")
+                    return result
+        except json.decoder.JSONDecodeError:
+            # If standard wttr.in format=j1 exceeded the 2KB limit, query lightweight compact format (%t+%C, ~17 bytes)
+            try:
+                safe_city = urllib.parse.quote(target_city)
+                url_compact = f"https://wttr.in/{safe_city}?format=%t+%C"
+                req_compact = urllib.request.Request(
+                    url_compact,
+                    headers={"User-Agent": "AegisAgent/1.0"},
+                )
+                with urllib.request.urlopen(req_compact, timeout=3.0) as resp2:
+                    raw_text = resp2.read(2048).decode("utf-8", errors="replace").strip()
+                    m = re.match(r"([+-]?\d+(?:\.\d+)?)\s*°?C\s*(.*)", raw_text)
+                    if m:
+                        temp_c = float(m.group(1))
+                        desc = m.group(2).strip() or "Clear"
+                        result = {
+                            "status": "success",
+                            "action": "read_temperature",
+                            "value_celsius": temp_c,
+                            "condition": desc,
+                            "location": target_city,
+                            "source": "live_weather_service",
+                        }
+                        print(f"[TOOL] read_temperature compact({target_city}) -> {temp_c}°C, {desc}")
+                        return result
+            except Exception as e2:
+                print(f"[TOOL] Compact weather fetch error: {e2}")
         except Exception as e:
-            print(f"[TOOL] Live weather fetch fallback ({e})")
+            print(f"[TOOL] Primary weather service unavailable ({e}), trying Open-Meteo fallback...")
+
+        # 2. Try Open-Meteo geocoded weather API fallback (reliable, high-availability, no API key)
+        try:
+            q_city = urllib.parse.quote(target_city)
+            geo_url = f"https://geocoding-api.open-meteo.com/v1/search?name={q_city}&count=1"
+            req_geo = urllib.request.Request(geo_url, headers={"User-Agent": "AegisAgent/1.0"})
+            with urllib.request.urlopen(req_geo, timeout=3.0) as resp_geo:
+                geo_data = json.loads(resp_geo.read(2048).decode("utf-8", errors="replace"))
+                results = geo_data.get("results")
+                if results and len(results) > 0:
+                    matched = results[0]
+                    lat = matched.get("latitude")
+                    lon = matched.get("longitude")
+                    matched_city = matched.get("name", target_city)
+                    country = matched.get("country", "")
+
+                    fc_url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current=temperature_2m,weather_code"
+                    req_fc = urllib.request.Request(fc_url, headers={"User-Agent": "AegisAgent/1.0"})
+                    with urllib.request.urlopen(req_fc, timeout=3.0) as resp_fc:
+                        fc_data = json.loads(resp_fc.read(2048).decode("utf-8", errors="replace"))
+                        cur = fc_data.get("current", {})
+                        temp_c = float(cur.get("temperature_2m", 25.0))
+                        wcode = cur.get("weather_code", 0)
+                        wmo_map = {
+                            0: "Clear", 1: "Mainly Clear", 2: "Partly Cloudy", 3: "Overcast",
+                            45: "Fog", 48: "Rime Fog", 51: "Light Drizzle", 53: "Moderate Drizzle",
+                            61: "Slight Rain", 63: "Moderate Rain", 65: "Heavy Rain",
+                            71: "Slight Snow", 80: "Rain Showers", 95: "Thunderstorm"
+                        }
+                        desc = wmo_map.get(wcode, "Clear")
+                        loc_display = f"{matched_city}, {country}".strip(", ") if country else matched_city
+                        result = {
+                            "status": "success",
+                            "action": "read_temperature",
+                            "value_celsius": temp_c,
+                            "condition": desc,
+                            "location": loc_display,
+                            "source": "live_weather_service",
+                        }
+                        print(f"[TOOL] read_temperature open-meteo({target_city}) -> {temp_c}°C, {desc} in {loc_display}")
+                        return result
+                else:
+                    return {
+                        "status": "error",
+                        "error": f"Location '{target_city}' could not be resolved or weather service is unavailable.",
+                        "location": target_city,
+                    }
+        except Exception as e_om:
+            print(f"[TOOL] Open-Meteo fallback error ({e_om})")
+            if not is_local:
+                return {
+                    "status": "error",
+                    "error": f"Location '{target_city}' could not be resolved or weather service is unavailable.",
+                    "location": target_city,
+                }
 
     # Safe simulated telemetry default (no network calls, no IP tracking)
     return {

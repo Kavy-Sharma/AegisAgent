@@ -770,20 +770,18 @@ def api_overview():
     # Last request mini pipeline
 
     last_req = None
-
     if last_req_event:
-
         last_req = {
-
             "id": last_req_event.get("request_id"),
-
             "tool": last_req_event.get("tool") or "chat",
-
-            "decision": last_req_event.get("decision"),
-
+            "decision": last_req_event.get("decision") or "UNKNOWN",
+            "role": last_req_event.get("role") or "unknown",
+            "stopped_at": last_req_event.get("stopped_at"),
             "time_ist": _format_ist(last_req_event.get("timestamp")),
-
         }
+        if current_role == "admin":
+            last_req["prompt"] = last_req_event.get("prompt") or last_req_event.get("text") or ""
+            last_req["reason"] = last_req_event.get("reason") or ""
 
 
 
