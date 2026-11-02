@@ -1,0 +1,18 @@
+{
+  "timestamp": "2026-11-02T11:58:43.274053+00:00",
+  "git_commit": "8fa7505b847d41199653b2c4cf380d004b550076",
+  "python_version": "3.11.6 (tags/v3.11.6:8b6ee5b, Oct  2 2023, 14:57:12) [MSC v.1935 64 bit (AMD64)]",
+  "dataset_hashes": {
+    "attacks.jsonl": "e007e7c6f70c061b870c77f995265b29948c8e105bb3c3e2e7edfc616a9823c4",
+    "bypass_eval.py": "896f391bd9270cef417e4a392d883cbe06e4c54419e9e54ca614e9480aba73d4",
+    "benign.jsonl": "a226d76622b6a4ffaff667d6da88d84eee72681a483bfc2ee55f75450f2f1f57",
+    "benign_paraphrase.jsonl": "acce4b61186cd3e2d72fb3def371b17b4906f248a2fb131b359c5bf4b61667dc"
+  },
+  "counts": {
+    "attacks": 50,
+    "bypass": 60,
+    "benign_easy": 50,
+    "benign_paraphrase": 66,
+    "total": 226
+  }
+}

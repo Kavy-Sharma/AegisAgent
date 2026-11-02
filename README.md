@@ -63,7 +63,7 @@ AegisAgent is a security gateway positioned between a local LLM agent (**Ollama*
 - [x] **Phase 6** — Human-in-the-Loop Approval System & Sanitization (`security/approval.py`)
 - [x] **Phase 7** — Authenticated MQTT Hardware Bridge, ESP32 Sketch & Physical Attack LED (`security/hardware.py`, `esp32/`, `mosquitto/`)
 - [x] **Phase 8** — Web Dashboard Interface & Audit Log Page
-- [x] **Phase 9** — Attack Lab simulation (done); full pipeline benchmark (not done)
+- [x] **Phase 9** — Attack Lab simulation & full pipeline benchmark (done)
 - [ ] **Phase 10** — Final Project Technical Report
 
 ---
@@ -237,12 +237,17 @@ Dispatch allowlisted commands to the hardware bridge:
 python scripts/try_hardware.py unlock_door
 ```
 
-### 6. Phase 9B Security Benchmark (100 Cases Across 4 Defensive Layers)
-Run the offline zero-trust benchmark across 50 attacks and 50 benign prompts in 4 security configurations (`rules only`, `rules+context`, `+Intent Lock`, `+provenance/approval`):
+### 6. Security Benchmarks
+
+#### Component Benchmark (benchmark/run.py)
+The earlier 4-configuration benchmark (`python -m benchmark.run`) is an isolated component test, not the full system. It measures individual defensive layers against 50 attacks and 50 benign prompts in isolation.
+
+#### Full-Pipeline Benchmark (benchmark/pipeline_run.py)
+The full-pipeline benchmark evaluates the entire defense chain (`gateway -> normalizer -> detector -> intent_lock -> rbac -> rate_limiter -> approval -> virtual_home -> output_scan`) against a mocked model that always obeys the attacker:
 ```bash
-python -m benchmark.run
+python -m benchmark.pipeline_run
 ```
-*Note on Benchmark Methodology*: The benchmark uses a MOCKED model / deterministic simulation to measure the Aegis defensive layers directly against standardized adversarial and benign inputs without depending on live LLM variability. A full end-to-end benchmark against live LLMs has not been performed yet. Outputs `benchmark/results.csv` and prints a markdown evaluation table.
+Runs 226 total cases (50 attacks, 60 novel bypass attempts, 50 easy benign, 66 paraphrased benign) and outputs `benchmark/pipeline_results.csv` and `benchmark/pipeline_meta.json`.
 
 ---
 
@@ -275,8 +280,12 @@ AegisAgent/
 ├── benchmark/
 │   ├── attacks.jsonl          # 50 Attack Prompts (7 categories)
 │   ├── benign.jsonl           # 50 Benign Prompts (trigger words & normal tasks)
-│   ├── results.csv            # 400 Benchmark Run Evaluations
-│   └── run.py                 # Benchmark Runner Across 4 Defensive Configurations
+│   ├── benign_paraphrase.jsonl # 66 Paraphrased Benign Prompts
+│   ├── pipeline_meta.json     # Full Pipeline Benchmark Metadata
+│   ├── pipeline_results.csv   # 226 Full Pipeline Benchmark Run Evaluations
+│   ├── pipeline_run.py        # Full Pipeline Benchmark Runner
+│   ├── results.csv            # 400 Component Benchmark Evaluations
+│   └── run.py                 # 4-Configuration Component Benchmark Runner
 ├── security/
 │   ├── approval.py            # Phase 6 Human Approval Framework & IPC
 │   ├── attack_lab.py          # Attack Lab Scenario Engine & Simulation
@@ -329,6 +338,7 @@ AegisAgent/
 │   ├── test_detection.py      # Pytest Prompt Injection Suite
 │   ├── test_hardware.py       # Pytest Hardware & Alert Suite
 │   ├── test_phase8b_clean.py  # Ported Auth Lockout, Signing & IST Suite
+│   ├── test_pipeline_benchmark.py # Pipeline Benchmark Integrity Suite
 │   └── test_virtual_home.py   # Virtual Home Simulation Suite
 ├── logs/
 │   └── audit_log.jsonl        # Cryptographic Audit Log File
@@ -343,6 +353,7 @@ AegisAgent/
 
 ## 📈 Measured Results
 
+- **Component benchmark vs full system**: The earlier 4-configuration benchmark (`benchmark/run.py`) is an isolated component test, not the full system.
 - **Rule detector alone**: Detects **16.7%** of 60 novel adversarial bypasses (10/60), with **0/30 false positives** on benign operational inputs.
   - Hindi / Hinglish translation attacks: **0.0%** (0 / 10 detected)
   - Homoglyphs / Unicode substitution: **0.0%** (0 / 8 detected)
@@ -351,8 +362,13 @@ AegisAgent/
   - Slow multi-turn split payloads: **25.0%** (2 / 8 detected)
   - Markdown / JSON wrapping: **25.0%** (2 / 8 detected)
   - Spacing / Whitespace insertion: **50.0%** (4 / 8 detected)
-- **Ablation test suite**: Evaluated against a MOCKED model in automated testing.
-- **Full pipeline benchmark**: An end-to-end benchmark against live LLM models has not been performed yet.
+- **New full-pipeline benchmark (`benchmark/pipeline_run.py`)**: Evaluates the complete defense pipeline against a mocked model that always obeys the attacker (worst-case model compromise):
+  - **Attacks**: **0/50** attacks reached a dangerous action (door or alarm).
+  - **Novel bypass attempts**: **0/60** reached a dangerous action (door or alarm). 1 bypass (`hi_08`) ran a harmless light-on (`turn_light_on`).
+  - **Easy benign set**: **50/50** correct (including 5 high-risk requests that properly reached human approval).
+  - **Paraphrased benign set**: **29/56** wrongly blocked by the Intent Lock (17 low-risk, 12 high-risk fail-safe). 27/56 ran correctly.
+  - **Detector false positives on trigger-word test**: **0/6** false positives.
+- **Intent Lock limitation**: The Intent Lock is a keyword list, it blocks unknown phrasing, and some short words ("on", "off", "read") can match the wrong intent. Not tuned on this test set; planned improvement for the major project.
 
 ---
 
@@ -372,3 +388,4 @@ AegisAgent/
 12. **Inconsistent LLM tool-calling**: Smaller local LLMs (e.g. `llama3.1:8b`) may exhibit inconsistent tool calling behavior, syntax formatting errors in function arguments, or occasional instruction hallucinations.
 13. **MQTT dispatch vs. device-side confirmation**: A successful MQTT publish status only confirms that the local broker accepted the packet; physical hardware confirmation requires waiting for the asynchronous device ACK event.
 14. **Attack Lab worker simulation scope**: The Attack Lab simulator temporarily patches the session quarantine and hardware bridge inside the single backend worker process to run side-by-side simulations; this isolation is safe only because the worker handles one request at a time.
+15. **Intent Lock keyword brittleness**: The Intent Lock is a keyword list; it blocks unknown phrasing (causing false positives on natural paraphrasing), and short words ("on", "off", "read") can match the wrong intent. Not tuned on this test set; planned improvement for the major project.
