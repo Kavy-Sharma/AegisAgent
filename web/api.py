@@ -72,6 +72,25 @@ import security.quarantine
 import security.policy_loader
 
 import security.signing
+import security.registry
+from agent.agent import ENVIRONMENT_META
+
+
+def validate_commands_against_registry(commands: dict[str, str]) -> None:
+    """Validates that all manual commands map to registered tools in policy.yaml.
+    Fails closed at startup with ValueError if any mapped tool is not registered.
+    """
+    reg_tools = set(security.registry.list_tools())
+    for cmd, tool in commands.items():
+        if tool not in reg_tools:
+            raise ValueError(
+                f"Command '{cmd}' maps to tool '{tool}' which does not exist in the registry. "
+                f"Registered tools: {sorted(reg_tools)}"
+            )
+
+
+HARDWARE_COMMANDS: dict[str, str] = dict(ENVIRONMENT_META.get("commands", {}) or {})
+validate_commands_against_registry(HARDWARE_COMMANDS)
 
 from security.verify_log import check_audit_log_status
 
@@ -2152,27 +2171,12 @@ def api_hardware_actuate():
 
 
 
-    cmd_to_tool = {
-
-        "light_on": "turn_light_on",
-
-        "light_off": "turn_light_off",
-
-        "unlock_door": "unlock_door",
-
-        "alarm_on": "activate_alarm",
-
-    }
-
-    if command not in cmd_to_tool:
-
+    if command not in HARDWARE_COMMANDS:
         return jsonify({"error": f"Invalid or unmapped hardware command '{command}'"}), 400
 
-
-
-
-
-
+    tool_name = HARDWARE_COMMANDS[command]
+    if security.registry.get_tool(tool_name) is None or tool_name not in security.registry.list_tools():
+        return jsonify({"error": f"Tool '{tool_name}' is not in policy registry"}), 400
 
     t0 = time.time()
 
@@ -2198,9 +2202,11 @@ def api_hardware_actuate():
 
 
 
-    tool_name = cmd_to_tool[command]
+    tool_name = HARDWARE_COMMANDS[command]
 
-    risk = security.policy_loader.get_risk(tool_name) or "LOW"
+    risk = security.registry.risk(tool_name)
+    if risk is None:
+        return jsonify({"error": "Tool has no risk level in policy"}), 400
 
 
 

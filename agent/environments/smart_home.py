@@ -2,8 +2,8 @@
 Smart Home Environment for AegisAgent.
 
 Defines tool schemas (names, descriptions, parameters), runtime execution
-functions, system prompt guidance, and conversational reply formatting
-for the smart home environment.
+functions, system prompt guidance, conversational reply formatting, and
+manual hardware command mappings for the smart home environment.
 """
 
 from __future__ import annotations
@@ -215,6 +215,14 @@ def describe_result(user_prompt: str, function_name: str, tool_result: Any) -> s
     return None
 
 
+COMMANDS: dict[str, str] = {
+    "light_on": "turn_light_on",
+    "light_off": "turn_light_off",
+    "unlock_door": "unlock_door",
+    "alarm_on": "activate_alarm",
+}
+
+
 def build_environment() -> tuple[list[dict[str, Any]], dict[str, Callable[..., Any]]]:
     """
     Builds and returns the tool schemas and dispatch functions for the smart home environment.
@@ -224,10 +232,11 @@ def build_environment() -> tuple[list[dict[str, Any]], dict[str, Callable[..., A
 
 def build_environment_meta() -> dict[str, Any]:
     """
-    Builds and returns environment metadata including domain, system guidance, and result describer.
+    Builds and returns environment metadata including domain, system guidance, commands, and result describer.
     """
     return {
         "domain": "smart home devices",
         "guidance": SYSTEM_GUIDANCE,
         "describe_result": describe_result,
+        "commands": dict(COMMANDS),
     }

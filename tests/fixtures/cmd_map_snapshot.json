@@ -1,0 +1,6 @@
+{
+  "light_on": "turn_light_on",
+  "light_off": "turn_light_off",
+  "unlock_door": "unlock_door",
+  "alarm_on": "activate_alarm"
+}
