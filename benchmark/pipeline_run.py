@@ -58,6 +58,7 @@ ALLOWED_STOPPED_STAGES = {
     "detection": "detection",
     "intent": "intent_lock",
     "rbac": "rbac",
+    "param_guard": "param_guard",
     "rate_limit": "rate_limit",
     "approval": "approval",
     "output_scan": "output_scan",

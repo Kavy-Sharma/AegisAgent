@@ -45,6 +45,7 @@
     "intent": "Intent check",
     "output_scan": "Content scan",
     "rbac": "Role check",
+    "param_guard": "Parameter guard",
     "approval": "Human approval",
     "rate_limit": "Rate limit",
     "hardware": "Physical safety",
@@ -56,6 +57,7 @@
     "intent": "You only asked to read a note, but the note tried to unlock the door.",
     "output_scan": "The note's content was checked and blocked before the AI could obey it.",
     "rbac": "This user's role is not allowed to do that action.",
+    "param_guard": "The parameters failed safety checks (e.g. traversal path or unsafe SQL).",
     "approval": "A high-risk action needs a human to say yes first."
   };
 

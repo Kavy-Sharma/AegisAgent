@@ -85,6 +85,20 @@ def _load_and_validate_registry(policy_path: Path | None = None, env: str | None
         if risk not in VALID_RISKS:
             raise ValueError(f"Tool '{tool_name}' has invalid or missing risk level: '{risk}'. Must be one of {sorted(VALID_RISKS)}")
 
+        params = tool_cfg.get("params")
+        if params is not None:
+            if not isinstance(params, dict):
+                raise ValueError(f"Tool '{tool_name}' has invalid 'params' section: must be a dictionary")
+            from security.param_guard import validate_rule_type
+            for p_name, p_rule in params.items():
+                if isinstance(p_rule, str):
+                    r_type = p_rule
+                elif isinstance(p_rule, dict):
+                    r_type = p_rule.get("type", "")
+                else:
+                    raise ValueError(f"Tool '{tool_name}' parameter '{p_name}' rule must be a string or dict")
+                validate_rule_type(r_type)
+
     roles = policy.get("roles")
     if not isinstance(roles, dict):
         raise ValueError("Policy must contain a 'roles' mapping")
@@ -203,3 +217,21 @@ def default_scope() -> list[str]:
     if isinstance(scope, list):
         return list(scope)
     return []
+
+
+def param_rules(name: str) -> dict[str, Any]:
+    """
+    Returns the parameter safety rules dictionary for the tool.
+    Returns {} if the tool has no params configured or is unknown.
+    """
+    if not isinstance(name, str):
+        return {}
+    tools = _POLICY.get("tools", {})
+    cfg = tools.get(name)
+    if not cfg or not isinstance(cfg, dict):
+        return {}
+    rules = cfg.get("params")
+    if isinstance(rules, dict):
+        return dict(rules)
+    return {}
+

@@ -4,13 +4,25 @@ tools:
   read_file:
     risk: LOW
     untrusted_output: true
+    params:
+      path:
+        type: path_safe
   http_get:
     risk: LOW
     untrusted_output: true
+    params:
+      url:
+        type: url_allowlist
+        allowed_hosts:
+          - status.internal
+          - docs.company.com
   send_email:
     risk: HIGH
   run_sql:
     risk: HIGH
+    params:
+      query:
+        type: sql_readonly
   export_all_customer_data:
     risk: HONEYPOT
 

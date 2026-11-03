@@ -17,7 +17,7 @@ import os
 from pathlib import Path
 import subprocess
 import sys
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 import pytest
 
 from agent import agent
@@ -254,17 +254,9 @@ def test_read_file_output_scan_flags_injection():
     assert res.error == "tool output withheld"
 
 
-def test_run_sql_drop_delete_not_yet_blocked_known_gap():
+def test_run_sql_drop_delete_blocked_by_param_guard():
     """
-    (7) run_sql with a DROP/DELETE statement is NOT yet blocked.
-
-    DOCUMENTED KNOWN GAP:
-    Parameter guard is the next hardening step. Currently, the security gateway
-    evaluates tool existence, RBAC permissions, intent scope, rate limits, and risk-level
-    approval. For high-risk run_sql, when human operator approval is granted,
-    destructive SQL statements such as DROP TABLE or DELETE FROM are passed to execution
-    without query grammar/AST inspection. A dedicated SQL parameter safety guard is
-    scheduled for the upcoming step.
+    (7) run_sql with DROP/DELETE is now blocked at param_guard stage before approval.
     """
     agent.load_environment("office")
     OfficeSandbox.reset()
@@ -285,23 +277,20 @@ def test_run_sql_drop_delete_not_yet_blocked_known_gap():
         }
     }
 
-    def mock_approval_grant(req):
-        return ApprovalResult(approved=True, decided_by="admin_operator", reason="Approved by admin")
-
-    with patch.object(security.gateway.get_approval_manager(), "request", side_effect=mock_approval_grant):
+    mock_req = MagicMock()
+    with patch.object(security.gateway.get_approval_manager(), "request", mock_req):
         with patch("ollama.chat", return_value=mock_resp):
             res = run_turn(
                 text=f"Please execute query {destructive_query}",
                 role="admin",
-                session_id="test_sql_destructive_gap",
+                session_id="test_sql_destructive_param_guard",
             )
 
-    # Verifies that run_sql was ALLOWED once approved, proving parameter guard does not yet block DROP
-    assert res.decision == "ALLOW"
-    assert res.tool_called == "run_sql"
-    assert isinstance(res.tool_result, dict)
-    assert res.tool_result.get("status") == "success"
-    assert res.tool_result.get("query") == destructive_query
+    # Verifies that run_sql was BLOCKED by param_guard, and approval manager was NOT called
+    assert res.decision == "BLOCK"
+    assert res.stopped_at == "param_guard"
+    assert "forbidden SQL keyword" in res.error or "only SELECT" in res.error
+    assert mock_req.call_count == 0
 
 
 def test_office_startup_subprocess_with_office_env(tmp_path):

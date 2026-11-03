@@ -286,6 +286,8 @@ class TurnResult:
 
     tainted: bool = False
 
+    stopped_at: str | None = None
+
 
 
 
@@ -357,7 +359,7 @@ def run_turn(
 
     Executes a single conversational or command turn through the complete AegisAgent pipeline:
 
-    [detection -> intent -> llm -> rbac -> rate_limit -> approval -> hardware -> output_scan].
+    [detection -> intent -> llm -> rbac -> param_guard -> rate_limit -> approval -> hardware -> output_scan].
 
     Calls emit(stage, status, detail) at each stage with status in [running, pass, review, block, skip, error].
 
@@ -448,7 +450,7 @@ def run_turn(
 
         _emit("detection", "block", {"reason": quarantine_msg, "quarantined": True})
 
-        for s in ("intent", "llm", "rbac", "rate_limit", "approval", "hardware", "output_scan"):
+        for s in ("intent", "llm", "rbac", "param_guard", "rate_limit", "approval", "hardware", "output_scan"):
 
             _emit(s, "skip", {"reason": "Session quarantined"})
 
@@ -492,7 +494,7 @@ def run_turn(
 
             _emit("detection", "block", {"reason": quarantine_msg, "quarantined": True})
 
-            for s in ("intent", "llm", "rbac", "rate_limit", "approval", "hardware", "output_scan"):
+            for s in ("intent", "llm", "rbac", "param_guard", "rate_limit", "approval", "hardware", "output_scan"):
 
                 _emit(s, "skip", {"reason": "Session quarantined"})
 
@@ -528,7 +530,7 @@ def run_turn(
 
             _emit("detection", "block", {"reason": top_reason, "score": verdict.score})
 
-            for s in ("intent", "llm", "rbac", "rate_limit", "approval", "hardware", "output_scan"):
+            for s in ("intent", "llm", "rbac", "param_guard", "rate_limit", "approval", "hardware", "output_scan"):
 
                 _emit(s, "skip", {"reason": "Blocked by detection"})
 
@@ -556,7 +558,7 @@ def run_turn(
 
             _emit("detection", "block", {"reason": "Denied by human operator"})
 
-            for s in ("intent", "llm", "rbac", "rate_limit", "approval", "hardware", "output_scan"):
+            for s in ("intent", "llm", "rbac", "param_guard", "rate_limit", "approval", "hardware", "output_scan"):
 
                 _emit(s, "skip", {"reason": "Denied by operator review"})
 
@@ -626,7 +628,7 @@ def run_turn(
 
         _emit("llm", "error", {"error": str(e)})
 
-        for s in ("rbac", "rate_limit", "approval", "hardware", "output_scan"):
+        for s in ("rbac", "param_guard", "rate_limit", "approval", "hardware", "output_scan"):
 
             _emit(s, "skip", {"reason": "LLM communication error"})
 
@@ -660,7 +662,7 @@ def run_turn(
 
         _emit("llm", "pass", {"tool_calls": 0, "reply": content})
 
-        for s in ("rbac", "rate_limit", "approval", "hardware", "output_scan"):
+        for s in ("rbac", "param_guard", "rate_limit", "approval", "hardware", "output_scan"):
 
             _emit(s, "skip", {"reason": "No tool call generated"})
 
@@ -692,7 +694,7 @@ def run_turn(
 
             _emit("detection", "block", {"reason": quarantine_msg, "quarantined": True})
 
-            for s in ("rbac", "rate_limit", "approval", "hardware", "output_scan"):
+            for s in ("rbac", "param_guard", "rate_limit", "approval", "hardware", "output_scan"):
 
                 _emit(s, "skip", {"reason": "Session quarantined"})
 
@@ -722,7 +724,7 @@ def run_turn(
 
             _emit("rbac", "block", {"tool": function_name, "reason": "unknown tool"})
 
-            for s in ("rate_limit", "approval", "hardware", "output_scan"):
+            for s in ("param_guard", "rate_limit", "approval", "hardware", "output_scan"):
 
                 _emit(s, "skip", {"reason": "unknown tool"})
 
@@ -766,7 +768,7 @@ def run_turn(
 
             )
 
-            for s in ("rate_limit", "approval", "hardware", "output_scan"):
+            for s in ("param_guard", "rate_limit", "approval", "hardware", "output_scan"):
 
                 _emit(s, "skip", {"reason": "RBAC denied"})
 
@@ -816,7 +818,7 @@ def run_turn(
 
             )
 
-            for s in ("rate_limit", "approval", "hardware", "output_scan"):
+            for s in ("param_guard", "rate_limit", "approval", "hardware", "output_scan"):
 
                 _emit(s, "skip", {"reason": "Outside intent scope"})
 
@@ -833,6 +835,37 @@ def run_turn(
             ))
 
 
+
+        # Parameter Guard stage (after RBAC/Intent Lock, before rate_limit)
+        from security.param_guard import check_params
+
+        p_rules = security.registry.param_rules(function_name)
+        if p_rules:
+            _emit("param_guard", "running", {"tool": function_name})
+            pg_ok, pg_reason = check_params(function_name, function_args, p_rules)
+            if not pg_ok:
+                _emit("param_guard", "block", {"tool": function_name, "reason": pg_reason})
+                security.logger.log_event(
+                    "param_guard_block",
+                    {
+                        "request_id": request_id,
+                        "session_id": session_id,
+                        "tool": function_name,
+                        "decision": "BLOCK",
+                        "reason": pg_reason,
+                        "stopped_at": "param_guard",
+                    },
+                )
+                for s in ("rate_limit", "approval", "hardware", "output_scan"):
+                    _emit(s, "skip", {"reason": "Blocked by parameter guard"})
+                return _finalize(TurnResult(
+                    reply=f"Action blocked: {pg_reason}",
+                    decision="BLOCK",
+                    tool_called=function_name,
+                    error=pg_reason,
+                    stopped_at="param_guard",
+                ))
+            _emit("param_guard", "pass", {"tool": function_name})
 
         # 4. Rate Limit stage
 

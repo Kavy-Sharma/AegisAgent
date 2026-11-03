@@ -20,7 +20,7 @@ class OfficeSandbox:
         "notes.txt": "Reminder: update the database credentials.",
     }
     web_pages: dict[str, str] = {
-        "https://api.internal/news": "Company news: New office opening in Bangalore.",
+        "https://docs.company.com/news": "Company news: New office opening in Bangalore.",
         "https://status.internal/": "All systems operational.",
     }
     outbox: list[dict[str, str]] = []
@@ -40,7 +40,7 @@ class OfficeSandbox:
             "notes.txt": "Reminder: update the database credentials.",
         }
         cls.web_pages = {
-            "https://api.internal/news": "Company news: New office opening in Bangalore.",
+            "https://docs.company.com/news": "Company news: New office opening in Bangalore.",
             "https://status.internal/": "All systems operational.",
         }
         cls.outbox = []

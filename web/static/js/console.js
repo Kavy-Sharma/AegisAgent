@@ -24,7 +24,7 @@
 
 
 
-  var STAGES = ["detection", "intent", "llm", "rbac", "rate_limit", "approval", "hardware", "output_scan"];
+  var STAGES = ["detection", "intent", "llm", "rbac", "param_guard", "rate_limit", "approval", "hardware", "output_scan"];
 
   var STAGE_LABELS = {
 
@@ -35,6 +35,8 @@
     llm: "LLM",
 
     rbac: "RBAC",
+
+    param_guard: "Param Guard",
 
     rate_limit: "Rate Limit",
 

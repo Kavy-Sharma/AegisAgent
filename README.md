@@ -125,12 +125,13 @@ AegisAgent supports two distinct runtime environments:
 ### Pipeline Invariance
 The same pipeline code (detection, intent lock, RBAC, rate limit, human approval, output scan) runs in both environments; only tool definitions, roles and intent keywords differ.
 
-### Known Parameter-Guard Gaps & Honeypot Behavior
-Honest disclosure of current parameter-level limitations:
-- **SQL Sanitization**: `run_sql` does not yet parse or block destructive DDL/DML statements like `DROP TABLE` (the tool executes queries against in-memory mock lists only).
-- **Filesystem Path Traversal**: `read_file` operates directly on in-memory dictionary keys and does not yet validate absolute path traversal (`../`).
-- **Network URL Allowlisting**: `http_get` retrieves simulated web content from an internal cache and does not yet enforce an egress domain allowlist.
+### Parameter Guard
+A dedicated declarative parameter validation stage (`param_guard`) executes after RBAC and Intent Lock, and strictly before Rate Limiting and Operator Approval:
+- **`path_safe`** (`read_file`): Rejects directory traversal (`..`), leading slashes (`/`, `\`), drive letters (`C:`), backslashes, null bytes, and paths exceeding 120 characters.
+- **`url_allowlist`** (`http_get`): Enforces `https` scheme, standard port 443, non-IP hosts, no embedded credentials, and strict domain/subdomain allowlist (`status.internal`, `docs.company.com`).
+- **`sql_readonly`** (`run_sql`): Keyword guard (not a SQL parser) enforcing single `SELECT` statements, blocking SQL comments (`--`, `/*`), semicolons followed by text, and destructive SQL keywords (`drop`, `delete`, `update`, `insert`, `alter`, `create`, `truncate`, `attach`, `pragma`, `replace`, `grant`).
 - **Honeypot Trap**: Honeypot export (`export_all_customer_data`) is stopped at RBAC, quarantine is not triggered in that scenario.
+- **Remaining Limits**: Parameter guard is a declarative keyword and allowlist check, not a full SQL AST parser or general URL sanitizer. It does not perform dynamic DNS resolution (no socket lookups) and HTTP redirects are not followed because requests target simulated in-memory storage.
 
 ### Environment Switching
 Switching between `smart_home` and `office` environments requires an application restart (selected at startup via `--env` or `AEGIS_ENV`). Dynamic mid-session environment hot-swapping is not permitted so policy invariants remain deterministic.
@@ -248,7 +249,7 @@ python -m agent.agent --role admin
 
 ## 🛠️ Testing & Harness Scripts
 
-### 1. Run Complete Automated Test Suite (321 tests)
+### 1. Run Complete Automated Test Suite (333 tests)
 ```bash
 pytest -v
 ```
@@ -377,6 +378,7 @@ AegisAgent/
 │   ├── test_detection.py      # Pytest Prompt Injection Suite
 │   ├── test_hardware.py       # Pytest Hardware & Alert Suite
 │   ├── test_office_environment.py # Office Environment & Tools Suite
+│   ├── test_param_guard.py    # Parameter Guard (Path, URL, SQL) Suite
 │   ├── test_phase8b_clean.py  # Ported Auth Lockout, Signing & IST Suite
 │   ├── test_pipeline_benchmark.py # Pipeline Benchmark Integrity Suite
 │   └── test_virtual_home.py   # Virtual Home Simulation Suite
