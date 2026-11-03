@@ -175,7 +175,7 @@ approval:
 
 hardware:
 
-  mode: mqtt             # mqtt (production broker mode) | serial (direct USB) | fake (testing) | virtual (in-memory simulation)
+  mode: auto             # auto = ESP32 over USB if found, otherwise Virtual Home (simulation). mqtt = real ESP32 through the broker. Virtual Home is a simulation: no physical device is moved.
   # When mode is serial, connect ESP32 via USB and configure serial_port or vid_pid
   vid_pid:
     - "10C4:EA60"        # Silicon Labs CP210x

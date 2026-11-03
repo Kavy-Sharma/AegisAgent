@@ -34,7 +34,7 @@ AegisAgent is a security gateway positioned between a local LLM agent (**Ollama*
               │               ──► 4. Human-in-the-Loop Approval (One-Time Request Hash)
               ▼
 ┌───────────────────────────┐
-│  Hardware Bridge / Broker │ ──► Authenticated MQTT Broker (default: mqtt) or Virtual Home
+│  Hardware Bridge / Broker │ ──► Hardware Bridge (default: auto -> USB ESP32 or Virtual Home)
 │     (security/hardware)   │ ──► Command Allowlist Check & 3s Door Auto-Relock
 └─────────────┬─────────────┘ ──► Physical Attack Blocked LED Trigger (2s Debounce)
               │
@@ -88,7 +88,7 @@ AegisAgent is a security gateway positioned between a local LLM agent (**Ollama*
 - Cross-platform timeout polling (`msvcrt` on Windows / `select` on POSIX). Fail-closed architecture on error, timeout, or cancellation.
 
 ### 4. Hardware Integration & Virtual Home (Phase 7)
-- Dual-mode support (`fake`/`virtual` for offline testing/CI, `mqtt` for real ESP32 hardware).
+- Multi-mode support (default `auto` uses USB ESP32 if plugged in or Virtual Home simulation if absent; `mqtt` for broker mode; `fake` for testing).
 - Physical Red "Attack Blocked" LED triggered on block decisions with a 2-second rate debounce filter.
 - ESP32 firmware featuring non-blocking `millis()` execution, Last Will & Testament (LWT) tracking, and on-device command allowlisting.
 
@@ -102,8 +102,8 @@ AegisAgent is a security gateway positioned between a local LLM agent (**Ollama*
 - The protected run uses the real Aegis pipeline with a mock model that always obeys the attacker, so the demo does not depend on Ollama.
 
 ### 7. Virtual Home vs ESP32
-- **Shipped Hardware Mode**: `policy.yaml` defaults to `hardware.mode: mqtt` (production broker mode with ESP32).
-- **Virtual Home Simulation**: For testing without physical hardware or a running Mosquitto broker, set `hardware.mode: virtual` in `policy.yaml`. Virtual Home runs an in-memory smart home simulator supporting all device actions.
+- **Shipped Hardware Mode**: `policy.yaml` defaults to `hardware.mode: auto`. If an ESP32 is plugged in over USB, it is used automatically; with no board present, it falls back to Virtual Home simulation where nothing physical happens.
+- **Broker Mode**: To use a real ESP32 through a Mosquitto MQTT broker, set `hardware.mode: mqtt` in `policy.yaml`.
 
 ---
 
@@ -158,7 +158,7 @@ AegisAgent is a security gateway positioned between a local LLM agent (**Ollama*
    ```
    *Note on First-Run Setup*: When opening `http://127.0.0.1:8501`, the system automatically redirects to `/setup` if no registered users exist in `data/users.json`. Register the initial administrator account (minimum 10-character password). Once any user account exists, `/setup` redirects to `/login`. If user data is reset, `/setup` re-opens until initialized.
 
-   > **No hardware?** Set `hardware.mode: virtual` in `policy.yaml`. The Mosquitto 'passwd' message and 'device offline' entries are normal when no ESP32/broker is set up.
+   > **Default mode is auto:** No hardware is required out-of-the-box. Without an ESP32 plugged in over USB, AegisAgent automatically uses Virtual Home simulation (nothing physical happens). A plugged ESP32 over USB is detected and used automatically; broker mode needs `hardware.mode: mqtt`.
 
 ---
 
@@ -209,7 +209,7 @@ python -m agent.agent --role admin
 
 ## 🛠️ Testing & Harness Scripts
 
-### 1. Run Complete Automated Test Suite (about 250 tests)
+### 1. Run Complete Automated Test Suite (299 tests)
 ```bash
 pytest -v
 ```
@@ -265,7 +265,7 @@ Runs 226 total cases (50 attacks, 60 novel bypass attempts, 50 easy benign, 66 p
 3. **Configure ESP32 Firmware**:
    Copy `esp32/secrets.example.h` to `esp32/aegis_device/secrets.h`, update WiFi & MQTT credentials, and flash `esp32/aegis_device/aegis_device.ino` via Arduino IDE.
 4. **Set Hardware Mode in `policy.yaml`**:
-   Set `hardware.mode: mqtt` in `policy.yaml`.
+   Set `hardware.mode: mqtt` in `policy.yaml` (broker mode needs `hardware.mode: mqtt`; default is `auto`).
 
 ---
 
@@ -389,3 +389,4 @@ AegisAgent/
 13. **MQTT dispatch vs. device-side confirmation**: A successful MQTT publish status only confirms that the local broker accepted the packet; physical hardware confirmation requires waiting for the asynchronous device ACK event.
 14. **Attack Lab worker simulation scope**: The Attack Lab simulator temporarily patches the session quarantine and hardware bridge inside the single backend worker process to run side-by-side simulations; this isolation is safe only because the worker handles one request at a time.
 15. **Intent Lock keyword brittleness**: The Intent Lock is a keyword list; it blocks unknown phrasing (causing false positives on natural paraphrasing), and short words ("on", "off", "read") can match the wrong intent. Not tuned on this test set; planned improvement for the major project.
+16. **Virtual Home simulation vs. physical device**: In Virtual Home mode, 'door unlocked' means the simulation changed, not a physical device.

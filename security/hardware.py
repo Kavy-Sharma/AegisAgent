@@ -1749,10 +1749,8 @@ def get_bridge():
 
 
             if _bridge_instance is None:
-
-
-
-                _bridge_instance = HardwareBridge()
+                from security.virtual_home import VirtualBridge
+                _bridge_instance = VirtualBridge()
 
 
 

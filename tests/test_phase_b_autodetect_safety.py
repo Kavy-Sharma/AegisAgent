@@ -99,7 +99,7 @@ def test_vid_pid_allowlist_matching():
     assert detected == "COM5"
 
 
-def test_policy_mode_is_mqtt_and_documents_serial():
-    """Policy must explicitly set hardware.mode to mqtt and document serial."""
+def test_policy_mode_is_auto_and_documents_serial():
+    """Policy must explicitly set hardware.mode to auto (ESP32 USB plug-and-play with Virtual Home fallback)."""
     policy = security.policy_loader.POLICY
-    assert policy.get("hardware", {}).get("mode") == "mqtt"
+    assert policy.get("hardware", {}).get("mode") == "auto"
