@@ -15,18 +15,35 @@ FAIL-CLOSED GUARANTEES:
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Any
 import yaml
 
-POLICY_PATH = Path(__file__).resolve().parent.parent / "policy.yaml"
+POLICY_PATH = Path(os.environ.get("AEGIS_POLICY_PATH") or (Path(__file__).resolve().parent.parent / "policy.yaml"))
 
 VALID_RISKS = frozenset({"LOW", "HIGH", "HONEYPOT"})
 
 
-def _load_and_validate_registry(policy_path: Path | None = None) -> dict[str, Any]:
+def _resolve_policy_path(env: str | None = None) -> Path:
+    if not env or env == "smart_home":
+        return POLICY_PATH
+    elif env == "office":
+        p = Path(__file__).resolve().parent.parent / "policies" / "office.yaml"
+        if not p.exists():
+            raise FileNotFoundError(f"Office policy file not found at {p}")
+        return p
+    else:
+        raise ValueError(f"Unknown environment: '{env}'")
+
+
+def _load_and_validate_registry(policy_path: Path | None = None, env: str | None = None) -> dict[str, Any]:
     """Loads and validates policy configuration, failing closed on any corruption."""
-    p_path = policy_path or POLICY_PATH
+    if policy_path is None:
+        p_path = _resolve_policy_path(env)
+    else:
+        p_path = policy_path
+
     if not p_path.exists():
         raise FileNotFoundError(f"Policy file not found at {p_path}")
 
@@ -35,6 +52,18 @@ def _load_and_validate_registry(policy_path: Path | None = None) -> dict[str, An
 
     if not isinstance(policy, dict):
         raise ValueError(f"Malformed policy file at {p_path}: root must be a mapping")
+
+    # If loading default root policy and no explicit env passed, check if environment key directs to another policy
+    if policy_path is None and env is None:
+        configured_env = policy.get("environment", "smart_home")
+        if configured_env != "smart_home":
+            target_path = _resolve_policy_path(configured_env)
+            if not target_path.exists():
+                raise FileNotFoundError(f"Policy file not found at {target_path}")
+            with open(target_path, "r", encoding="utf-8") as f:
+                policy = yaml.safe_load(f)
+            if not isinstance(policy, dict):
+                raise ValueError(f"Malformed policy file at {target_path}: root must be a mapping")
 
     tools = policy.get("tools")
     if not isinstance(tools, dict) or not tools:
@@ -58,6 +87,14 @@ def _load_and_validate_registry(policy_path: Path | None = None) -> dict[str, An
 
 # Load and validate once at import time
 _POLICY: dict[str, Any] = _load_and_validate_registry()
+
+
+def load_environment(env: str) -> None:
+    """Reloads registry configuration for a specific environment ('smart_home' | 'office')."""
+    target_path = _resolve_policy_path(env)
+    new_policy = _load_and_validate_registry(target_path)
+    _POLICY.clear()
+    _POLICY.update(new_policy)
 
 
 def list_tools() -> list[str]:

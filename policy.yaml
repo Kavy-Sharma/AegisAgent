@@ -1,3 +1,5 @@
+environment: smart_home
+
 tools:
 
   turn_light_on:

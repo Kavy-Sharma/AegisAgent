@@ -6,23 +6,73 @@ Loads policy.yaml configuration once at import time and provides lookup helper
 functions for tool risk levels, role-based permissions, and rate limits.
 """
 
+import os
 from pathlib import Path
 import yaml
 
-# Path to policy.yaml at project root
-POLICY_PATH = Path(__file__).resolve().parent.parent / "policy.yaml"
+# Path to policy.yaml at project root (or overridden via AEGIS_POLICY_PATH)
+POLICY_PATH = Path(os.environ.get("AEGIS_POLICY_PATH") or (Path(__file__).resolve().parent.parent / "policy.yaml"))
 
 
-def _load_policy() -> dict:
+def _resolve_policy_path(env: str | None = None) -> Path:
+    if not env or env == "smart_home":
+        return POLICY_PATH
+    elif env == "office":
+        p = Path(__file__).resolve().parent.parent / "policies" / "office.yaml"
+        if not p.exists():
+            raise FileNotFoundError(f"Office policy file not found at {p}")
+        return p
+    else:
+        raise ValueError(f"Unknown environment: '{env}'")
+
+
+def get_configured_environment() -> str:
+    """Reads the environment key from root policy.yaml, defaulting to 'smart_home'."""
+    p_path = Path(os.environ.get("AEGIS_POLICY_PATH") or (Path(__file__).resolve().parent.parent / "policy.yaml"))
+    if not p_path.exists():
+        return "smart_home"
+    with open(p_path, "r", encoding="utf-8") as f:
+        data = yaml.safe_load(f) or {}
+    if not isinstance(data, dict):
+        return "smart_home"
+    return data.get("environment", "smart_home")
+
+
+def _load_policy(policy_path: Path | None = None, env: str | None = None) -> dict:
     """Loads and parses the policy.yaml file."""
-    if not POLICY_PATH.exists():
-        raise FileNotFoundError(f"Policy file not found at {POLICY_PATH}")
-    with open(POLICY_PATH, "r", encoding="utf-8") as f:
-        return yaml.safe_load(f) or {}
+    if policy_path is None:
+        p_path = _resolve_policy_path(env)
+    else:
+        p_path = policy_path
+
+    if not p_path.exists():
+        raise FileNotFoundError(f"Policy file not found at {p_path}")
+    with open(p_path, "r", encoding="utf-8") as f:
+        policy = yaml.safe_load(f) or {}
+
+    # If loading default root policy and no explicit env passed, check if environment key directs to another policy
+    if policy_path is None and env is None:
+        configured_env = policy.get("environment", "smart_home")
+        if configured_env != "smart_home":
+            target_path = _resolve_policy_path(configured_env)
+            if not target_path.exists():
+                raise FileNotFoundError(f"Policy file not found at {target_path}")
+            with open(target_path, "r", encoding="utf-8") as f:
+                policy = yaml.safe_load(f) or {}
+
+    return policy
 
 
 # Load policy once at import time
 POLICY = _load_policy()
+
+
+def load_environment(env: str) -> None:
+    """Reloads policy configuration for a specific environment ('smart_home' | 'office')."""
+    target_path = _resolve_policy_path(env)
+    new_policy = _load_policy(target_path)
+    POLICY.clear()
+    POLICY.update(new_policy)
 
 
 def get_risk(tool_name: str) -> str | None:

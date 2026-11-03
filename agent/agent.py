@@ -124,9 +124,61 @@ def validate_environment_against_registry(tools: list[dict[str, Any]], functions
         raise ValueError(f"Registry tools missing from environment: {sorted(missing)}")
 
 
-TOOLS, AVAILABLE_FUNCTIONS = build_environment()
+SUPPORTED_ENVIRONMENTS = {
+    "smart_home": "agent.environments.smart_home",
+    "office": "agent.environments.office",
+}
+
+
+def _get_environment_builders(env_name: str):
+    if env_name == "smart_home":
+        from agent.environments.smart_home import build_environment as be, build_environment_meta as bem
+        return be, bem
+    elif env_name == "office":
+        from agent.environments.office import build_environment as be, build_environment_meta as bem
+        return be, bem
+    else:
+        raise ValueError(f"Unknown environment: '{env_name}'. Must be one of {sorted(SUPPORTED_ENVIRONMENTS.keys())}")
+
+
+def load_environment(env_name: str) -> None:
+    """
+    Switches the active environment ('smart_home' | 'office') and validates tools against registry.
+    Raises ValueError on unknown environment or validation failure.
+    """
+    global TOOLS, AVAILABLE_FUNCTIONS, ENVIRONMENT_META, TOOL_SCHEMAS, _ACTIVE_ENV
+    if env_name not in SUPPORTED_ENVIRONMENTS:
+        raise ValueError(f"Unknown environment: '{env_name}'. Must be one of {sorted(SUPPORTED_ENVIRONMENTS.keys())}")
+
+    # 1. Update policy_loader and registry
+    security.policy_loader.load_environment(env_name)
+    security.registry.load_environment(env_name)
+
+    # 2. Build environment and validate against registry
+    build_env, build_meta = _get_environment_builders(env_name)
+    new_tools, new_funcs = build_env()
+    validate_environment_against_registry(new_tools, new_funcs)
+    new_meta = build_meta()
+
+    TOOLS = new_tools
+    AVAILABLE_FUNCTIONS = new_funcs
+    ENVIRONMENT_META = new_meta
+    TOOL_SCHEMAS = {
+        t["function"]["name"]: set(t["function"]["parameters"]["properties"].keys())
+        for t in TOOLS
+    }
+    _ACTIVE_ENV = env_name
+
+
+# Determine configured environment from policy at startup
+_ACTIVE_ENV = security.policy_loader.get_configured_environment()
+if _ACTIVE_ENV not in SUPPORTED_ENVIRONMENTS:
+    raise ValueError(f"Unknown environment: '{_ACTIVE_ENV}'. Must be one of {sorted(SUPPORTED_ENVIRONMENTS.keys())}")
+
+_build_env_fn, _build_meta_fn = _get_environment_builders(_ACTIVE_ENV)
+TOOLS, AVAILABLE_FUNCTIONS = _build_env_fn()
 validate_environment_against_registry(TOOLS, AVAILABLE_FUNCTIONS)
-ENVIRONMENT_META = build_environment_meta()
+ENVIRONMENT_META = _build_meta_fn()
 
 TOOL_SCHEMAS = {
 
