@@ -3,12 +3,16 @@ security/param_guard.py - Parameter Safety Guard
 
 WHAT THIS FILE DOES:
 Inspects tool arguments against declarative parameter safety rules defined in the active policy:
-1. path_safe: prevents directory traversal ('..'), absolute paths, drive letters, backslashes,
-   null bytes, and length overflows.
-2. url_allowlist: restricts URLs to https scheme, standard port 443, non-IP hosts, no embedded
-   credentials, and domain/subdomain allowlists.
-3. sql_readonly: keyword guard, not a SQL parser. Enforces single SELECT statements, blocks SQL
-   comments, and rejects destructive keywords (drop, delete, update, etc.).
+1. Strict argument validation: rejects missing guarded arguments and unexpected arguments
+   not declared in the tool schema.
+2. path_safe: prevents directory traversal ('..'), absolute paths, drive letters, backslashes,
+   null bytes, length overflows, percent characters ('%'), non-ASCII characters, and control characters.
+3. url_allowlist: restricts URLs to https scheme, standard port 443, non-IP hosts, no embedded
+   credentials, no backslashes, no whitespace, no non-ASCII/control characters, stripping trailing
+   dots on hosts before matching domain/subdomain allowlists.
+4. sql_readonly: keyword guard, not a SQL parser. Enforces single SELECT statements, blocks SQL
+   comments, and rejects destructive/data-manipulation keywords (drop, delete, update, insert,
+   into, union, load_extension, exec, call, merge, etc.).
 
 Generic implementation: Contains zero tool names or hardcoded tool bindings.
 Unknown rule types fail closed on startup / policy load.
@@ -26,7 +30,7 @@ KNOWN_RULE_TYPES = {"path_safe", "url_allowlist", "sql_readonly"}
 
 # Forbidden whole words for sql_readonly guard
 FORBIDDEN_SQL_WORDS = re.compile(
-    r"\b(drop|delete|update|insert|alter|create|truncate|attach|pragma|replace|grant)\b",
+    r"\b(drop|delete|update|insert|alter|create|truncate|attach|pragma|replace|grant|into|union|load_extension|exec|call|merge)\b",
     re.IGNORECASE,
 )
 
@@ -46,6 +50,9 @@ def check_path_safe(val: Any, rule_opts: dict[str, Any] | None = None) -> tuple[
     - Must be a string
     - Max length 120 chars
     - No null bytes
+    - No non-ASCII characters
+    - No control characters
+    - No percent character ('%')
     - No '..' traversal sequence
     - No backslashes
     - No leading '/' or '\\'
@@ -59,6 +66,15 @@ def check_path_safe(val: Any, rule_opts: dict[str, Any] | None = None) -> tuple[
 
     if "\x00" in val:
         return False, "null byte detected in path"
+
+    if not val.isascii():
+        return False, "non-ASCII character detected in path"
+
+    if any(ord(c) < 32 or ord(c) == 127 for c in val):
+        return False, "control character detected in path"
+
+    if "%" in val:
+        return False, "percent character ('%') not allowed in path"
 
     if ".." in val:
         return False, "directory traversal sequence ('..') detected in path"
@@ -80,14 +96,25 @@ def check_url_allowlist(val: Any, rule_opts: dict[str, Any] | None = None) -> tu
     Validates a URL against an allowlist:
     - Must be a string
     - https scheme only
+    - Reject backslash, whitespace, control character, non-ASCII
     - Reject IP-literal hosts (IPv4, IPv6)
     - Reject localhost
     - Reject user credentials ('user:pass@')
     - Reject ports other than 443
+    - Strip one trailing dot from host before matching
     - Host must match allowed_hosts (exact match or subdomain)
     """
     if not isinstance(val, str):
         return False, "url parameter must be a string"
+
+    if "\\" in val:
+        return False, "backslash not allowed in URL"
+
+    if not val.isascii():
+        return False, "non-ASCII character detected in URL"
+
+    if any(c.isspace() or ord(c) < 32 or ord(c) == 127 for c in val):
+        return False, "whitespace or control character detected in URL"
 
     rule_opts = rule_opts or {}
     allowed_hosts = [h.strip().lower() for h in rule_opts.get("allowed_hosts", []) if h.strip()]
@@ -115,6 +142,13 @@ def check_url_allowlist(val: Any, rule_opts: dict[str, Any] | None = None) -> tu
         return False, f"non-standard port {port} not allowed (only port 443 permitted)"
 
     host = (parsed.hostname or "").lower()
+    if not host:
+        return False, "missing hostname in URL"
+
+    # Strip one trailing dot from host if present before checks
+    if host.endswith("."):
+        host = host[:-1]
+
     if not host:
         return False, "missing hostname in URL"
 
@@ -192,7 +226,12 @@ RULE_HANDLERS = {
 }
 
 
-def check_params(tool: str, args: dict[str, Any], param_rules: dict[str, Any]) -> tuple[bool, str]:
+def check_params(
+    tool: str,
+    args: dict[str, Any],
+    param_rules: dict[str, Any],
+    allowed_keys: set[str] | list[str] | None = None,
+) -> tuple[bool, str]:
     """
     Evaluates parameter safety rules for a tool call.
     Args:
@@ -201,13 +240,25 @@ def check_params(tool: str, args: dict[str, Any], param_rules: dict[str, Any]) -
         param_rules: Declarative parameter rules for this tool from registry/policy.
                      Format: { param_name: { "type": rule_type, ... } }
                      or:     { param_name: rule_type_str }
+        allowed_keys: Declared property keys from tool schema (if available).
     Returns:
         (ok, reason): True and empty string if valid, False and descriptive error message if blocked.
     """
     if not param_rules:
         return True, ""
 
+    # Strict schema check: any argument key not in the tool's declared schema properties -> reject
+    if allowed_keys is not None:
+        allowed_set = set(allowed_keys)
+        for k in args:
+            if k not in allowed_set:
+                return False, f"unexpected argument '{k}' for tool '{tool}'"
+
+    # Strict presence check: any guarded parameter that is missing from args -> reject
     for param_name, rule_spec in param_rules.items():
+        if param_name not in args:
+            return False, f"required argument '{param_name}' missing for tool '{tool}'"
+
         if isinstance(rule_spec, str):
             rule_type = rule_spec
             rule_opts = {}
@@ -219,13 +270,10 @@ def check_params(tool: str, args: dict[str, Any], param_rules: dict[str, Any]) -
 
         validate_rule_type(rule_type)
 
-        # Check if argument is present
-        if param_name in args:
-            param_val = args[param_name]
-            handler = RULE_HANDLERS[rule_type]
-            ok, reason = handler(param_val, rule_opts)
-            if not ok:
-                return False, f"Parameter guard rejected argument '{param_name}' for tool '{tool}': {reason}"
+        param_val = args[param_name]
+        handler = RULE_HANDLERS[rule_type]
+        ok, reason = handler(param_val, rule_opts)
+        if not ok:
+            return False, f"Parameter guard rejected argument '{param_name}' for tool '{tool}': {reason}"
 
     return True, ""
-

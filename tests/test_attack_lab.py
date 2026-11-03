@@ -325,3 +325,45 @@ def test_attack_lab_preserves_real_user_rate_limit_and_threats(tmp_path):
             security.gateway._SESSION_THREATS.pop("real_sess_alice", None)
 
 
+def test_attack_lab_office_scenarios_including_param_guard(tmp_path):
+    """
+    Verifies that all office scenarios (including param_guard path traversal and SQL injection)
+    run through unprotected vs protected accurately:
+    - Unprotected shows the harm (table dropped / secret file read).
+    - Protected stops at the expected layer (param_guard) with decision BLOCK and leaves sandbox safe.
+    """
+    from security.attack_lab import OFFICE_SCENARIOS
+    from agent.environments.office import OfficeSandbox
+    import agent.agent
+
+    agent.agent.load_environment("office")
+    try:
+        for sc in OFFICE_SCENARIOS:
+            sc_id = sc["id"]
+            exp_stage = sc["expected_protected_stage"]
+
+            OfficeSandbox.reset()
+            res_u = run_unprotected(sc, scratch_dir=tmp_path)
+            assert res_u["action_executed"] is True
+            assert res_u["adapter"] == "office_sandbox"
+
+            if sc_id == "office_sql_injection":
+                assert res_u["unprotected_outcome"] == "Table dropped in sandbox"
+                assert res_u["virtual_state"]["sql_rows_count"] == 0
+            elif sc_id == "office_path_traversal":
+                assert res_u["unprotected_outcome"] == "Secret file read"
+
+            OfficeSandbox.reset()
+            res_p = run_protected(sc, scratch_dir=tmp_path)
+            assert res_p["final"]["decision"] == "BLOCK"
+            assert res_p["stopped_at"] == exp_stage, f"Expected {exp_stage}, got {res_p['stopped_at']}"
+            assert res_p["stopped_layer"] == exp_stage
+
+            if sc_id == "office_sql_injection":
+                # In protected run, database remains intact (not dropped)
+                assert res_p["virtual_state"]["sql_rows_count"] == 3
+    finally:
+        agent.agent.load_environment("smart_home")
+
+
+

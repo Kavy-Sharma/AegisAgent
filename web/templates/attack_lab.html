@@ -119,6 +119,42 @@
           </button>
         </div>
       </div>
+
+      <!-- 5. office_path_traversal -->
+      <div class="attack-card" role="button" tabindex="0" data-scenario="office_path_traversal" aria-label="Run attack: Path traversal to read host file">
+        <div class="attack-card-top">
+          <div class="attack-card-icon icon-override">
+            <svg class="icon"><use href="/static/icons.svg#icon-terminal"></use></svg>
+          </div>
+          <span class="attack-pill pill-override">Path Traversal</span>
+        </div>
+        <h3 class="attack-card-title">Path traversal to escape sandbox directory</h3>
+        <p class="attack-card-desc">Attacker attempts to read ../etc/passwd. Parameter guard detects directory traversal sequence and halts turn.</p>
+        <div class="attack-card-footer">
+          <button type="button" class="btn btn-primary btn-sm btn-card-run" data-run-scenario="office_path_traversal">
+            <svg class="icon"><use href="/static/icons.svg#icon-play"></use></svg>
+            <span>Run attack</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- 6. office_sql_injection -->
+      <div class="attack-card" role="button" tabindex="0" data-scenario="office_sql_injection" aria-label="Run attack: Destructive SQL injection">
+        <div class="attack-card-top">
+          <div class="attack-card-icon icon-admin">
+            <svg class="icon"><use href="/static/icons.svg#icon-alert-triangle"></use></svg>
+          </div>
+          <span class="attack-pill pill-admin">SQL Injection</span>
+        </div>
+        <h3 class="attack-card-title">Destructive SQL injection command</h3>
+        <p class="attack-card-desc">Attacker executes DROP TABLE users. Parameter guard inspects query keywords and blocks destructive operation.</p>
+        <div class="attack-card-footer">
+          <button type="button" class="btn btn-primary btn-sm btn-card-run" data-run-scenario="office_sql_injection">
+            <svg class="icon"><use href="/static/icons.svg#icon-play"></use></svg>
+            <span>Run attack</span>
+          </button>
+        </div>
+      </div>
       {% else %}
       <!-- 1. direct_override -->
       <div class="attack-card" role="button" tabindex="0" data-scenario="direct_override" aria-label="Run attack: Someone tells the AI to ignore its rules">

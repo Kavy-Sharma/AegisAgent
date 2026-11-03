@@ -842,7 +842,11 @@ def run_turn(
         p_rules = security.registry.param_rules(function_name)
         if p_rules:
             _emit("param_guard", "running", {"tool": function_name})
-            pg_ok, pg_reason = check_params(function_name, function_args, p_rules)
+            tool_schema = next((t for t in TOOLS if t.get("function", {}).get("name") == function_name), None)
+            allowed_keys = None
+            if tool_schema:
+                allowed_keys = set(tool_schema.get("function", {}).get("parameters", {}).get("properties", {}).keys())
+            pg_ok, pg_reason = check_params(function_name, function_args, p_rules, allowed_keys=allowed_keys)
             if not pg_ok:
                 _emit("param_guard", "block", {"tool": function_name, "reason": pg_reason})
                 security.logger.log_event(

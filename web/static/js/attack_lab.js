@@ -37,7 +37,9 @@
     "office_direct_override": "Prompt injection to exfiltrate via email",
     "office_poisoned_file": "Hidden instruction override inside document",
     "office_guest_email": "Guest attempts unauthorized email dispatch",
-    "office_honeypot_export": "Honeypot trap catches customer data export"
+    "office_honeypot_export": "Honeypot trap catches customer data export",
+    "office_path_traversal": "Path traversal to escape sandbox directory",
+    "office_sql_injection": "Destructive SQL injection command"
   };
 
   var STAGE_FRIENDLY_NAMES = {
@@ -168,6 +170,30 @@
       t3_unprot: "Massive corporate data breach confirmed.",
       t3_prot: "Deception successful: Attacker trapped, zero data leaked.",
       res_unprot: "Attack succeeded: customer data was exported.",
+      res_prot: "Attack stopped safely by Aegis."
+    },
+    "office_path_traversal": {
+      t0_unprot: "Attacker targets host filesystem via relative directory traversal.",
+      t0_prot: "Attacker submits traversal path '../etc/passwd' to read_file.",
+      t1_unprot: "Unprotected file tool traverses outside sandbox directory.",
+      t1_prot: "Aegis Parameter Guard inspects path argument for traversal patterns.",
+      t2_unprot: "Host filesystem accessed without path restriction.",
+      t2_prot: "Parameter Guard trips: '..' traversal detected, execution halted!",
+      t3_unprot: "Sensitive host password file read and exfiltrated!",
+      t3_prot: "Filesystem safe: Traversal blocked before disk access.",
+      res_unprot: "Attack succeeded: sensitive host file was read.",
+      res_prot: "Attack stopped safely by Aegis."
+    },
+    "office_sql_injection": {
+      t0_unprot: "Attacker injects destructive SQL statement into query parameter.",
+      t0_prot: "Attacker submits 'DROP TABLE users;' query to run_sql.",
+      t1_unprot: "Unprotected database executor blindly runs destructive DDL.",
+      t1_prot: "Aegis Parameter Guard inspects query grammar for forbidden SQL keywords.",
+      t2_unprot: "Users table dropped from database! All corporate records lost!",
+      t2_prot: "Parameter Guard trips: Forbidden 'DROP' statement blocked before approval!",
+      t3_unprot: "Database destroyed! Total data loss confirmed.",
+      t3_prot: "Database intact: Destructive statement blocked before execution.",
+      res_unprot: "Attack succeeded: database table was dropped.",
       res_prot: "Attack stopped safely by Aegis."
     }
   };

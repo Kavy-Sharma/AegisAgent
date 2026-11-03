@@ -127,11 +127,14 @@ The same pipeline code (detection, intent lock, RBAC, rate limit, human approval
 
 ### Parameter Guard
 A dedicated declarative parameter validation stage (`param_guard`) executes after RBAC and Intent Lock, and strictly before Rate Limiting and Operator Approval:
-- **`path_safe`** (`read_file`): Rejects directory traversal (`..`), leading slashes (`/`, `\`), drive letters (`C:`), backslashes, null bytes, and paths exceeding 120 characters.
-- **`url_allowlist`** (`http_get`): Enforces `https` scheme, standard port 443, non-IP hosts, no embedded credentials, and strict domain/subdomain allowlist (`status.internal`, `docs.company.com`).
-- **`sql_readonly`** (`run_sql`): Keyword guard (not a SQL parser) enforcing single `SELECT` statements, blocking SQL comments (`--`, `/*`), semicolons followed by text, and destructive SQL keywords (`drop`, `delete`, `update`, `insert`, `alter`, `create`, `truncate`, `attach`, `pragma`, `replace`, `grant`).
+- **`path_safe`** (`read_file`): Rejects directory traversal (`..`), leading slashes (`/`, `\`), drive letters (`C:`), backslashes, null bytes, non-ASCII/control characters, percent signs (`%`), and paths exceeding 120 characters.
+- **`url_allowlist`** (`http_get`): Enforces `https` scheme, standard port 443, non-IP hosts, no embedded credentials, no backslashes/whitespace/control characters, and strict domain/subdomain allowlist (`status.internal`, `docs.company.com`).
+- **`sql_readonly`** (`run_sql`): Keyword guard (not a SQL parser) enforcing single `SELECT` statements, blocking SQL comments (`--`, `/*`), semicolons followed by text, and destructive or unauthorized SQL keywords (`drop`, `delete`, `update`, `insert`, `alter`, `create`, `truncate`, `attach`, `pragma`, `replace`, `grant`, `into`, `union`, `load_extension`, `exec`, `call`, `merge`).
 - **Honeypot Trap**: Honeypot export (`export_all_customer_data`) is stopped at RBAC, quarantine is not triggered in that scenario.
-- **Remaining Limits**: Parameter guard is a declarative keyword and allowlist check, not a full SQL AST parser or general URL sanitizer. It does not perform dynamic DNS resolution (no socket lookups) and HTTP redirects are not followed because requests target simulated in-memory storage.
+- **Remaining Limits & Scope**:
+  - Parameter guard is a declarative keyword and allowlist check, not a full SQL AST parser or general URL sanitizer.
+  - SQL guard enforces read-only keywords, but does not control SELECT queries against unauthorized tables, nor does it enforce row- or column-level permissions.
+  - URL allowlist performs string host pattern matching only; it does not perform dynamic DNS resolution, IP pinning, or redirect tracking (requests target simulated in-memory storage).
 
 ### Environment Switching
 Switching between `smart_home` and `office` environments requires an application restart (selected at startup via `--env` or `AEGIS_ENV`). Dynamic mid-session environment hot-swapping is not permitted so policy invariants remain deterministic.
@@ -249,7 +252,7 @@ python -m agent.agent --role admin
 
 ## 🛠️ Testing & Harness Scripts
 
-### 1. Run Complete Automated Test Suite (333 tests)
+### 1. Run Complete Automated Test Suite (336 tests)
 ```bash
 pytest -v
 ```

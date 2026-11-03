@@ -614,7 +614,7 @@ def test_office_attack_run_payloads_include_stopped_layer_and_unprotected_outcom
             prot = al.run_protected(sc)
             assert "stopped_layer" in prot, f"stopped_layer missing in {sc_id}"
             assert prot["stopped_layer"] == prot["stopped_at"], f"stopped_layer mismatch in {sc_id}"
-            assert prot["stopped_layer"] in ("detection", "intent", "rbac", "rate_limit", "approval", "hardware", "output_scan")
+            assert prot["stopped_layer"] in ("detection", "intent", "rbac", "param_guard", "rate_limit", "approval", "hardware", "output_scan")
             assert prot["stopped_layer"] == sc["expected_protected_stage"], (
                 f"expected {sc['expected_protected_stage']} but got {prot['stopped_layer']} in {sc_id}"
             )

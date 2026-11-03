@@ -30,7 +30,7 @@ import security.registry
 # =========================================================================
 
 def test_path_safe_reject_cases():
-    """Verifies that path_safe rejects traversal, absolute paths, drive letters, backslashes, nulls, long strings."""
+    """Verifies that path_safe rejects traversal, absolute paths, drive letters, backslashes, nulls, long strings, % and non-ASCII."""
     rejects = [
         "../etc/passwd",
         "/etc/passwd",
@@ -42,6 +42,9 @@ def test_path_safe_reject_cases():
         "a\\b\\c.txt",
         "a" * 121,
         "..",
+        "%2e%2e/x",  # percent-encoded traversal
+        "\uff0e\uff0e/x",  # full-width unicode dots
+        "file\x01.txt",  # control character
         12345,  # non-string
     ]
     for r in rejects:
@@ -69,7 +72,7 @@ def test_path_safe_accept_cases():
 # =========================================================================
 
 def test_url_allowlist_reject_cases():
-    """Verifies url_allowlist rejects insecure schemes, IP literals, unallowed hosts, credentials, ports."""
+    """Verifies url_allowlist rejects insecure schemes, IP literals, unallowed hosts, credentials, ports, backslashes, whitespace, non-ASCII."""
     opts = {"allowed_hosts": ["status.internal", "docs.company.com"]}
     rejects = [
         "http://status.internal",  # insecure scheme
@@ -83,6 +86,11 @@ def test_url_allowlist_reject_cases():
         "https://status.internal:8080/",  # non-443 port
         "https://status.internal:80/",  # non-443 port
         "ftp://status.internal/file",  # non-https scheme
+        "https://evil.com\\@status.internal/",  # backslash in URL
+        "https://statu\u0455.internal/",  # Cyrillic 'ѕ' homograph
+        "https://status.internal/\tpath",  # tab whitespace
+        "https://status.internal/\npath",  # newline
+        "https://status.internal/ path",  # space
         12345,  # non-string
     ]
     for r in rejects:
@@ -92,12 +100,13 @@ def test_url_allowlist_reject_cases():
 
 
 def test_url_allowlist_accept_cases():
-    """Verifies url_allowlist accepts valid HTTPS URLs matching allowed hosts/subdomains."""
+    """Verifies url_allowlist accepts valid HTTPS URLs matching allowed hosts/subdomains and strips trailing dots."""
     opts = {"allowed_hosts": ["status.internal", "docs.company.com"]}
     accepts = [
         "https://status.internal/",
         "https://status.internal/health",
         "https://status.internal:443/health",
+        "https://status.internal./x",  # trailing dot on host normalized
         "https://docs.company.com/handbook",
         "https://api.docs.company.com/v1/news",
     ]
@@ -112,7 +121,7 @@ def test_url_allowlist_accept_cases():
 # =========================================================================
 
 def test_sql_readonly_reject_cases():
-    """Verifies sql_readonly rejects non-SELECT, multi-statement, comments, destructive keywords, long queries."""
+    """Verifies sql_readonly rejects non-SELECT, multi-statement, comments, destructive keywords, long queries, into/union/load_extension."""
     rejects = [
         "SELECT 1; DROP TABLE users",  # semicolon multi-statement + DROP
         "select * from users -- x",  # line comment
@@ -126,6 +135,12 @@ def test_sql_readonly_reject_cases():
         "ATTACH DATABASE 'x' AS db",  # ATTACH
         "PRAGMA integrity_check",  # PRAGMA
         "GRANT ALL PRIVILEGES ON *.* TO 'root'@'%'",  # GRANT
+        "SELECT * FROM a UNION SELECT * FROM b",  # UNION
+        "SELECT load_extension('x')",  # load_extension
+        "SELECT * INTO new_table FROM users",  # INTO
+        "EXEC sp_executesql N'SELECT 1'",  # EXEC
+        "CALL stored_procedure()",  # CALL
+        "MERGE INTO target USING src ON (id) ...",  # MERGE
         "SELECT * FROM users; SELECT 2",  # multiple statements
         "SELECT " + ("a" * 501),  # length > 500
         12345,  # non-string
@@ -152,7 +167,32 @@ def test_sql_readonly_accept_cases():
 
 
 # =========================================================================
-# 4. UNKNOWN RULE TYPE TEST
+# 4. STRICT ARGUMENTS TESTS (Missing & Unexpected Arguments)
+# =========================================================================
+
+def test_strict_arguments_missing_guarded_parameter():
+    """Verifies that a missing guarded argument is rejected."""
+    param_rules = {"path": {"type": "path_safe"}}
+    ok, reason = check_params("read_file", {}, param_rules, allowed_keys={"path"})
+    assert not ok
+    assert "required argument 'path' missing" in reason
+
+
+def test_strict_arguments_unexpected_extra_argument():
+    """Verifies that an unexpected argument key not declared in schema properties is rejected."""
+    param_rules = {"path": {"type": "path_safe"}}
+    ok, reason = check_params(
+        "read_file",
+        {"path": "memo.txt", "extra_param": "malicious"},
+        param_rules,
+        allowed_keys={"path"},
+    )
+    assert not ok
+    assert "unexpected argument 'extra_param'" in reason
+
+
+# =========================================================================
+# 5. UNKNOWN RULE TYPE TEST
 # =========================================================================
 
 def test_unknown_rule_type_raises_error():
@@ -165,7 +205,7 @@ def test_unknown_rule_type_raises_error():
 
 
 # =========================================================================
-# 5. PIPELINE TESTS: Office Environment via run_turn
+# 6. PIPELINE TESTS: Office Environment via run_turn
 # =========================================================================
 
 @pytest.fixture(autouse=True)
@@ -329,4 +369,3 @@ def test_smart_home_tools_pass_param_guard_silently():
     ok, reason = check_params("turn_light_on", {}, rules)
     assert ok is True
     assert reason == ""
-
