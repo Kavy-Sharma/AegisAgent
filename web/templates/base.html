@@ -154,11 +154,11 @@
 
         <div class="health-item">
 
-          <span class="pulse-dot {% if hardware_mode == 'virtual' %}live{% else %}offline{% endif %}" id="health-dot-device"></span>
+          <span class="pulse-dot {% if active_env == 'office' or hardware_mode == 'virtual' %}live{% else %}offline{% endif %}" id="health-dot-device"></span>
 
-          <span class="health-name" id="health-name-device">{% if hardware_mode == 'virtual' %}Virtual Home{% else %}ESP32{% endif %}</span>
+          <span class="health-name" id="health-name-device">{% if active_env == 'office' %}Office Sandbox{% elif hardware_mode == 'virtual' %}Virtual Home{% else %}ESP32{% endif %}</span>
 
-          <span class="health-val font-mono" id="health-label-device">{% if hardware_mode == 'virtual' %}Simulated{% else %}Polling...{% endif %}</span>
+          <span class="health-val font-mono" id="health-label-device">{% if active_env == 'office' or hardware_mode == 'virtual' %}Simulated{% else %}Polling...{% endif %}</span>
 
         </div>
 

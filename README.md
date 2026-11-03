@@ -107,9 +107,38 @@ AegisAgent is a security gateway positioned between a local LLM agent (**Ollama*
 
 ---
 
+## 🏢 Environments
+
+AegisAgent supports two distinct runtime environments:
+
+1. **`smart_home` (Default)**:
+   - Configured via root `policy.yaml`.
+   - Tool suite: `turn_light_on`, `turn_light_off`, `read_temperature`, `activate_alarm`, `unlock_door`, `read_note`, and `disable_security_perimeter` (honeypot).
+   - Backed by USB/MQTT ESP32 hardware or the built-in `VirtualBridge` simulator.
+
+2. **`office` (Office Assistant)**:
+   - Launched using `python start.py --env office` (or setting environment variable `AEGIS_ENV=office`).
+   - Configured via `policies/office.yaml`.
+   - Tool suite: `read_file`, `send_email`, `http_get`, `run_sql`, and `export_all_customer_data` (honeypot).
+   - In-memory simulated storage via `OfficeSandbox`: no real outbound emails are sent, no real filesystem files or external websites are touched, and no real database connections are established.
+
+### Identical Security Pipeline
+The defensive guard code is 100% identical between both environments. Prompt injection detection (raw, normalized, base64), multi-turn context tracking, intent lock scope verification, role-based access control (RBAC), sliding-window rate limiting, human supervisor approval gating, untrusted tool output scanning, and SHA-256 hash-chained audit logging operate through the exact same modules with zero code changes.
+
+### Known Parameter-Guard Gaps
+Honest disclosure of current parameter-level limitations:
+- **SQL Sanitization**: `run_sql` does not yet parse or block destructive DDL/DML statements like `DROP TABLE` (the tool executes queries against in-memory mock lists only).
+- **Filesystem Path Traversal**: `read_file` operates directly on in-memory dictionary keys and does not yet validate absolute path traversal (`../`).
+- **Network URL Allowlisting**: `http_get` retrieves simulated web content from an internal cache and does not yet enforce an egress domain allowlist.
+
+### Environment Switching
+Switching between `smart_home` and `office` environments requires an application restart (selected at startup via `--env` or `AEGIS_ENV`). Dynamic mid-session environment hot-swapping is not permitted so policy invariants remain deterministic.
+
+---
+
 ## ⚙️ Tools & Security Matrix
 
-### Policy Tools (`policy.yaml`)
+### Smart Home Tools (`policy.yaml`)
 | Tool Name | Risk Level | Description | Allowed Roles | ESP32 Firmware Command |
 | :--- | :--- | :--- | :--- | :--- |
 | `turn_light_on` | LOW | Turns LED light on | guest, admin | `light_on` |
@@ -119,6 +148,15 @@ AegisAgent is a security gateway positioned between a local LLM agent (**Ollama*
 | `unlock_door` | HIGH | Unlocks door lock (Requires Approval, 3s auto-relock) | admin | `unlock_door` |
 | `read_note` | LOW | Reads user notes (untrusted content scanner) | guest, admin | *(local disk)* |
 | `disable_security_perimeter` | HONEYPOT | Trap tool to catch injection attempts | (none — auto-quarantines) | *(none)* |
+
+### Office Assistant Tools (`policies/office.yaml`)
+| Tool Name | Risk Level | Description | Allowed Roles | Backing Implementation |
+| :--- | :--- | :--- | :--- | :--- |
+| `read_file` | LOW | Reads document text | guest, admin | `OfficeSandbox.files` (in-memory) |
+| `send_email` | HIGH | Sends outbound email (Requires Approval) | admin | `OfficeSandbox.outbox` (in-memory) |
+| `http_get` | LOW | Fetches internal web page | guest, admin | `OfficeSandbox.web_pages` (in-memory) |
+| `run_sql` | LOW | Queries internal database | guest, admin | `OfficeSandbox.database` (in-memory) |
+| `export_all_customer_data` | HONEYPOT | Administrative honeypot utility | (none — trap block) | *(blocked by RBAC gate)* |
 
 ### ESP32 Firmware Allowed Commands (`esp32/aegis_device/aegis_device.ino`)
 - `light_on` — Turns Green LED on (`digitalWrite(GREEN_LED, HIGH)`)
@@ -209,7 +247,7 @@ python -m agent.agent --role admin
 
 ## 🛠️ Testing & Harness Scripts
 
-### 1. Run Complete Automated Test Suite (299 tests)
+### 1. Run Complete Automated Test Suite (321 tests)
 ```bash
 pytest -v
 ```
@@ -337,6 +375,7 @@ AegisAgent/
 │   ├── test_benchmark.py      # Benchmark Verification Suite
 │   ├── test_detection.py      # Pytest Prompt Injection Suite
 │   ├── test_hardware.py       # Pytest Hardware & Alert Suite
+│   ├── test_office_environment.py # Office Environment & Tools Suite
 │   ├── test_phase8b_clean.py  # Ported Auth Lockout, Signing & IST Suite
 │   ├── test_pipeline_benchmark.py # Pipeline Benchmark Integrity Suite
 │   └── test_virtual_home.py   # Virtual Home Simulation Suite

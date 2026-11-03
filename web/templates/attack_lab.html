@@ -11,7 +11,11 @@
       <svg class="icon"><use href="/static/icons.svg#icon-info"></use></svg>
     </div>
     <div class="simulation-banner-text">
+      {% if active_env == 'office' %}
+      Simulation only. Nothing here touches real email, files or databases.
+      {% else %}
       Simulation only. Nothing here touches real hardware.
+      {% endif %}
     </div>
   </div>
 
@@ -107,7 +111,7 @@
           <span class="attack-pill pill-admin">Honeypot Trap</span>
         </div>
         <h3 class="attack-card-title">Honeypot trap catches customer data export</h3>
-        <p class="attack-card-desc">Attacker commands export of all customer records. Active honeypot triggers immediate quarantine and trap block.</p>
+        <p class="attack-card-desc">Attacker commands export of all customer records. Active honeypot trap trips at the RBAC gate, blocking execution immediately.</p>
         <div class="attack-card-footer">
           <button type="button" class="btn btn-primary btn-sm btn-card-run" data-run-scenario="office_honeypot_export">
             <svg class="icon"><use href="/static/icons.svg#icon-play"></use></svg>

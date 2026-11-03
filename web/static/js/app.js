@@ -304,7 +304,11 @@ var app = (function () {
 
 
 
-        if (health.hardware_mode === "virtual" || (health.device && health.device.transport === "virtual")) {
+        if (health.environment === "office") {
+          setText("health-name-device", "Office Sandbox");
+          updateDot("health-dot-device", "live");
+          setText("health-label-device", "Simulated");
+        } else if (health.hardware_mode === "virtual" || (health.device && health.device.transport === "virtual")) {
           setText("health-name-device", "Virtual Home");
           updateDot("health-dot-device", "live");
           setText("health-label-device", "Simulated");

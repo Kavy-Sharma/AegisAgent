@@ -411,6 +411,31 @@ def test_turn_summary_audit_event_and_overview_counts(client, monkeypatch):
     assert tail[-1]["request_id"] == req_id_2
 
 
+def test_last_request_role_unknown_when_no_role_in_audit_entry(client):
+    """(Prompt 54 B) When audit entry has no role, last_request role must be 'unknown'."""
+    with client.session_transaction() as sess:
+        sess["username"] = "guest_user"
+        sess["role"] = "guest"
+        sess["real_role"] = "guest"
+        sess["last_activity"] = time.time()
+
+    req_id = f"req_norole_{secrets.token_hex(4)}"
+    security.logger.log_turn_summary(
+        request_id=req_id,
+        session_id=f"sess_norole_{secrets.token_hex(4)}",
+        decision="ALLOW",
+        tool="chat",
+        rule_ids=[],
+        latency_ms=50.0,
+        role=None,
+    )
+    res = client.get("/api/overview")
+    assert res.status_code == 200
+    data = res.get_json()
+    assert data["last_request"]["id"] == req_id
+    assert data["last_request"]["role"] == "unknown"
+
+
 # =========================================================================
 # Item 11 [T]: Edge cases, RBAC, password, corrupt log, MQTT
 # =========================================================================

@@ -412,6 +412,9 @@ def api_health():
 
     health["hardware_mode"] = _derive_hardware_mode(health.get("device", {}))
 
+    import agent.agent
+    health["environment"] = getattr(agent.agent, "_ACTIVE_ENV", "smart_home")
+
     return jsonify(health)
 
 
@@ -869,7 +872,7 @@ def api_overview():
             or last_req_event.get("user")
             or role_by_request.get(last_req_event.get("request_id"))
             or role_by_session.get(last_req_event.get("session_id"))
-            or "admin"
+            or "unknown"
         )
         last_req = {
             "id": last_req_event.get("request_id"),

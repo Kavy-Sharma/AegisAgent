@@ -162,7 +162,7 @@
       t1_unprot: "Unprotected system dumps database table to attacker.",
       t1_prot: "Aegis active deception layer identifies honeypot tool trigger.",
       t2_unprot: "Customer database leaked into unauthorized hands!",
-      t2_prot: "Honeypot trap sprung: Instant security quarantine activated!",
+      t2_prot: "Honeypot trap sprung: Instant gateway block activated at the RBAC layer!",
       t3_unprot: "Massive corporate data breach confirmed.",
       t3_prot: "Deception successful: Attacker trapped, zero data leaked.",
       res_unprot: "Attack succeeded: customer data was exported.",
