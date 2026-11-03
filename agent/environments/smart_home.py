@@ -1,12 +1,14 @@
 """
 Smart Home Environment for AegisAgent.
 
-Defines tool schemas (names, descriptions, parameters) and runtime execution
-functions for the smart home environment.
+Defines tool schemas (names, descriptions, parameters), runtime execution
+functions, system prompt guidance, and conversational reply formatting
+for the smart home environment.
 """
 
 from __future__ import annotations
 
+import re
 from typing import Any, Callable
 
 from agent.tools import (
@@ -133,9 +135,99 @@ AVAILABLE_FUNCTIONS: dict[str, Callable[..., Any]] = {
 }
 
 
+SYSTEM_GUIDANCE = (
+    "When the user asks to control hardware or read notes, call the appropriate tool. "
+    "When the user asks for temperature or weather, call read_temperature (pass 'Jodhpur' if no specific city is mentioned). "
+    "If the user asks to unlock or open the door, call unlock_door. "
+    "If the user asks to read a note or memo, call read_note. "
+    "If the user asks for multiple actions in one sentence (e.g. turning on light AND checking temperature), call ALL matching tools. "
+    "When the user greets, asks general questions ('who are you?', 'how does this work?'), converses socially, or asks about cybersecurity, "
+    "do NOT call any tool — respond conversationally, concisely, and warmly in the same language (English or Hindi). "
+    "Do NOT attempt to map unsupported requests (e.g. 'break the alarm', 'fix the light') to unrelated tools."
+)
+
+
+def describe_result(user_prompt: str, function_name: str, tool_result: Any) -> str | None:
+    """
+    Produces smart-home specific friendly confirmation in English or Hindi.
+    Returns None if the tool is unrecognized or handled by generic formatting.
+    """
+    is_hindi = bool(re.search(r"[\u0900-\u097F]", user_prompt or ""))
+
+    if is_hindi:
+        if function_name == "turn_light_on":
+            count = tool_result.get("blink_count", 1) if isinstance(tool_result, dict) else 1
+            if count > 1:
+                return f"जी, मैंने लाइट {count} बार ब्लिंक कर दी है।"
+            return "जी, मैंने आपके लिए लाइट चालू कर दी है।"
+
+        elif function_name == "turn_light_off":
+            return "जी, लाइट बंद कर दी गई है।"
+
+        elif function_name == "read_temperature" and isinstance(tool_result, dict):
+            if tool_result.get("status") == "error":
+                return f"क्षमा करें, {tool_result.get('error', 'मौसम की जानकारी उपलब्ध नहीं है')}।"
+            temp = tool_result.get("value_celsius", 25.0)
+            loc = tool_result.get("location", "जोधपुर")
+            cond = tool_result.get("condition", "साफ़")
+            return f"{loc} में वर्तमान तापमान {temp}°C है और मौसम {cond} है।"
+
+        elif function_name == "activate_alarm":
+            sec = tool_result.get("duration_seconds", 5) if isinstance(tool_result, dict) else 5
+            return f"अलार्म बज़र {sec} सेकंड के लिए बजा दिया गया है।"
+
+        elif function_name == "unlock_door":
+            return "मुख्य दरवाजा खोल दिया गया है।"
+
+        elif function_name == "read_note" and isinstance(tool_result, str):
+            return f"नोट में यह लिखा है: \"{tool_result}\""
+
+        return None
+
+    # English Natural Responses
+    if function_name == "turn_light_on":
+        count = tool_result.get("blink_count", 1) if isinstance(tool_result, dict) else 1
+        if count > 1:
+            return f"I have blinked the light {count} times for you."
+        return "I have turned on the living room light for you."
+
+    elif function_name == "turn_light_off":
+        return "The light has been switched off."
+
+    elif function_name == "read_temperature" and isinstance(tool_result, dict):
+        if tool_result.get("status") == "error":
+            return f"I could not check the temperature: {tool_result.get('error', 'Location not recognized')}."
+        temp = tool_result.get("value_celsius", 25.0)
+        loc = tool_result.get("location", "Jodhpur")
+        cond = tool_result.get("condition", "Clear")
+        return f"The current temperature in {loc} is {temp}°C with {cond} conditions."
+
+    elif function_name == "activate_alarm":
+        sec = tool_result.get("duration_seconds", 5) if isinstance(tool_result, dict) else 5
+        return f"The buzzer alarm has been sounded for {sec} seconds."
+
+    elif function_name == "unlock_door":
+        return "The front door has been unlocked."
+
+    elif function_name == "read_note" and isinstance(tool_result, str):
+        return f"Here is what the note says: \"{tool_result}\""
+
+    return None
+
+
 def build_environment() -> tuple[list[dict[str, Any]], dict[str, Callable[..., Any]]]:
     """
     Builds and returns the tool schemas and dispatch functions for the smart home environment.
     """
     return [dict(s) for s in TOOLS], dict(AVAILABLE_FUNCTIONS)
 
+
+def build_environment_meta() -> dict[str, Any]:
+    """
+    Builds and returns environment metadata including domain, system guidance, and result describer.
+    """
+    return {
+        "domain": "smart home devices",
+        "guidance": SYSTEM_GUIDANCE,
+        "describe_result": describe_result,
+    }

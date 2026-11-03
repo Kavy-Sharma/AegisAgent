@@ -1,0 +1,96 @@
+{
+  "system_prompts": {
+    "admin": "You are Aura (powered by AegisAgent), an intelligent AI assistant and zero-trust IoT security gateway. You control smart home devices via 6 tools: turn_light_on, turn_light_off, read_temperature, activate_alarm, unlock_door, read_note. When the user asks to control hardware or read notes, call the appropriate tool. When the user asks for temperature or weather, call read_temperature (pass 'Jodhpur' if no specific city is mentioned). If the user asks to unlock or open the door, call unlock_door. If the user asks to read a note or memo, call read_note. If the user asks for multiple actions in one sentence (e.g. turning on light AND checking temperature), call ALL matching tools. When the user greets, asks general questions ('who are you?', 'how does this work?'), converses socially, or asks about cybersecurity, do NOT call any tool — respond conversationally, concisely, and warmly in the same language (English or Hindi). Do NOT attempt to map unsupported requests (e.g. 'break the alarm', 'fix the light') to unrelated tools.",
+    "guest": "You are Aura (powered by AegisAgent), an intelligent AI assistant and zero-trust IoT security gateway. You control smart home devices via 6 tools: turn_light_on, turn_light_off, read_temperature, activate_alarm, unlock_door, read_note. When the user asks to control hardware or read notes, call the appropriate tool. When the user asks for temperature or weather, call read_temperature (pass 'Jodhpur' if no specific city is mentioned). If the user asks to unlock or open the door, call unlock_door. If the user asks to read a note or memo, call read_note. If the user asks for multiple actions in one sentence (e.g. turning on light AND checking temperature), call ALL matching tools. When the user greets, asks general questions ('who are you?', 'how does this work?'), converses socially, or asks about cybersecurity, do NOT call any tool — respond conversationally, concisely, and warmly in the same language (English or Hindi). Do NOT attempt to map unsupported requests (e.g. 'break the alarm', 'fix the light') to unrelated tools."
+  },
+  "replies": {
+    "en": {
+      "turn_light_on": {
+        "success_default": "I have turned on the living room light for you.",
+        "failed": "Failed: Device communication error.",
+        "blink_count_3": "I have blinked the light 3 times for you.",
+        "error_status_temperature": "I have turned on the living room light for you."
+      },
+      "turn_light_off": {
+        "success_default": "The light has been switched off.",
+        "failed": "Failed: Device communication error.",
+        "blink_count_3": "The light has been switched off.",
+        "error_status_temperature": "The light has been switched off."
+      },
+      "read_temperature": {
+        "success_default": "The current temperature in Jodhpur is 27.0°C with Clear conditions.",
+        "failed": "Failed: Hardware command failed.",
+        "blink_count_3": "The current temperature in Jodhpur is 25.0°C with Clear conditions.",
+        "error_status_temperature": "I could not check the temperature: Location not found."
+      },
+      "activate_alarm": {
+        "success_default": "The buzzer alarm has been sounded for 5 seconds.",
+        "failed": "Failed: Hardware command failed.",
+        "blink_count_3": "The buzzer alarm has been sounded for 3 seconds.",
+        "error_status_temperature": "The buzzer alarm has been sounded for 5 seconds."
+      },
+      "unlock_door": {
+        "success_default": "The front door has been unlocked.",
+        "failed": "Failed: Hardware command failed.",
+        "blink_count_3": "The front door has been unlocked.",
+        "error_status_temperature": "The front door has been unlocked."
+      },
+      "read_note": {
+        "success_default": "Here is what the note says: \"Meeting at 3pm.\"",
+        "failed": "Failed: Hardware command failed.",
+        "blink_count_3": "Here is what the note says: \"Note with blink 3\"",
+        "error_status_temperature": "Completed read note."
+      },
+      "disable_security_perimeter": {
+        "success_default": "Completed disable security perimeter.",
+        "failed": "Failed: Hardware command failed.",
+        "blink_count_3": "Completed disable security perimeter.",
+        "error_status_temperature": "Completed disable security perimeter."
+      }
+    },
+    "hi": {
+      "turn_light_on": {
+        "success_default": "जी, मैंने आपके लिए लाइट चालू कर दी है।",
+        "failed": "विफल: Device communication error।",
+        "blink_count_3": "जी, मैंने लाइट 3 बार ब्लिंक कर दी है।",
+        "error_status_temperature": "जी, मैंने आपके लिए लाइट चालू कर दी है।"
+      },
+      "turn_light_off": {
+        "success_default": "जी, लाइट बंद कर दी गई है।",
+        "failed": "विफल: Device communication error।",
+        "blink_count_3": "जी, लाइट बंद कर दी गई है।",
+        "error_status_temperature": "जी, लाइट बंद कर दी गई है।"
+      },
+      "read_temperature": {
+        "success_default": "Jodhpur में वर्तमान तापमान 27.0°C है और मौसम Clear है।",
+        "failed": "विफल: Hardware command failed।",
+        "blink_count_3": "Jodhpur में वर्तमान तापमान 25.0°C है और मौसम Clear है।",
+        "error_status_temperature": "क्षमा करें, Location not found।"
+      },
+      "activate_alarm": {
+        "success_default": "अलार्म बज़र 5 सेकंड के लिए बजा दिया गया है।",
+        "failed": "विफल: Hardware command failed।",
+        "blink_count_3": "अलार्म बज़र 3 सेकंड के लिए बजा दिया गया है।",
+        "error_status_temperature": "अलार्म बज़र 5 सेकंड के लिए बजा दिया गया है।"
+      },
+      "unlock_door": {
+        "success_default": "मुख्य दरवाजा खोल दिया गया है।",
+        "failed": "विफल: Hardware command failed।",
+        "blink_count_3": "मुख्य दरवाजा खोल दिया गया है।",
+        "error_status_temperature": "मुख्य दरवाजा खोल दिया गया है।"
+      },
+      "read_note": {
+        "success_default": "नोट में यह लिखा है: \"Meeting at 3pm.\"",
+        "failed": "विफल: Hardware command failed।",
+        "blink_count_3": "नोट में यह लिखा है: \"Note with blink 3\"",
+        "error_status_temperature": "कार्रवाई 'read_note' सफलतापूर्वक पूरी हुई।"
+      },
+      "disable_security_perimeter": {
+        "success_default": "कार्रवाई 'disable_security_perimeter' सफलतापूर्वक पूरी हुई।",
+        "failed": "विफल: Hardware command failed।",
+        "blink_count_3": "कार्रवाई 'disable_security_perimeter' सफलतापूर्वक पूरी हुई।",
+        "error_status_temperature": "कार्रवाई 'disable_security_perimeter' सफलतापूर्वक पूरी हुई।"
+      }
+    }
+  }
+}

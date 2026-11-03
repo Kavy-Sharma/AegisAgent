@@ -52,7 +52,7 @@ import security.quarantine
 
 import security.rate_limiter
 
-from agent.environments.smart_home import build_environment
+from agent.environments.smart_home import build_environment, build_environment_meta
 import security.registry
 
 
@@ -126,7 +126,7 @@ def validate_environment_against_registry(tools: list[dict[str, Any]], functions
 
 TOOLS, AVAILABLE_FUNCTIONS = build_environment()
 validate_environment_against_registry(TOOLS, AVAILABLE_FUNCTIONS)
-_agent_read_temperature = AVAILABLE_FUNCTIONS.get("read_temperature")
+ENVIRONMENT_META = build_environment_meta()
 
 TOOL_SCHEMAS = {
 
@@ -155,7 +155,45 @@ def sanitize_spoken_text(text: str) -> str:
     return clean or text
 
 
-def synthesize_conversational_reply(user_prompt: str, function_name: str, tool_result: Any) -> str:
+def build_system_prompt(
+    role: str = "guest",
+    tools: list[dict[str, Any]] | None = None,
+    env_meta: dict[str, Any] | None = None,
+) -> str:
+    """Builds the system prompt dynamically from generic identity, available tools, and environment guidance."""
+    meta = env_meta if env_meta is not None else ENVIRONMENT_META
+    actual_tools = tools if tools is not None else TOOLS
+    prompt_tools = [
+        t["function"]["name"]
+        for t in actual_tools
+        if security.registry.risk(t["function"]["name"]) != "HONEYPOT"
+    ]
+    domain = meta.get("domain") or "tools"
+    if prompt_tools:
+        tools_str = ", ".join(prompt_tools)
+        tools_intro = f"You control {domain} via {len(prompt_tools)} tools: {tools_str}."
+    else:
+        tools_intro = f"You control {domain} via no tools."
+
+    intro = "You are Aura (powered by AegisAgent), an intelligent AI assistant and zero-trust IoT security gateway."
+    guidance = meta.get("guidance", "")
+
+    parts = [intro, tools_intro]
+    if guidance:
+        parts.append(guidance)
+    else:
+        parts.append("When the user asks to perform an action, call the appropriate tool.")
+        parts.append("When the user greets or converses socially, do NOT call any tool — respond conversationally.")
+
+    return " ".join(parts)
+
+
+def synthesize_conversational_reply(
+    user_prompt: str,
+    function_name: str,
+    tool_result: Any,
+    env_meta: dict[str, Any] | None = None,
+) -> str:
     """Produces an instant, friendly, natural response confirming the action in English or Hindi with zero latency."""
     is_hindi = bool(re.search(r"[\u0900-\u097F]", user_prompt or ""))
 
@@ -165,67 +203,16 @@ def synthesize_conversational_reply(user_prompt: str, function_name: str, tool_r
             return f"विफल: {err}।"
         return f"Failed: {err}."
 
+    meta = env_meta if env_meta is not None else ENVIRONMENT_META
+    describer = meta.get("describe_result")
+    if describer is not None:
+        res = describer(user_prompt, function_name, tool_result)
+        if res is not None:
+            return res
+
     if is_hindi:
-        if function_name == "turn_light_on":
-            count = tool_result.get("blink_count", 1) if isinstance(tool_result, dict) else 1
-            if count > 1:
-                return f"जी, मैंने लाइट {count} बार ब्लिंक कर दी है।"
-            return "जी, मैंने आपके लिए लाइट चालू कर दी है।"
-
-        elif function_name == "turn_light_off":
-            return "जी, लाइट बंद कर दी गई है।"
-
-        elif function_name == "read_temperature" and isinstance(tool_result, dict):
-            if tool_result.get("status") == "error":
-                return f"क्षमा करें, {tool_result.get('error', 'मौसम की जानकारी उपलब्ध नहीं है')}।"
-            temp = tool_result.get("value_celsius", 25.0)
-            loc = tool_result.get("location", "जोधपुर")
-            cond = tool_result.get("condition", "साफ़")
-            return f"{loc} में वर्तमान तापमान {temp}°C है और मौसम {cond} है।"
-
-        elif function_name == "activate_alarm":
-            sec = tool_result.get("duration_seconds", 5) if isinstance(tool_result, dict) else 5
-            return f"अलार्म बज़र {sec} सेकंड के लिए बजा दिया गया है।"
-
-        elif function_name == "unlock_door":
-            return "मुख्य दरवाजा खोल दिया गया है।"
-
-        elif function_name == "read_note" and isinstance(tool_result, str):
-            return f"नोट में यह लिखा है: \"{tool_result}\""
-
         return f"कार्रवाई '{function_name}' सफलतापूर्वक पूरी हुई।"
-
-    # English Natural Responses (Instant 0ms latency)
-    if function_name == "turn_light_on":
-        count = tool_result.get("blink_count", 1) if isinstance(tool_result, dict) else 1
-        if count > 1:
-            return f"I have blinked the light {count} times for you."
-        return "I have turned on the living room light for you."
-
-    elif function_name == "turn_light_off":
-        return "The light has been switched off."
-
-    elif function_name == "read_temperature" and isinstance(tool_result, dict):
-        if tool_result.get("status") == "error":
-            return f"I could not check the temperature: {tool_result.get('error', 'Location not recognized')}."
-        temp = tool_result.get("value_celsius", 25.0)
-        loc = tool_result.get("location", "Jodhpur")
-        cond = tool_result.get("condition", "Clear")
-        return f"The current temperature in {loc} is {temp}°C with {cond} conditions."
-
-    elif function_name == "activate_alarm":
-        sec = tool_result.get("duration_seconds", 5) if isinstance(tool_result, dict) else 5
-        return f"The buzzer alarm has been sounded for {sec} seconds."
-
-    elif function_name == "unlock_door":
-        return "The front door has been unlocked."
-
-    elif function_name == "read_note" and isinstance(tool_result, str):
-        return f"Here is what the note says: \"{tool_result}\""
-
     return f"Completed {function_name.replace('_', ' ')}."
-
-
 
 
 
@@ -559,34 +546,15 @@ def run_turn(
 
     _emit("llm", "running", {"model": MODEL})
 
+    system_prompt_content = build_system_prompt(role=role, tools=TOOLS)
+
     messages = [
 
         {
 
             "role": "system",
 
-            "content": (
-
-                "You are Aura (powered by AegisAgent), an intelligent AI assistant and zero-trust IoT security gateway. "
-
-                "You control smart home devices via 6 tools: turn_light_on, turn_light_off, read_temperature, activate_alarm, unlock_door, read_note. "
-
-                "When the user asks to control hardware or read notes, call the appropriate tool. "
-                "When the user asks for temperature or weather, call read_temperature (pass 'Jodhpur' if no specific city is mentioned). "
-
-                "If the user asks to unlock or open the door, call unlock_door. "
-
-                "If the user asks to read a note or memo, call read_note. "
-
-                "If the user asks for multiple actions in one sentence (e.g. turning on light AND checking temperature), call ALL matching tools. "
-
-                "When the user greets, asks general questions ('who are you?', 'how does this work?'), converses socially, or asks about cybersecurity, "
-
-                "do NOT call any tool — respond conversationally, concisely, and warmly in the same language (English or Hindi). "
-
-                "Do NOT attempt to map unsupported requests (e.g. 'break the alarm', 'fix the light') to unrelated tools."
-
-            ),
+            "content": system_prompt_content,
 
         },
 
