@@ -113,23 +113,24 @@ AegisAgent supports two distinct runtime environments:
 
 1. **`smart_home` (Default)**:
    - Configured via root `policy.yaml`.
-   - Tool suite: `turn_light_on`, `turn_light_off`, `read_temperature`, `activate_alarm`, `unlock_door`, `read_note`, and `disable_security_perimeter` (honeypot).
+   - Tool suite (from `security.registry`): `activate_alarm`, `disable_security_perimeter`, `read_note`, `read_temperature`, `turn_light_off`, `turn_light_on`, `unlock_door`.
    - Backed by USB/MQTT ESP32 hardware or the built-in `VirtualBridge` simulator.
 
 2. **`office` (Office Assistant)**:
    - Launched using `python start.py --env office` (or setting environment variable `AEGIS_ENV=office`).
    - Configured via `policies/office.yaml`.
-   - Tool suite: `read_file`, `send_email`, `http_get`, `run_sql`, and `export_all_customer_data` (honeypot).
+   - Tool suite (from `security.registry`): `export_all_customer_data`, `http_get`, `read_file`, `run_sql`, `send_email`.
    - In-memory simulated storage via `OfficeSandbox`: no real outbound emails are sent, no real filesystem files or external websites are touched, and no real database connections are established.
 
-### Identical Security Pipeline
-The defensive guard code is 100% identical between both environments. Prompt injection detection (raw, normalized, base64), multi-turn context tracking, intent lock scope verification, role-based access control (RBAC), sliding-window rate limiting, human supervisor approval gating, untrusted tool output scanning, and SHA-256 hash-chained audit logging operate through the exact same modules with zero code changes.
+### Pipeline Invariance
+The same pipeline code (detection, intent lock, RBAC, rate limit, human approval, output scan) runs in both environments; only tool definitions, roles and intent keywords differ.
 
-### Known Parameter-Guard Gaps
+### Known Parameter-Guard Gaps & Honeypot Behavior
 Honest disclosure of current parameter-level limitations:
 - **SQL Sanitization**: `run_sql` does not yet parse or block destructive DDL/DML statements like `DROP TABLE` (the tool executes queries against in-memory mock lists only).
 - **Filesystem Path Traversal**: `read_file` operates directly on in-memory dictionary keys and does not yet validate absolute path traversal (`../`).
 - **Network URL Allowlisting**: `http_get` retrieves simulated web content from an internal cache and does not yet enforce an egress domain allowlist.
+- **Honeypot Trap**: Honeypot export (`export_all_customer_data`) is stopped at RBAC, quarantine is not triggered in that scenario.
 
 ### Environment Switching
 Switching between `smart_home` and `office` environments requires an application restart (selected at startup via `--env` or `AEGIS_ENV`). Dynamic mid-session environment hot-swapping is not permitted so policy invariants remain deterministic.
@@ -147,7 +148,7 @@ Switching between `smart_home` and `office` environments requires an application
 | `activate_alarm` | HIGH | Sounds buzzer alarm (Requires Approval) | admin | `alarm_on` |
 | `unlock_door` | HIGH | Unlocks door lock (Requires Approval, 3s auto-relock) | admin | `unlock_door` |
 | `read_note` | LOW | Reads user notes (untrusted content scanner) | guest, admin | *(local disk)* |
-| `disable_security_perimeter` | HONEYPOT | Trap tool to catch injection attempts | (none — auto-quarantines) | *(none)* |
+| `disable_security_perimeter` | HONEYPOT | Trap tool to catch injection attempts | (none — blocked by RBAC gate) | *(none)* |
 
 ### Office Assistant Tools (`policies/office.yaml`)
 | Tool Name | Risk Level | Description | Allowed Roles | Backing Implementation |
