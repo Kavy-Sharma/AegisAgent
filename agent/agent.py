@@ -52,23 +52,8 @@ import security.quarantine
 
 import security.rate_limiter
 
-from agent.tools import (
-
-    turn_light_on,
-
-    turn_light_off,
-
-    read_temperature,
-
-    activate_alarm,
-
-    unlock_door,
-
-    read_note,
-
-    disable_security_perimeter,
-
-)
+from agent.environments.smart_home import build_environment
+import security.registry
 
 
 
@@ -96,214 +81,52 @@ def clear_session_taints(session_id: str | None = None):
 
 
 
-TOOLS = [
-
-    {
-
-        "type": "function",
-
-        "function": {
-
-            "name": "turn_light_on",
-
-            "description": "Turns the LED light on, or blinks it multiple times. ONLY call when the user explicitly asks to turn on or blink the light.",
-
-            "parameters": {
-
-                "type": "object",
-
-                "properties": {
-
-                    "blink_count": {
-
-                        "type": "integer",
-
-                        "description": "Number of times to blink the light (1 to 10). Set to 1 for steady ON.",
-
-                    }
-
-                },
-
-                "required": [],
-
-            },
-
-        },
-
-    },
-
-    {
-
-        "type": "function",
-
-        "function": {
-
-            "name": "turn_light_off",
-
-            "description": "Turns the LED light off. ONLY call when the user explicitly asks to turn off the light.",
-
-            "parameters": {"type": "object", "properties": {}, "required": []},
-
-        },
-
-    },
-
-    {
-
-        "type": "function",
-
-        "function": {
-
-            "name": "read_temperature",
-
-            "description": "Reads current live temperature and weather. Optionally specify a city or location name (e.g. 'Delhi', 'Jaipur', 'Mumbai', 'London', or 'local').",
-
-            "parameters": {
-
-                "type": "object",
-
-                "properties": {
-
-                    "location": {
-
-                        "type": "string",
-
-                        "description": "City or location name. Leave blank for user's local temperature.",
-
-                    }
-
-                },
-
-                "required": [],
-
-            },
-
-        },
-
-    },
-
-    {
-
-        "type": "function",
-
-        "function": {
-
-            "name": "activate_alarm",
-
-            "description": "Sounds the buzzer alarm. ONLY call when the user explicitly asks to sound the alarm.",
-
-            "parameters": {
-
-                "type": "object",
-
-                "properties": {
-
-                    "duration_seconds": {
-
-                        "type": "integer",
-
-                        "description": "Duration in seconds to sound the buzzer (1 to 30). Default is 5.",
-
-                    }
-
-                },
-
-                "required": [],
-
-            },
-
-        },
-
-    },
-
-    {
-
-        "type": "function",
-
-        "function": {
-
-            "name": "unlock_door",
-
-            "description": "Unlocks the door lock. ONLY call when the user explicitly asks to unlock or open the door.",
-
-            "parameters": {"type": "object", "properties": {}, "required": []},
-
-        },
-
-    },
-
-    {
-
-        "type": "function",
-
-        "function": {
-
-            "name": "read_note",
-
-            "description": "Reads a local text note or memo by name. ONLY call when the user explicitly asks to read a note or memo.",
-
-            "parameters": {
-
-                "type": "object",
-
-                "properties": {
-
-                    "name": {
-
-                        "type": "string",
-
-                        "description": "The alphanumeric name of the note to read (no extensions or paths).",
-
-                    }
-
-                },
-
-                "required": ["name"],
-
-            },
-
-        },
-
-    },
-
-    {
-
-        "type": "function",
-
-        "function": {
-
-            "name": "disable_security_perimeter",
-
-            "description": "Administrative honeypot control. Emergency command to disable the security perimeter.",
-
-            "parameters": {"type": "object", "properties": {}, "required": []},
-
-        },
-
-    },
-
-]
-
-
-
-def _agent_read_temperature(location: str | None = None) -> dict:
-    loc = (location or "").strip()
-    if not loc or loc.lower() in ("here", "local", "my place", "room", "current", "home"):
-        loc = "Jodhpur"
-    return read_temperature(location=loc)
-
-
-AVAILABLE_FUNCTIONS = {
-    "turn_light_on": turn_light_on,
-    "turn_light_off": turn_light_off,
-    "read_temperature": _agent_read_temperature,
-    "activate_alarm": activate_alarm,
-    "unlock_door": unlock_door,
-    "read_note": read_note,
-    "disable_security_perimeter": disable_security_perimeter,
-}
-
-
+def validate_environment_against_registry(tools: list[dict[str, Any]], functions: dict[str, Any]) -> None:
+    """
+    Validates that the environment tool schemas and functions match the registry.
+    Fails closed on any discrepancy:
+    (1) every tool in the environment must exist in the registry,
+    (2) every registry tool must have a function,
+    (3) names in tools and functions must match exactly.
+    """
+    reg_tools = set(security.registry.list_tools())
+
+    tool_names = set()
+    for t in tools:
+        if not isinstance(t, dict):
+            raise ValueError(f"Environment tool schema is not a dict: {t}")
+        fn = t.get("function", {})
+        name = fn.get("name")
+        if not name or not isinstance(name, str):
+            raise ValueError(f"Environment tool schema missing valid function name: {t}")
+        tool_names.add(name)
+
+    func_names = set(functions.keys())
+
+    # (1) every tool in the environment must exist in the registry
+    missing_from_registry = tool_names - reg_tools
+    if missing_from_registry:
+        raise ValueError(f"Environment tools missing from registry: {sorted(missing_from_registry)}")
+
+    # (2) every registry tool must have a function
+    missing_from_functions = reg_tools - func_names
+    if missing_from_functions:
+        raise ValueError(f"Registry tools missing from functions: {sorted(missing_from_functions)}")
+
+    # (3) names in tools and functions must match exactly
+    if tool_names != func_names:
+        diff1 = tool_names - func_names
+        diff2 = func_names - tool_names
+        raise ValueError(f"Mismatch between tool schemas and functions: in_tools_not_funcs={sorted(diff1)}, in_funcs_not_tools={sorted(diff2)}")
+
+    if tool_names != reg_tools:
+        missing = reg_tools - tool_names
+        raise ValueError(f"Registry tools missing from environment: {sorted(missing)}")
+
+
+TOOLS, AVAILABLE_FUNCTIONS = build_environment()
+validate_environment_against_registry(TOOLS, AVAILABLE_FUNCTIONS)
+_agent_read_temperature = AVAILABLE_FUNCTIONS.get("read_temperature")
 
 TOOL_SCHEMAS = {
 
@@ -873,7 +696,7 @@ def run_turn(
 
         _emit("rbac", "running", {"tool": function_name, "role": role})
 
-        if function_name not in AVAILABLE_FUNCTIONS:
+        if function_name not in AVAILABLE_FUNCTIONS or security.registry.get_tool(function_name) is None:
 
             _emit("rbac", "block", {"tool": function_name, "reason": "unknown tool"})
 
