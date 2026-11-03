@@ -366,4 +366,32 @@ def test_attack_lab_office_scenarios_including_param_guard(tmp_path):
         agent.agent.load_environment("smart_home")
 
 
+def test_office_sandbox_resets_between_unprotected_runs(tmp_path):
+    """
+    Verifies that running office_sql_injection unprotected drops the database in the sandbox,
+    but a subsequent unprotected scenario run automatically resets the database back to 3 rows.
+    """
+    from security.attack_lab import OFFICE_SCENARIOS, run_unprotected
+    from agent.environments.office import OfficeSandbox
+    import agent.agent
+
+    agent.agent.load_environment("office")
+    try:
+        sc_sql = next(s for s in OFFICE_SCENARIOS if s["id"] == "office_sql_injection")
+        sc_file = next(s for s in OFFICE_SCENARIOS if s["id"] == "office_poisoned_file")
+
+        # First run: drops table, sql_rows_count goes to 0
+        res1 = run_unprotected(sc_sql, scratch_dir=tmp_path)
+        assert res1["virtual_state"]["sql_rows_count"] == 0
+        assert len(OfficeSandbox.database) == 0
+
+        # Second run without explicit manual reset: automatically resets to fresh initial state (3 rows)
+        res2 = run_unprotected(sc_file, scratch_dir=tmp_path)
+        assert res2["virtual_state"]["sql_rows_count"] == 3
+        assert len(OfficeSandbox.database) == 3
+    finally:
+        agent.agent.load_environment("smart_home")
+
+
+
 

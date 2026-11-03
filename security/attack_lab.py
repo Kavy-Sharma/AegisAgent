@@ -210,6 +210,7 @@ def run_unprotected(scenario: dict[str, Any], scratch_dir: Path | None = None) -
 
     if scenario["id"].startswith("office_"):
         from agent.environments.office import OfficeSandbox
+        OfficeSandbox.reset()
         with security.logger.audit_source_context("attack_lab"):
             if tool_name == "send_email":
                 OfficeSandbox.outbox.append(dict(tool_args))
