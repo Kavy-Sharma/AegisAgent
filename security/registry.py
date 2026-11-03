@@ -34,13 +34,20 @@ def _resolve_policy_path(env: str | None = None) -> Path:
             raise FileNotFoundError(f"Office policy file not found at {p}")
         return p
     else:
-        raise ValueError(f"Unknown environment: '{env}'")
+        raise ValueError(f"Unknown environment: '{env}'. Must be 'smart_home' or 'office'.")
 
 
 def _load_and_validate_registry(policy_path: Path | None = None, env: str | None = None) -> dict[str, Any]:
     """Loads and validates policy configuration, failing closed on any corruption."""
+    env_var = os.environ.get("AEGIS_ENV")
+    if env_var and env_var not in ("smart_home", "office"):
+        raise ValueError(f"Unknown environment in AEGIS_ENV: '{env_var}'. Must be 'smart_home' or 'office'.")
+
+    configured_env = env_var or None
+    target_env = env if env is not None else (None if policy_path is not None else (configured_env or "smart_home"))
+
     if policy_path is None:
-        p_path = _resolve_policy_path(env)
+        p_path = _resolve_policy_path(target_env)
     else:
         p_path = policy_path
 
@@ -55,9 +62,9 @@ def _load_and_validate_registry(policy_path: Path | None = None, env: str | None
 
     # If loading default root policy and no explicit env passed, check if environment key directs to another policy
     if policy_path is None and env is None:
-        configured_env = policy.get("environment", "smart_home")
-        if configured_env != "smart_home":
-            target_path = _resolve_policy_path(configured_env)
+        c_env = configured_env or policy.get("environment", "smart_home")
+        if c_env != "smart_home" and target_env != c_env:
+            target_path = _resolve_policy_path(c_env)
             if not target_path.exists():
                 raise FileNotFoundError(f"Policy file not found at {target_path}")
             with open(target_path, "r", encoding="utf-8") as f:

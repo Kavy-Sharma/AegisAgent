@@ -1193,6 +1193,22 @@ var app = (function () {
 
   // Document Ready Initialization
 
+  function updateEnvironmentBadge() {
+    var envBadge = document.getElementById("env-badge");
+    if (!envBadge) return;
+    fetch("/api/environment")
+      .then(function (res) {
+        if (!res.ok) return null;
+        return res.json();
+      })
+      .then(function (data) {
+        if (!data || !data.environment) return;
+        var envTitle = data.environment === "office" ? "Office Assistant" : "Smart Home";
+        envBadge.textContent = "Environment: " + envTitle;
+      })
+      .catch(function () {});
+  }
+
   document.addEventListener("DOMContentLoaded", function () {
 
     initTheme();
@@ -1208,6 +1224,8 @@ var app = (function () {
     initQuarantineModal();
 
     initCyberRipple();
+
+    updateEnvironmentBadge();
 
     pollHealth();
 

@@ -486,6 +486,10 @@ def api_overview():
 
     last_req_event = None
 
+    role_by_session = {}
+
+    role_by_request = {}
+
 
 
 
@@ -507,6 +511,18 @@ def api_overview():
             if ev_dt.tzinfo is None:
 
                 ev_dt = ev_dt.replace(tzinfo=timezone.utc)
+
+            ev_role = ev.get("role")
+
+            if ev_role:
+
+                if ev.get("session_id"):
+
+                    role_by_session[ev.get("session_id")] = ev_role
+
+                if ev.get("request_id"):
+
+                    role_by_request[ev.get("request_id")] = ev_role
 
 
 
@@ -847,11 +863,19 @@ def api_overview():
 
     last_req = None
     if last_req_event:
+        req_role = (
+            last_req_event.get("role")
+            or last_req_event.get("user_role")
+            or last_req_event.get("user")
+            or role_by_request.get(last_req_event.get("request_id"))
+            or role_by_session.get(last_req_event.get("session_id"))
+            or "admin"
+        )
         last_req = {
             "id": last_req_event.get("request_id"),
             "tool": last_req_event.get("tool") or "chat",
             "decision": last_req_event.get("decision") or "UNKNOWN",
-            "role": last_req_event.get("role") or "unknown",
+            "role": req_role,
             "stopped_at": last_req_event.get("stopped_at"),
             "time_ist": _format_ist(last_req_event.get("timestamp")),
         }
@@ -859,15 +883,28 @@ def api_overview():
             last_req["prompt"] = last_req_event.get("prompt") or last_req_event.get("text") or ""
             last_req["reason"] = last_req_event.get("reason") or ""
 
-
-
-
-
-
+    import agent.agent
+    env_name = getattr(agent.agent, "_ACTIVE_ENV", "smart_home")
+    show_hardware_panel = (env_name != "office")
+    office_sandbox = None
+    if env_name == "office":
+        from agent.environments.office import OfficeSandbox
+        office_sandbox = {
+            "outbox": len(OfficeSandbox.outbox),
+            "files": len(OfficeSandbox.files),
+            "sql_rows": len(OfficeSandbox.database),
+            "outbox_count": len(OfficeSandbox.outbox),
+            "files_count": len(OfficeSandbox.files),
+            "sql_rows_count": len(OfficeSandbox.database),
+            "exports": len(OfficeSandbox.exports),
+            "exports_count": len(OfficeSandbox.exports),
+        }
 
     return jsonify({
 
         "hardware_mode": hardware_mode,
+        "show_hardware_panel": show_hardware_panel,
+        "office_sandbox": office_sandbox,
 
         "kpis": {
 
@@ -2726,5 +2763,33 @@ def api_switch_role():
 
         "is_simulated": (target_role != "admin")
 
+    })
+
+
+@api_bp.route("/environment", methods=["GET"])
+@role_required("guest")
+def get_environment_info():
+    """Returns active environment metadata, registered tools, and prompt suggestions."""
+    import agent.agent
+    from agent.environments.office import OfficeSandbox
+    env_name = getattr(agent.agent, "_ACTIVE_ENV", "smart_home")
+    meta = getattr(agent.agent, "ENVIRONMENT_META", {})
+    tools = list(security.registry.list_tools())
+    return jsonify({
+        "environment": env_name,
+        "domain": meta.get("domain", "tools"),
+        "tools": tools,
+        "suggestions": meta.get("suggestions", []),
+        "show_hardware_panel": (env_name != "office"),
+        "office_sandbox": {
+            "outbox": len(OfficeSandbox.outbox),
+            "files": len(OfficeSandbox.files),
+            "sql_rows": len(OfficeSandbox.database),
+            "outbox_count": len(OfficeSandbox.outbox),
+            "files_count": len(OfficeSandbox.files),
+            "sql_rows_count": len(OfficeSandbox.database),
+            "exports": len(OfficeSandbox.exports),
+            "exports_count": len(OfficeSandbox.exports),
+        } if env_name == "office" else None,
     })
 

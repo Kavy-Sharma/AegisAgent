@@ -85,6 +85,24 @@
       </div>
     </div>
 
+    <!-- KPI 4: ESP32 Hardware Status OR Office Sandbox Status -->
+    {% if active_env == 'office' %}
+    <div class="card kpi-card" id="kpi-sandbox-card">
+      <div class="kpi-header">
+        <span class="kpi-title" id="kpi-sandbox-title">Office Sandbox</span>
+        <svg class="icon kpi-icon"><use href="/static/icons.svg#icon-box"></use></svg>
+      </div>
+      <div class="kpi-body">
+        <div class="kpi-value-wrap">
+          <div class="flex items-center gap-xs">
+            <span class="pulse-dot live" id="kpi-sandbox-dot"></span>
+            <span class="kpi-value font-mono text-lg" id="kpi-sandbox-val">Simulated</span>
+          </div>
+          <span class="kpi-delta" id="kpi-sandbox-hint">Safe In-Memory Mock</span>
+        </div>
+      </div>
+    </div>
+    {% else %}
     <!-- KPI 4: ESP32 Hardware Status -->
     <div class="card kpi-card" id="kpi-device-card">
       <div class="kpi-header">
@@ -101,6 +119,7 @@
         </div>
       </div>
     </div>
+    {% endif %}
   </div>
 
   <!-- Row 2: Charts Grid (Decisions Stacked Bar & Top Triggered Rules) -->
@@ -141,7 +160,45 @@
     </div>
   </div>
 
-  <!-- Row 2.5: Physical IoT Hardware Controller -->
+  <!-- Row 2.5: Physical IoT Hardware Controller OR Office Sandbox Panel -->
+  {% if active_env == 'office' %}
+  <div class="card sandbox-card mb-lg" id="overview-office-sandbox-card">
+    <div class="card-header flex items-center justify-between">
+      <div class="flex items-center gap-sm">
+        <svg class="icon text-accent" style="width: 22px; height: 22px;"><use href="/static/icons.svg#icon-box"></use></svg>
+        <div>
+          <h2 class="card-title" id="sandbox-card-title">Office Sandbox</h2>
+          <p class="card-subtitle" id="sandbox-card-subtitle">In-memory simulated tools and storage &bull; No external network or filesystem access</p>
+        </div>
+      </div>
+      <div class="flex items-center gap-xs">
+        <span class="pill pill-ok text-xs" id="sandbox-status-pill">
+          <span class="pulse-dot ok"></span>
+          <span>Simulation Active</span>
+        </span>
+      </div>
+    </div>
+    <div class="card-body">
+      <div class="sandbox-counts-grid flex gap-md">
+        <div class="sandbox-count-box p-sm bg-subtle rounded border flex-1">
+          <span class="text-xs text-muted block mb-xs font-semibold">Emails in Outbox</span>
+          <span class="font-mono text-xl font-bold text-accent" id="sandbox-metric-outbox">0</span>
+          <span class="text-xs text-muted block mt-xs">Simulated mail dispatcher</span>
+        </div>
+        <div class="sandbox-count-box p-sm bg-subtle rounded border flex-1">
+          <span class="text-xs text-muted block mb-xs font-semibold">Files in Storage</span>
+          <span class="font-mono text-xl font-bold text-accent" id="sandbox-metric-files">3</span>
+          <span class="text-xs text-muted block mt-xs">In-memory documents</span>
+        </div>
+        <div class="sandbox-count-box p-sm bg-subtle rounded border flex-1">
+          <span class="text-xs text-muted block mb-xs font-semibold">SQL Database Rows</span>
+          <span class="font-mono text-xl font-bold text-accent" id="sandbox-metric-sql">3</span>
+          <span class="text-xs text-muted block mt-xs">Simulated customer/staff DB</span>
+        </div>
+      </div>
+    </div>
+  </div>
+  {% else %}
   <div class="card hardware-card mb-lg" id="overview-hardware-card">
     <div class="card-header flex items-center justify-between">
       <div class="flex items-center gap-sm">
@@ -231,6 +288,7 @@
       </div>
     </div>
   </div>
+  {% endif %}
 
   <!-- Row 3: Alerts Stream & Last Request Mini Pipeline -->
   <div class="bottom-grid">

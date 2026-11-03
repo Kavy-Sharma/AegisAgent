@@ -237,8 +237,10 @@ def create_app() -> Flask:
     def inject_hardware_mode():
         nonlocal _hw_mode_cache
         now = time.time()
+        import agent.agent
+        curr_env = getattr(agent.agent, "_ACTIVE_ENV", "smart_home")
         if _hw_mode_cache is not None and (now - _hw_mode_cache[1]) < 2.0:
-            return {"hardware_mode": _hw_mode_cache[0]}
+            return {"hardware_mode": _hw_mode_cache[0], "active_env": curr_env}
 
         try:
             from web.api import _derive_hardware_mode
@@ -248,7 +250,7 @@ def create_app() -> Flask:
             mode = "virtual"
 
         _hw_mode_cache = (mode, now)
-        return {"hardware_mode": mode}
+        return {"hardware_mode": mode, "active_env": curr_env}
 
 
 

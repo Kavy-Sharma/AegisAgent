@@ -44,6 +44,7 @@
         currentHardwareMode = data.kpis.device_status.hardware_mode;
       }
       updateKpis(data.kpis);
+      updateOfficeSandbox(data.office_sandbox, data.show_hardware_panel);
       renderCharts(data);
       updateAlerts(data.recent_alerts);
       updateLastRequest(data.last_request);
@@ -125,6 +126,40 @@
         if (hwTitle) hwTitle.textContent = "IoT Hardware Controller (ESP32)";
         if (hwSubtitle) hwSubtitle.textContent = "Direct hardware manual override • Real-time actuation link";
         if (hwTransportName) hwTransportName.textContent = kpis.device_status.hint || "USB Serial (COM11)";
+      }
+    }
+  }
+
+  function updateOfficeSandbox(sandbox, showHw) {
+    const hwCard = document.getElementById("overview-hardware-card");
+    const kpiDevice = document.getElementById("kpi-device-card");
+    const sandboxCard = document.getElementById("overview-office-sandbox-card");
+    const kpiSandbox = document.getElementById("kpi-sandbox-card");
+
+    if (showHw === false) {
+      if (hwCard) hwCard.hidden = true;
+      if (kpiDevice) kpiDevice.hidden = true;
+      if (sandboxCard) sandboxCard.hidden = false;
+      if (kpiSandbox) kpiSandbox.hidden = false;
+    } else if (showHw === true) {
+      if (hwCard) hwCard.hidden = false;
+      if (kpiDevice) kpiDevice.hidden = false;
+      if (sandboxCard) sandboxCard.hidden = true;
+      if (kpiSandbox) kpiSandbox.hidden = true;
+    }
+
+    if (sandbox) {
+      const outboxEl = document.getElementById("sandbox-metric-outbox");
+      const filesEl = document.getElementById("sandbox-metric-files");
+      const sqlEl = document.getElementById("sandbox-metric-sql");
+      if (outboxEl && sandbox.outbox_count !== undefined) {
+        outboxEl.textContent = String(sandbox.outbox_count);
+      }
+      if (filesEl && sandbox.files_count !== undefined) {
+        filesEl.textContent = String(sandbox.files_count);
+      }
+      if (sqlEl && sandbox.sql_rows_count !== undefined) {
+        sqlEl.textContent = String(sandbox.sql_rows_count);
       }
     }
   }

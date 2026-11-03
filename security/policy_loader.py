@@ -23,11 +23,16 @@ def _resolve_policy_path(env: str | None = None) -> Path:
             raise FileNotFoundError(f"Office policy file not found at {p}")
         return p
     else:
-        raise ValueError(f"Unknown environment: '{env}'")
+        raise ValueError(f"Unknown environment: '{env}'. Must be 'smart_home' or 'office'.")
 
 
 def get_configured_environment() -> str:
-    """Reads the environment key from root policy.yaml, defaulting to 'smart_home'."""
+    """Reads the environment key from AEGIS_ENV env var or root policy.yaml, defaulting to 'smart_home'."""
+    env_var = os.environ.get("AEGIS_ENV")
+    if env_var:
+        if env_var not in ("smart_home", "office"):
+            raise ValueError(f"Unknown environment in AEGIS_ENV: '{env_var}'. Must be 'smart_home' or 'office'.")
+        return env_var
     p_path = Path(os.environ.get("AEGIS_POLICY_PATH") or (Path(__file__).resolve().parent.parent / "policy.yaml"))
     if not p_path.exists():
         return "smart_home"
@@ -40,8 +45,15 @@ def get_configured_environment() -> str:
 
 def _load_policy(policy_path: Path | None = None, env: str | None = None) -> dict:
     """Loads and parses the policy.yaml file."""
+    env_var = os.environ.get("AEGIS_ENV")
+    if env_var and env_var not in ("smart_home", "office"):
+        raise ValueError(f"Unknown environment in AEGIS_ENV: '{env_var}'. Must be 'smart_home' or 'office'.")
+
+    configured_env = env_var or get_configured_environment()
+    target_env = env if env is not None else (None if policy_path is not None else configured_env)
+
     if policy_path is None:
-        p_path = _resolve_policy_path(env)
+        p_path = _resolve_policy_path(target_env)
     else:
         p_path = policy_path
 
@@ -52,8 +64,7 @@ def _load_policy(policy_path: Path | None = None, env: str | None = None) -> dic
 
     # If loading default root policy and no explicit env passed, check if environment key directs to another policy
     if policy_path is None and env is None:
-        configured_env = policy.get("environment", "smart_home")
-        if configured_env != "smart_home":
+        if configured_env != "smart_home" and target_env != configured_env:
             target_path = _resolve_policy_path(configured_env)
             if not target_path.exists():
                 raise FileNotFoundError(f"Policy file not found at {target_path}")

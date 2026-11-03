@@ -10,6 +10,8 @@ Starts and supervises all AegisAgent runtime services as child processes:
 5. Displays a clean status line per service and coordinates graceful shutdown on Ctrl+C.
 """
 
+import argparse
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -20,6 +22,19 @@ ROOT_DIR = Path(__file__).resolve().parent
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
+# Process --env argument before loading policy/registry
+parser = argparse.ArgumentParser(description="AegisAgent System Launcher")
+parser.add_argument("--env", choices=["smart_home", "office"], default=None, help="Active environment (smart_home | office)")
+cli_args, _ = parser.parse_known_args()
+if cli_args.env:
+    os.environ["AEGIS_ENV"] = cli_args.env
+
+env_val = os.environ.get("AEGIS_ENV", "smart_home")
+if env_val not in ("smart_home", "office"):
+    print(f"[ERROR] Unknown environment: '{env_val}'. Must be 'smart_home' or 'office'.")
+    sys.exit(1)
+os.environ["AEGIS_ENV"] = env_val
+
 import security.policy_loader
 import security.signing
 import web.guards
@@ -29,6 +44,9 @@ def main():
     print("=" * 65)
     print(" AegisAgent System Launcher ".center(65, "="))
     print("=" * 65)
+
+    env_display = "Office Assistant" if env_val == "office" else "Smart Home"
+    print(f"[STATUS] Environment          : {env_display.upper()} ({env_val})")
 
     # Initialize / verify AEGIS_DASH_SECRET and AEGIS_WEB_SECRET once before launching children
     security.signing.get_secret()

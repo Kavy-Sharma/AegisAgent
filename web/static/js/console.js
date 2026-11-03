@@ -1507,21 +1507,52 @@
 
 
 
-  // Suggested prompt chip clicks
+  // Suggested prompt chip clicks and dynamic loading from /api/environment
+  function bindChip(chip) {
+    chip.addEventListener("click", function () {
+      var prompt = chip.dataset.prompt || chip.textContent.trim();
+      sendPrompt(prompt);
+    });
+  }
 
   var chips = document.querySelectorAll(".chip-btn");
+  chips.forEach(bindChip);
 
-  chips.forEach(function (chip) {
+  var chipsContainer = document.getElementById("chips-scroll");
+  if (chipsContainer) {
+    fetch("/api/environment")
+      .then(function (res) {
+        if (!res.ok) return null;
+        return res.json();
+      })
+      .then(function (data) {
+        if (!data || !Array.isArray(data.suggestions) || data.suggestions.length === 0) return;
+        while (chipsContainer.firstChild) {
+          chipsContainer.removeChild(chipsContainer.firstChild);
+        }
+        data.suggestions.forEach(function (s) {
+          var btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = "chip-btn";
+          btn.dataset.prompt = s.prompt;
 
-    chip.addEventListener("click", function () {
+          var iconWrap = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+          iconWrap.setAttribute("class", "icon icon-xs");
+          var useEl = document.createElementNS("http://www.w3.org/2000/svg", "use");
+          useEl.setAttribute("href", "/static/icons.svg#icon-terminal");
+          iconWrap.appendChild(useEl);
+          btn.appendChild(iconWrap);
 
-      var prompt = chip.dataset.prompt || chip.textContent.trim();
+          var span = document.createElement("span");
+          span.textContent = s.label || s.prompt;
+          btn.appendChild(span);
 
-      sendPrompt(prompt);
-
-    });
-
-  });
+          bindChip(btn);
+          chipsContainer.appendChild(btn);
+        });
+      })
+      .catch(function () {});
+  }
 
 
 

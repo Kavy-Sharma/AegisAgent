@@ -460,6 +460,7 @@ def log_turn_summary(
     latency_ms: float,
     scope: list[str] | None = None,
     tainted: bool = False,
+    role: str | None = None,
 ) -> dict:
     """Constructs a tamper-evident audit log entry for a turn summary."""
     timestamp_str = datetime.now(timezone.utc).isoformat()
@@ -475,5 +476,7 @@ def log_turn_summary(
         "timestamp": timestamp_str,
         "tool": tool,
     }
+    if role is not None:
+        entry["role"] = role
     return _append_entry(entry)
 

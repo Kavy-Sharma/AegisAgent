@@ -564,6 +564,8 @@ def _process_attack_lab(req: dict, emit, outbox_file: Path):
         },
         "unprotected": unprotected,
         "protected": protected,
+        "unprotected_outcome": unprotected.get("unprotected_outcome"),
+        "stopped_layer": protected.get("stopped_layer") or protected.get("stopped_at"),
         "owner": username,
         "request_id": req_id,
         "timestamp": datetime.now(timezone.utc).isoformat(),

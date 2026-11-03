@@ -415,6 +415,8 @@ def run_turn(
 
                 tainted=tainted,
 
+                role=role,
+
             )
 
         except Exception:
