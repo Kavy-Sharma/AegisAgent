@@ -1,0 +1,16 @@
+{
+  "timestamp": "2026-11-03T16:10:30.252223+00:00",
+  "git_commit": "5f6e19de968f534570de5ff0aaffe8fc88437dd0",
+  "python_version": "3.11.6 (tags/v3.11.6:8b6ee5b, Oct  2 2023, 14:57:12) [MSC v.1935 64 bit (AMD64)]",
+  "deterministic_hash": "16dec2a385ffbaa0f46f4413f6b4a322102a21597d358145a1f24721702819cd",
+  "dataset_hashes": {
+    "office_attacks.jsonl": "eb9c7e6cad98064f6a73a7c06f3d3494ea0949fde06e4d545c6cf4cab19d17d4",
+    "office_benign.jsonl": "e327bee6f554b9842b64c220e4518447a24a5bd6baf683bd4e62573ac3604fa1",
+    "office_expected.json": "ec5ea9bd84876e4fe34fe727f7e40183d658102b52cff9e173dc9d530b77e322"
+  },
+  "counts": {
+    "attacks": 40,
+    "benign": 40,
+    "total": 80
+  }
+}
