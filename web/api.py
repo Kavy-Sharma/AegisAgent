@@ -340,6 +340,58 @@ def _read_log_tail(log_file: Path, max_lines: int = 500) -> list[dict]:
 
 
 
+def _derive_hardware_mode(device_dict: dict | None = None) -> str:
+    """Derives hardware mode ('virtual' | 'usb' | 'mqtt') from device telemetry,
+    falling back to active bridge inspection and policy configuration if device_status.json
+    does not exist or has not recorded transport yet.
+    """
+    status_file = _get_data_dir() / "device_status.json"
+    status_transport = None
+
+    if status_file.exists():
+        try:
+            d_data = json.loads(status_file.read_text(encoding="utf-8"))
+            status_transport = d_data.get("transport")
+        except Exception:
+            status_transport = None
+
+    if not status_transport and device_dict:
+        if device_dict.get("transport") and device_dict.get("transport") != "mqtt":
+            status_transport = device_dict.get("transport")
+
+    if status_transport:
+        st = str(status_transport).lower()
+        if st == "virtual":
+            return "virtual"
+        if st in ("serial", "usb", "usb_serial"):
+            return "usb"
+        if st == "mqtt":
+            return "mqtt"
+
+    # Status file has no transport yet (cold start / missing file):
+    # Derive from active bridge and policy hardware.mode
+    try:
+        bridge = security.hardware.get_bridge()
+        t = getattr(bridge, "transport", None)
+        if t == "virtual" or (hasattr(security, "virtual_home") and isinstance(bridge, security.virtual_home.VirtualBridge)):
+            return "virtual"
+        if t in ("usb_serial", "serial", "usb") or isinstance(bridge, security.hardware.SerialHardwareBridge):
+            return "usb"
+        if t == "mqtt":
+            return "mqtt"
+    except Exception:
+        pass
+
+    try:
+        mode = security.policy_loader.POLICY.get("hardware", {}).get("mode", "auto")
+        if mode == "auto":
+            return "virtual"
+    except Exception:
+        pass
+
+    return "mqtt"
+
+
 # 1. System Health Telemetry
 
 @api_bp.route("/health", methods=["GET"])
@@ -357,6 +409,8 @@ def api_health():
     health["pending_approvals"] = pending_count
 
     health["quarantined"] = security.quarantine.is_quarantined(session.get("username", "guest"))
+
+    health["hardware_mode"] = _derive_hardware_mode(health.get("device", {}))
 
     return jsonify(health)
 
@@ -604,15 +658,18 @@ def api_overview():
     fallback_port = configured_serial if (configured_serial and configured_serial != "auto") else "USB Serial"
     dev_port = dev.get("port") or fallback_port
 
-    if dev_status == "online":
+    hardware_mode = _derive_hardware_mode(dev)
+
+    if hardware_mode == "virtual":
+        dev_status = "online"
+        dev_hint = "Virtual Home (simulation)"
+    elif dev_status == "online":
         dev_hint = f"Connected on {dev_port}" if dev.get("transport") == "usb_serial" else f"Active (seen {dev_seen})"
     elif not worker_alive:
         dev_hint = "Worker service offline"
     elif dev_status == "offline":
         dev_hint = f"Disconnected from {dev_port}" if dev.get("port") else "Hardware offline - no board detected"
-
     else:
-
         dev_hint = "Checking hardware link..."
 
 
@@ -810,6 +867,8 @@ def api_overview():
 
     return jsonify({
 
+        "hardware_mode": hardware_mode,
+
         "kpis": {
 
             "requests_last_hour": {
@@ -845,6 +904,8 @@ def api_overview():
                 "status": dev_status,
 
                 "hint": dev_hint,
+
+                "hardware_mode": hardware_mode,
 
             },
 
@@ -2099,25 +2160,23 @@ def api_hardware_status():
     bridge_type = None
 
     if transport == "usb_serial":
-
         bridge_type = "SerialHardwareBridge"
-
+        hardware_mode = "usb"
     elif transport == "mqtt":
-
         bridge_type = "HardwareBridge"
-
+        hardware_mode = "mqtt"
     elif transport == "fake":
-
         bridge_type = "FakeBridge"
-
-
-
-
-
-
+        hardware_mode = "virtual"
+    elif transport == "virtual":
+        bridge_type = "VirtualBridge"
+        hardware_mode = "virtual"
+        is_online = True
+    else:
+        hardware_mode = "mqtt"
 
     return jsonify({
-
+        "hardware_mode": hardware_mode,
         "online": is_online,
 
         "bridge_type": bridge_type,

@@ -9,6 +9,7 @@
 
   let pollTimer = null;
   let lastData = null;
+  let currentHardwareMode = "mqtt";
 
   function init() {
     initDrawer();
@@ -37,6 +38,11 @@
       const data = await AegisAPI.getOverview();
       if (!data) return;
       lastData = data;
+      if (data.hardware_mode) {
+        currentHardwareMode = data.hardware_mode;
+      } else if (data.kpis && data.kpis.device_status && data.kpis.device_status.hardware_mode) {
+        currentHardwareMode = data.kpis.device_status.hardware_mode;
+      }
       updateKpis(data.kpis);
       renderCharts(data);
       updateAlerts(data.recent_alerts);
@@ -94,11 +100,32 @@
       const dot = document.getElementById("kpi-device-dot");
       const val = document.getElementById("kpi-device-val");
       const hint = document.getElementById("kpi-device-hint");
-      const st = kpis.device_status.status;
+      const kpiTitle = document.getElementById("kpi-device-title");
+      const hwTitle = document.getElementById("hw-card-title");
+      const hwSubtitle = document.getElementById("hw-card-subtitle");
+      const hwTransportName = document.getElementById("hw-transport-name");
+      const mode = kpis.device_status.hardware_mode || currentHardwareMode;
 
-      if (dot) dot.className = `pulse-dot ${st === "online" ? "live" : (st === "offline" ? "offline" : "unknown")}`;
-      if (val) val.textContent = st === "online" ? "Online" : (st === "offline" ? "Offline" : "Unknown");
-      if (hint) hint.textContent = kpis.device_status.hint || "Hardware Link";
+      if (mode === "virtual") {
+        if (kpiTitle) kpiTitle.textContent = "Virtual Home (simulation)";
+        if (dot) dot.className = "pulse-dot live";
+        if (val) val.textContent = "Simulated";
+        if (hint) hint.textContent = "Virtual Home (simulation)";
+
+        if (hwTitle) hwTitle.textContent = "Virtual Home (simulation)";
+        if (hwSubtitle) hwSubtitle.textContent = "No physical device is connected. Actions change a simulated home; nothing physical moves.";
+        if (hwTransportName) hwTransportName.textContent = "Virtual Simulation";
+      } else {
+        const st = kpis.device_status.status;
+        if (kpiTitle) kpiTitle.textContent = "ESP32 Hardware";
+        if (dot) dot.className = `pulse-dot ${st === "online" ? "live" : (st === "offline" ? "offline" : "unknown")}`;
+        if (val) val.textContent = st === "online" ? "Online" : (st === "offline" ? "Offline" : "Unknown");
+        if (hint) hint.textContent = kpis.device_status.hint || "Hardware Link";
+
+        if (hwTitle) hwTitle.textContent = "IoT Hardware Controller (ESP32)";
+        if (hwSubtitle) hwSubtitle.textContent = "Direct hardware manual override • Real-time actuation link";
+        if (hwTransportName) hwTransportName.textContent = kpis.device_status.hint || "USB Serial (COM11)";
+      }
     }
   }
 
@@ -297,10 +324,11 @@
         try {
           const res = await AegisAPI.actuateHardware(cmd);
           if (res && res.ok) {
-            if (liveMsg) liveMsg.textContent = `[SUCCESS] Command "${cmd}" actuated on ESP32 in ${res.latency_ms}ms.`;
+            const targetName = (currentHardwareMode === "virtual") ? "Virtual Home" : "ESP32";
+            if (liveMsg) liveMsg.textContent = `[SUCCESS] Command "${cmd}" actuated in ${targetName} in ${res.latency_ms}ms.`;
             if (latTag) latTag.textContent = `${res.latency_ms}ms latency`;
             if (window.AegisApp && window.AegisApp.showToast) {
-              window.AegisApp.showToast("Hardware Actuation", `Hardware command '${cmd}' executed (${res.latency_ms}ms)`, "ok");
+              window.AegisApp.showToast("Hardware Actuation", `Command '${cmd}' executed in ${targetName} (${res.latency_ms}ms)`, "ok");
             }
           } else {
             const err = (res && res.error) || "Command rejected";

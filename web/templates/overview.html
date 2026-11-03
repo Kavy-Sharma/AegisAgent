@@ -86,18 +86,18 @@
     </div>
 
     <!-- KPI 4: ESP32 Hardware Status -->
-    <div class="card kpi-card">
+    <div class="card kpi-card" id="kpi-device-card">
       <div class="kpi-header">
-        <span class="kpi-title">ESP32 Hardware</span>
+        <span class="kpi-title" id="kpi-device-title">{% if hardware_mode == 'virtual' %}Virtual Home (simulation){% else %}ESP32 Hardware{% endif %}</span>
         <svg class="icon kpi-icon"><use href="/static/icons.svg#icon-memory"></use></svg>
       </div>
       <div class="kpi-body">
         <div class="kpi-value-wrap">
           <div class="flex items-center gap-xs">
-            <span class="pulse-dot" id="kpi-device-dot"></span>
-            <span class="kpi-value font-mono text-lg" id="kpi-device-val">Checking...</span>
+            <span class="pulse-dot {% if hardware_mode == 'virtual' %}live{% else %}offline{% endif %}" id="kpi-device-dot"></span>
+            <span class="kpi-value font-mono text-lg" id="kpi-device-val">{% if hardware_mode == 'virtual' %}Simulated{% else %}Checking...{% endif %}</span>
           </div>
-          <span class="kpi-delta" id="kpi-device-hint">MQTT Link</span>
+          <span class="kpi-delta" id="kpi-device-hint">{% if hardware_mode == 'virtual' %}Virtual Home (simulation){% else %}MQTT Link{% endif %}</span>
         </div>
       </div>
     </div>
@@ -142,19 +142,19 @@
   </div>
 
   <!-- Row 2.5: Physical IoT Hardware Controller -->
-  <div class="card hardware-card mb-lg">
+  <div class="card hardware-card mb-lg" id="overview-hardware-card">
     <div class="card-header flex items-center justify-between">
       <div class="flex items-center gap-sm">
         <svg class="icon text-accent" style="width: 22px; height: 22px;"><use href="/static/icons.svg#icon-memory"></use></svg>
         <div>
-          <h2 class="card-title">IoT Hardware Controller (ESP32)</h2>
-          <p class="card-subtitle">Direct hardware manual override {% if session.get('role') != 'admin' %}&bull; <span class="text-warn font-semibold">Admin role required for direct actuation</span>{% else %}&bull; Real-time actuation link{% endif %}</p>
+          <h2 class="card-title" id="hw-card-title">{% if hardware_mode == 'virtual' %}Virtual Home (simulation){% else %}IoT Hardware Controller (ESP32){% endif %}</h2>
+          <p class="card-subtitle" id="hw-card-subtitle">{% if hardware_mode == 'virtual' %}No physical device is connected. Actions change a simulated home; nothing physical moves.{% else %}Direct hardware manual override {% if session.get('role') != 'admin' %}&bull; <span class="text-warn font-semibold">Admin role required for direct actuation</span>{% else %}&bull; Real-time actuation link{% endif %}{% endif %}</p>
         </div>
       </div>
       <div class="flex items-center gap-xs">
         <span class="pill pill-ok text-xs" id="hw-transport-pill">
           <span class="pulse-dot ok" id="hw-dot"></span>
-          <span id="hw-transport-name">USB Serial (COM11)</span>
+          <span id="hw-transport-name">{% if hardware_mode == 'virtual' %}Virtual Simulation{% else %}USB Serial (COM11){% endif %}</span>
         </span>
       </div>
     </div>
@@ -226,7 +226,7 @@
 
       <!-- Live Hardware Feedback Bar -->
       <div class="hw-live-log mt-md flex items-center justify-between p-xs bg-subtle rounded border" id="hw-live-log">
-        <span class="text-xs font-mono text-muted" id="hw-live-msg">Hardware link active on COM11. Ready for direct or AI agent commands.</span>
+        <span class="text-xs font-mono text-muted" id="hw-live-msg">{% if hardware_mode == 'virtual' %}Virtual Home simulation active. Ready for direct or AI agent commands.{% else %}Hardware link active on COM11. Ready for direct or AI agent commands.{% endif %}</span>
         <span class="text-xs font-mono text-muted" id="hw-latency-tag">&lt;5ms latency</span>
       </div>
     </div>

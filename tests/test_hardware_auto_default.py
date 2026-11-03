@@ -165,3 +165,205 @@ def test_command_allowlist_exact():
         assert COMMAND_ALLOWLIST == expected
     finally:
         set_bridge(None)
+
+
+# ============================================================================
+# STEP 5c VERIFICATION: Honest Status for Virtual Home & hardware_mode API
+# ============================================================================
+
+import json
+import secrets
+import time
+from agent.worker import DeviceStatusSubscriber
+from security.hardware import FakeBridge
+from web.server import create_app
+
+
+def test_virtual_bridge_device_status_fields(tmp_path):
+    """Step 5c Part B: For VirtualBridge, worker writes simulated=True, broker_connected=False,
+    transport='virtual', device_id='virtual-home', description='Virtual Home (simulation)', port='virtual'.
+    """
+    set_bridge(None)
+    try:
+        set_bridge(VirtualBridge())
+        subscriber = DeviceStatusSubscriber(data_dir=tmp_path)
+        subscriber._write_device_status(is_online=True)
+
+        status_file = tmp_path / "device_status.json"
+        assert status_file.exists()
+        data = json.loads(status_file.read_text(encoding="utf-8"))
+
+        assert data["transport"] == "virtual"
+        assert data["simulated"] is True
+        assert data["broker_connected"] is False
+        assert data["device_id"] == "virtual-home"
+        assert data["description"] == "Virtual Home (simulation)"
+        assert data["port"] == "virtual"
+        assert data["online"] is True
+    finally:
+        set_bridge(None)
+
+
+def test_fake_and_real_bridge_device_status_simulated_false(tmp_path):
+    """Step 5c Part B: For FakeBridge and real bridge, simulated=False and broker_connected is unchanged."""
+    set_bridge(None)
+    try:
+        # 1. FakeBridge
+        set_bridge(FakeBridge())
+        subscriber = DeviceStatusSubscriber(data_dir=tmp_path)
+        subscriber.broker_connected = True
+        subscriber._write_device_status(is_online=True)
+
+        status_file = tmp_path / "device_status.json"
+        assert status_file.exists()
+        data_fake = json.loads(status_file.read_text(encoding="utf-8"))
+
+        assert data_fake["simulated"] is False
+        assert data_fake["broker_connected"] is True
+        assert data_fake["transport"] == "fake"
+
+        # 2. SerialHardwareBridge
+        set_bridge(SerialHardwareBridge(port="COM4"))
+        subscriber.broker_connected = False
+        subscriber._write_device_status(is_online=False)
+
+        data_serial = json.loads(status_file.read_text(encoding="utf-8"))
+        assert data_serial["simulated"] is False
+        assert data_serial["broker_connected"] is False
+        assert data_serial["transport"] == "usb_serial"
+        assert data_serial["port"] == "COM4"
+    finally:
+        set_bridge(None)
+
+
+def test_api_overview_and_health_hardware_mode(tmp_path, monkeypatch):
+    """Step 5c Part C: /api/overview and /api/health return clear hardware_mode:
+    'virtual' | 'usb' | 'mqtt' derived server-side from status.transport.
+    """
+    dash_sec = secrets.token_hex(32)
+    web_sec = secrets.token_hex(32)
+    monkeypatch.setenv("AEGIS_DASH_SECRET", dash_sec)
+    monkeypatch.setenv("AEGIS_WEB_SECRET", web_sec)
+    monkeypatch.setenv("AEGIS_DATA_DIR", str(tmp_path))
+
+    app = create_app()
+    app.config["TESTING"] = True
+    client = app.test_client()
+
+    csrf_token = secrets.token_hex(32)
+    with client.session_transaction() as sess:
+        sess["username"] = "admin"
+        sess["role"] = "admin"
+        sess["real_role"] = "admin"
+        sess["last_activity"] = time.time()
+        sess["csrf_token"] = csrf_token
+
+    # Case 1: Virtual transport -> hardware_mode 'virtual', status 'online', hint 'Virtual Home (simulation)'
+    status_file = tmp_path / "device_status.json"
+    status_file.write_text(json.dumps({
+        "transport": "virtual",
+        "simulated": True,
+        "broker_connected": False,
+        "online": True,
+        "device_id": "virtual-home",
+        "description": "Virtual Home (simulation)",
+        "port": "virtual",
+    }), encoding="utf-8")
+
+    res_overview = client.get("/api/overview")
+    assert res_overview.status_code == 200
+    ov_data = res_overview.get_json()
+    assert ov_data["hardware_mode"] == "virtual"
+    assert ov_data["kpis"]["device_status"]["hardware_mode"] == "virtual"
+    assert ov_data["kpis"]["device_status"]["status"] == "online"
+    assert ov_data["kpis"]["device_status"]["hint"] == "Virtual Home (simulation)"
+
+    res_health = client.get("/api/health")
+    assert res_health.status_code == 200
+    h_data = res_health.get_json()
+    assert h_data["hardware_mode"] == "virtual"
+
+    # Case 2: USB serial transport -> hardware_mode 'usb'
+    status_file.write_text(json.dumps({
+        "transport": "usb_serial",
+        "simulated": False,
+        "broker_connected": True,
+        "online": True,
+        "port": "COM11",
+    }), encoding="utf-8")
+
+    res_overview_usb = client.get("/api/overview")
+    assert res_overview_usb.status_code == 200
+    ov_usb_data = res_overview_usb.get_json()
+    assert ov_usb_data["hardware_mode"] == "usb"
+    assert ov_usb_data["kpis"]["device_status"]["hardware_mode"] == "usb"
+
+    res_health_usb = client.get("/api/health")
+    assert res_health_usb.status_code == 200
+    assert res_health_usb.get_json()["hardware_mode"] == "usb"
+
+    # Case 3: MQTT transport -> hardware_mode 'mqtt'
+    status_file.write_text(json.dumps({
+        "transport": "mqtt",
+        "simulated": False,
+        "broker_connected": True,
+        "online": True,
+    }), encoding="utf-8")
+
+    res_overview_mqtt = client.get("/api/overview")
+    assert res_overview_mqtt.status_code == 200
+    ov_mqtt_data = res_overview_mqtt.get_json()
+    assert ov_mqtt_data["hardware_mode"] == "mqtt"
+    assert ov_mqtt_data["kpis"]["device_status"]["hardware_mode"] == "mqtt"
+
+    res_health_mqtt = client.get("/api/health")
+    assert res_health_mqtt.status_code == 200
+    assert res_health_mqtt.get_json()["hardware_mode"] == "mqtt"
+
+
+def test_missing_device_status_file_derives_virtual_from_active_bridge(tmp_path, monkeypatch):
+    """Cold-start missing file test: when device_status.json does not exist yet,
+    hardware_mode falls back to the active bridge / policy auto mode. If VirtualBridge
+    is active, hardware_mode must be 'virtual', status 'online', and hint 'Virtual Home (simulation)'.
+    """
+    set_bridge(None)
+    try:
+        set_bridge(VirtualBridge())
+        dash_sec = secrets.token_hex(32)
+        web_sec = secrets.token_hex(32)
+        monkeypatch.setenv("AEGIS_DASH_SECRET", dash_sec)
+        monkeypatch.setenv("AEGIS_WEB_SECRET", web_sec)
+        monkeypatch.setenv("AEGIS_DATA_DIR", str(tmp_path))
+
+        status_file = tmp_path / "device_status.json"
+        if status_file.exists():
+            status_file.unlink()
+
+        app = create_app()
+        app.config["TESTING"] = True
+        client = app.test_client()
+
+        csrf_token = secrets.token_hex(32)
+        with client.session_transaction() as sess:
+            sess["username"] = "admin"
+            sess["role"] = "admin"
+            sess["real_role"] = "admin"
+            sess["last_activity"] = time.time()
+            sess["csrf_token"] = csrf_token
+
+        # Even with no device_status.json file, /api/overview must report 'virtual'
+        res_overview = client.get("/api/overview")
+        assert res_overview.status_code == 200
+        ov_data = res_overview.get_json()
+        assert ov_data["hardware_mode"] == "virtual"
+        assert ov_data["kpis"]["device_status"]["hardware_mode"] == "virtual"
+        assert ov_data["kpis"]["device_status"]["status"] == "online"
+        assert ov_data["kpis"]["device_status"]["hint"] == "Virtual Home (simulation)"
+
+        # /api/health must report 'virtual'
+        res_health = client.get("/api/health")
+        assert res_health.status_code == 200
+        h_data = res_health.get_json()
+        assert h_data["hardware_mode"] == "virtual"
+    finally:
+        set_bridge(None)

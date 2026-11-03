@@ -231,6 +231,25 @@ def create_app() -> Flask:
 
         return apply_security_headers(response)
 
+    _hw_mode_cache: tuple[str, float] | None = None
+
+    @app.context_processor
+    def inject_hardware_mode():
+        nonlocal _hw_mode_cache
+        now = time.time()
+        if _hw_mode_cache is not None and (now - _hw_mode_cache[1]) < 2.0:
+            return {"hardware_mode": _hw_mode_cache[0]}
+
+        try:
+            from web.api import _derive_hardware_mode
+            h = security.health.get_system_health()
+            mode = _derive_hardware_mode(h.get("device", {}))
+        except Exception:
+            mode = "virtual"
+
+        _hw_mode_cache = (mode, now)
+        return {"hardware_mode": mode}
+
 
 
 

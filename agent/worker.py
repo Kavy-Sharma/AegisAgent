@@ -89,7 +89,35 @@ class DeviceStatusSubscriber:
                 except Exception:
                     current = {}
 
-            current["broker_connected"] = bool(self.broker_connected)
+            active_bridge = None
+            try:
+                active_bridge = security.hardware.get_bridge()
+            except Exception:
+                pass
+
+            is_virtual = (
+                getattr(active_bridge, "transport", None) == "virtual"
+                or (hasattr(security, "virtual_home") and isinstance(active_bridge, security.virtual_home.VirtualBridge))
+            )
+
+            if is_virtual:
+                current["transport"] = "virtual"
+                current["simulated"] = True
+                current["broker_connected"] = False
+                current["device_id"] = "virtual-home"
+                current["description"] = "Virtual Home (simulation)"
+                current["port"] = "virtual"
+            else:
+                current["broker_connected"] = bool(self.broker_connected)
+                current["simulated"] = False
+                if active_bridge:
+                    if hasattr(active_bridge, "transport"):
+                        current["transport"] = str(active_bridge.transport)
+                    if hasattr(active_bridge, "port"):
+                        current["port"] = str(active_bridge.port)
+                    if hasattr(active_bridge, "description"):
+                        current["description"] = str(active_bridge.description)
+
             if is_online is not None:
                 if is_online != self._last_state:
                     self._last_state = is_online
@@ -99,16 +127,6 @@ class DeviceStatusSubscriber:
                 current["last_seen"] = now_iso
                 current["since"] = self._since or now_iso
                 current["timestamp"] = time.time()
-                try:
-                    active_bridge = security.hardware.get_bridge()
-                    if hasattr(active_bridge, "transport"):
-                        current["transport"] = str(active_bridge.transport)
-                    if hasattr(active_bridge, "port"):
-                        current["port"] = str(active_bridge.port)
-                    if hasattr(active_bridge, "description"):
-                        current["description"] = str(active_bridge.description)
-                except Exception:
-                    pass
 
             tmp_file = status_file.with_name(f"device_status.tmp.{secrets.token_hex(4)}")
             try:
@@ -134,7 +152,7 @@ class DeviceStatusSubscriber:
                     self.is_running = True
                     print(f"[WORKER] USB Serial hardware subscriber active (port={getattr(bridge, 'port', 'unknown')}, online={is_on})")
                 else:
-                    self.broker_connected = True
+                    self.broker_connected = False if getattr(bridge, "transport", None) == "virtual" else True
                     self._write_device_status(is_online=bridge.is_device_online())
                     self.is_running = True
             except Exception as e:

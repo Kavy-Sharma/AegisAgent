@@ -304,9 +304,15 @@ var app = (function () {
 
 
 
-        updateDot("health-dot-device", health.device.status === "online" ? "live" : (health.device.status === "offline" ? "offline" : "unknown"));
-
-        setText("health-label-device", health.device.status === "online" ? "Online" : (health.device.status === "offline" ? "Offline" : "Unknown"));
+        if (health.hardware_mode === "virtual" || (health.device && health.device.transport === "virtual")) {
+          setText("health-name-device", "Virtual Home");
+          updateDot("health-dot-device", "live");
+          setText("health-label-device", "Simulated");
+        } else {
+          setText("health-name-device", "ESP32");
+          updateDot("health-dot-device", health.device.status === "online" ? "live" : (health.device.status === "offline" ? "offline" : "unknown"));
+          setText("health-label-device", health.device.status === "online" ? "Online" : (health.device.status === "offline" ? "Offline" : "Unknown"));
+        }
 
 
 
