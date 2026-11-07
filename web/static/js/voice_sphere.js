@@ -1,7 +1,7 @@
 /**
- * AURA Neural Voice Assistant - AegisAgent
+ * AURA Voice Input - AegisAgent
  * Interactive 3D Kinetic Particle Sphere with Web Speech API integration.
- * Dual-language (English + Hindi) speech-to-text & text-to-speech with Zero-Trust Security Gating.
+ * Dual-language (English + Hindi) speech-to-text & text-to-speech with Aegis security pipeline gating.
  */
 (function () {
   var canvas = document.getElementById("voice-sphere-canvas");
@@ -658,9 +658,9 @@
     if (argsEl) {
       if (!toolArgs || Object.keys(toolArgs).length === 0) {
         if (toolName.indexOf("door") !== -1) {
-          argsEl.textContent = "Physical Action: Door lock solenoid will pulse for 3 seconds to unlatch front door, then auto-relock.\nZero-Trust Policy: High-risk physical actuation requires administrator verification.";
+          argsEl.textContent = "Physical Action: Door lock solenoid will pulse for 3 seconds to unlatch front door, then auto-relock.\nAegis security policy: High-risk physical actuation requires administrator approval.";
         } else if (toolName.indexOf("alarm") !== -1) {
-          argsEl.textContent = "Physical Action: Audible piezo buzzer siren and yellow strobe LED will activate.\nZero-Trust Policy: High-risk siren alert requires operator verification.";
+          argsEl.textContent = "Physical Action: Audible piezo buzzer siren and yellow strobe LED will activate.\nAegis security policy: High-risk siren alert requires operator approval.";
         } else {
           argsEl.textContent = "Standard Operation: Direct physical hardware execution requested.";
         }

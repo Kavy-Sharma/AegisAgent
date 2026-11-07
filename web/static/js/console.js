@@ -1129,7 +1129,7 @@
       desc.className = "text-xs";
       desc.style.cssText = "font-size: 12px; line-height: 1.5; color: #cbd5e1;";
       if (toolName.indexOf("door") !== -1) {
-        desc.innerHTML = "<strong style='color: #38bdf8;'>Physical Action:</strong> Door lock solenoid will pulse for 3 seconds to unlatch the front door, then auto-relock.<br><span style='color: #94a3b8; font-size: 11px;'>??? Aegis Zero-Trust Policy requires administrator authorization before actuating physical security locks.</span>";
+        desc.innerHTML = "<strong style='color: #38bdf8;'>Physical Action:</strong> Door lock solenoid will pulse for 3 seconds to unlatch the front door, then auto-relock.<br><span style='color: #94a3b8; font-size: 11px;'>??? Aegis security policy requires administrator approval before actuating physical security locks.</span>";
       } else if (toolName.indexOf("alarm") !== -1) {
         desc.innerHTML = "<strong style='color: #f59e0b;'>Physical Action:</strong> Audible piezo buzzer siren and yellow strobe LED will activate on hardware.<br><span style='color: #94a3b8; font-size: 11px;'>??? High-risk audible siren requires operator verification.</span>";
       } else {
@@ -1684,6 +1684,8 @@
         setQuarantineLockdown(false);
       }
     }
+    var isSimulated = (health && (health.environment === "office" || health.hardware_mode === "virtual" || (health.device && health.device.transport === "virtual")));
+    STAGE_LABELS.hardware = isSimulated ? "Device (simulated)" : "Hardware";
   });
 
 })();

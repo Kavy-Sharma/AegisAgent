@@ -517,7 +517,7 @@
 
     var badgeRight = document.createElement("span");
     badgeRight.className = "badge badge-ok text-xs font-mono mb-xs";
-    badgeRight.textContent = "100% CONTAINED";
+    badgeRight.textContent = "Contained in test";
     contentRight.appendChild(badgeRight);
 
     var titleRight = document.createElement("h4");
