@@ -29,7 +29,7 @@
       const returnText = document.getElementById("approvals-return-text");
       if (returnTo && returnLink) {
         returnLink.href = returnTo;
-        returnLink.style.display = "inline-flex";
+        returnLink.classList.remove("is-hidden");
         if (returnText) {
           if (returnTo.indexOf("voice") !== -1) {
             returnText.textContent = "← Return to Aura Voice";

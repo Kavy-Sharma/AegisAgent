@@ -109,8 +109,13 @@ def format_plain_summary(entry: dict[str, Any]) -> str:
         cmd = entry.get("command", "command")
         ok = entry.get("ok", False)
         adapter = entry.get("adapter", "hardware")
+        is_sim = adapter == "virtual" or entry.get("transport") == "virtual" or entry.get("simulated") is True
         if ok:
+            if is_sim:
+                return f"Virtual device executed: Simulated command '{cmd}' completed."
             return f"Hardware Executed: Physical command '{cmd}' dispatched to {adapter}."
+        if is_sim:
+            return f"Virtual device failed: Simulated command '{cmd}' failed ({entry.get('error', 'no response')})."
         return f"Hardware Failed: Command '{cmd}' failed ({entry.get('error', 'no response')})."
 
     # 5. Security events & Authentications

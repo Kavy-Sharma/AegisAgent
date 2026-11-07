@@ -46,7 +46,7 @@ AegisAgent is a security gateway positioned between a local LLM agent (**Ollama*
               │
               ▼
 ┌───────────────────────────┐
-│   Tamper-Evident Logger   │ ──► Cryptographic SHA-256 Hash-Chained Audit Trail
+│   Tamper-Evident Logger   │ ──► SHA-256 hash-chained audit trail
 └───────────────────────────┘
 ```
 
@@ -74,7 +74,7 @@ AegisAgent is a security gateway positioned between a local LLM agent (**Ollama*
 - Roles defined in `policy.yaml` (`guest`, `admin`).
 - CLI flag support: `python -m agent.agent --role admin` (defaults to least-privileged role `guest`).
 - In-chat commands `/role <name>` and `/whoami`.
-- Every role transition creates a cryptographic `role_change` entry in the audit log.
+- Every role transition creates a hash-chained `role_change` entry in the audit log.
 
 ### 2. Prompt Injection Detection (Phase 5)
 - **Multi-View Normalization**: Scans `raw` text, `normalized` text (NFKC, curly quote replacement, zero-width char removal, whitespace collapsing), and `base64_decoded` content.
@@ -92,7 +92,7 @@ AegisAgent is a security gateway positioned between a local LLM agent (**Ollama*
 - Physical Red "Attack Blocked" LED triggered on block decisions with a 2-second rate debounce filter.
 - ESP32 firmware featuring non-blocking `millis()` execution, Last Will & Testament (LWT) tracking, and on-device command allowlisting.
 
-### 5. Cryptographic Audit Logging & Audit Log Page
+### 5. Hash-Chained Audit Logging & Audit Log Page
 - All gateway decisions, prompt inspections, approval requests, role switches, and hardware dispatches are chained using SHA-256 hashes in `logs/audit_log.jsonl`.
 - Tamper-evident audit chain verified via `python security/verify_log.py`.
 - **Audit Log Page**: A tamper-evident, SHA-256 hash-chained log viewer with live verification, external anchor export/check, and an isolated copy-only tamper demonstration.
@@ -349,7 +349,7 @@ AegisAgent/
 │   ├── quarantine.py          # Session Quarantine on Repeated Attacks
 │   ├── rate_limiter.py        # Sliding-Window Rate Limiter
 │   ├── signing.py             # HMAC-SHA256 Request & Decision Signing
-│   ├── verify_log.py          # Cryptographic Audit Log Verifier
+│   ├── verify_log.py          # Hash-Chained Audit Log Verifier
 │   ├── virtual_home.py        # In-Memory Smart Home Simulation (Default)
 │   ├── detection/
 │   │   ├── base.py            # Detection Dataclasses & Interfaces
@@ -393,7 +393,7 @@ AegisAgent/
 │   ├── test_pipeline_benchmark.py # Pipeline Benchmark Integrity Suite
 │   └── test_virtual_home.py   # Virtual Home Simulation Suite
 ├── logs/
-│   └── audit_log.jsonl        # Cryptographic Audit Log File
+│   └── audit_log.jsonl        # Hash-Chained Audit Log File
 ├── policy.yaml                # Master Security Policy Configuration
 ├── conftest.py                # Pytest Test Discovery Configuration
 ├── .env.example               # Environment Variables Template

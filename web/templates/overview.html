@@ -165,7 +165,7 @@
   <div class="card sandbox-card mb-lg" id="overview-office-sandbox-card">
     <div class="card-header flex items-center justify-between">
       <div class="flex items-center gap-sm">
-        <svg class="icon text-accent" style="width: 22px; height: 22px;"><use href="/static/icons.svg#icon-box"></use></svg>
+        <svg class="icon text-accent icon-22"><use href="/static/icons.svg#icon-box"></use></svg>
         <div>
           <h2 class="card-title" id="sandbox-card-title">Office Sandbox</h2>
           <p class="card-subtitle" id="sandbox-card-subtitle">In-memory simulated tools and storage &bull; No external network or filesystem access</p>
@@ -202,7 +202,7 @@
   <div class="card hardware-card mb-lg" id="overview-hardware-card">
     <div class="card-header flex items-center justify-between">
       <div class="flex items-center gap-sm">
-        <svg class="icon text-accent" style="width: 22px; height: 22px;"><use href="/static/icons.svg#icon-memory"></use></svg>
+        <svg class="icon text-accent icon-22"><use href="/static/icons.svg#icon-memory"></use></svg>
         <div>
           <h2 class="card-title" id="hw-card-title">{% if hardware_mode == 'virtual' %}Virtual Home (simulation){% else %}IoT Hardware Controller (ESP32){% endif %}</h2>
           <p class="card-subtitle" id="hw-card-subtitle">{% if hardware_mode == 'virtual' %}No physical device is connected. Actions change a simulated home; nothing physical moves.{% else %}Direct hardware manual override {% if session.get('role') != 'admin' %}&bull; <span class="text-warn font-semibold">Admin role required for direct actuation</span>{% else %}&bull; Real-time actuation link{% endif %}{% endif %}</p>
@@ -221,12 +221,11 @@
         <div class="hw-control-box">
           <div class="hw-box-header flex items-center justify-between mb-xs">
             <span class="font-semibold text-sm">Light Actuator</span>
-            <span class="badge badge-neutral text-xs font-mono">GPIO 26</span>
           </div>
           <p class="hw-box-desc text-xs text-muted mb-sm">Toggle physical Green LED indicator</p>
           <div class="hw-btn-group flex gap-xs">
             <button type="button" class="btn btn-secondary btn-xs hw-actuate-btn" data-cmd="light_on">
-              <svg class="icon text-ok" style="width: 14px; height: 14px;"><use href="/static/icons.svg#icon-sun"></use></svg>
+              <svg class="icon text-ok icon-14"><use href="/static/icons.svg#icon-sun"></use></svg>
               <span>Turn ON</span>
             </button>
             <button type="button" class="btn btn-ghost btn-xs hw-actuate-btn" data-cmd="light_off">
@@ -244,7 +243,7 @@
           <p class="hw-box-desc text-xs text-muted mb-sm">Triggers 3-second temporary pulse with auto-relock</p>
           <div class="hw-btn-group flex gap-xs">
             <button type="button" class="btn btn-secondary btn-xs hw-actuate-btn" data-cmd="unlock_door">
-              <svg class="icon text-warn" style="width: 14px; height: 14px;"><use href="/static/icons.svg#icon-lock"></use></svg>
+              <svg class="icon text-warn icon-14"><use href="/static/icons.svg#icon-lock"></use></svg>
               <span>Unlock (3s)</span>
             </button>
           </div>
@@ -254,12 +253,11 @@
         <div class="hw-control-box">
           <div class="hw-box-header flex items-center justify-between mb-xs">
             <span class="font-semibold text-sm">Siren / Alarm</span>
-            <span class="badge badge-danger text-xs font-mono">GPIO 25</span>
           </div>
           <p class="hw-box-desc text-xs text-muted mb-sm">Audible piezo buzzer and yellow LED strobe</p>
           <div class="hw-btn-group flex gap-xs">
             <button type="button" class="btn btn-secondary btn-xs hw-actuate-btn" data-cmd="alarm_on">
-              <svg class="icon text-danger" style="width: 14px; height: 14px;"><use href="/static/icons.svg#icon-alert-triangle"></use></svg>
+              <svg class="icon text-danger icon-14"><use href="/static/icons.svg#icon-alert-triangle"></use></svg>
               <span>Sound Alarm</span>
             </button>
           </div>
@@ -269,12 +267,11 @@
         <div class="hw-control-box">
           <div class="hw-box-header flex items-center justify-between mb-xs">
             <span class="font-semibold text-sm">Security Block LED</span>
-            <span class="badge badge-danger text-xs font-mono">GPIO 27</span>
           </div>
           <p class="hw-box-desc text-xs text-muted mb-sm">Physical alert indicator triggered by blocked injection attacks</p>
           <div class="hw-btn-group flex gap-xs">
             <button type="button" class="btn btn-secondary btn-xs hw-actuate-btn" data-cmd="alert_blocked">
-              <svg class="icon text-danger" style="width: 14px; height: 14px;"><use href="/static/icons.svg#icon-shield"></use></svg>
+              <svg class="icon text-danger icon-14"><use href="/static/icons.svg#icon-shield"></use></svg>
               <span>Test Alert LED</span>
             </button>
           </div>

@@ -139,11 +139,11 @@
           <div class="text-xs font-semibold uppercase text-muted mb-xs">Role Permissions</div>
           {% if session.get('role') == 'admin' %}
           <div class="text-xs text-muted">
-            Administrative role: Allowed full access including HIGH-risk tools (alarm, door) with human approval required.
+            Administrative role: Allowed full access including HIGH-risk tools ({{ high_risk_tools_str }}) with human approval required.
           </div>
           {% else %}
           <div class="text-xs text-muted">
-            Guest role: Restricted to LOW-risk observation and lighting tools. High-risk physical actuation is prohibited by gateway policy.
+            Guest role: Restricted to LOW-risk tools. High-risk operations ({{ high_risk_tools_str }}) are prohibited by gateway policy.
           </div>
           {% endif %}
         </div>
@@ -184,7 +184,7 @@
             </div>
             <div class="legend-stage-item flex items-center gap-xs">
               <span class="pulse-dot live"></span>
-              <span>8. Hardware Execution</span>
+              <span>8. {{ stage_8_label }}</span>
             </div>
             <div class="legend-stage-item flex items-center gap-xs">
               <span class="pulse-dot live"></span>

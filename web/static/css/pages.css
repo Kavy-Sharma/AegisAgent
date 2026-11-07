@@ -2150,7 +2150,7 @@ html[data-theme="light"] .voice-hint-text {
 }
 
 .stage-scene-box {
-  background: #0a0e17;
+  background: var(--surface-2);
   min-height: 250px;
   max-height: 320px;
   display: flex;
@@ -2528,7 +2528,7 @@ html[data-theme="light"] .voice-hint-text {
    ========================================================================== */
 
 .stage-scene-box {
-  background: #0a0e17;
+  background: var(--surface-2);
   min-height: 250px;
   max-height: 320px;
   display: flex;
@@ -4825,17 +4825,35 @@ html[data-theme="dark"] .node-event {
   justify-content: space-between;
   border-radius: 13px;
   background: var(--surface);
+  color: var(--text);
   box-sizing: border-box;
 }
 
 .card-unprotected-sim {
+  border: 1px solid var(--danger-border);
   border-left: 4px solid var(--danger);
-  background: linear-gradient(135deg, rgba(239, 68, 68, 0.06) 0%, var(--surface) 100%);
+  background: var(--danger-bg);
+  color: var(--text);
 }
 
 .card-protected-sim {
+  border: 1px solid var(--ok-border);
   border-left: 4px solid var(--ok);
-  background: linear-gradient(135deg, rgba(16, 185, 129, 0.06) 0%, var(--surface) 100%);
+  background: var(--ok-bg);
+  color: var(--text);
+}
+
+.card-unprotected-sim .office-outcome-val {
+  color: var(--danger-text);
+}
+
+.card-protected-sim .office-outcome-val {
+  color: var(--ok-text);
+}
+
+.card-unprotected-sim .text-muted,
+.card-protected-sim .text-muted {
+  color: var(--muted);
 }
 
 .office-sim-header {
@@ -4908,5 +4926,21 @@ html[data-theme="dark"] .node-event {
   display: none;
   border-left: 4px solid var(--warn);
 }
+
+/* Utility classes for CSP compliance (no inline style) */
+.is-hidden {
+  display: none !important;
+}
+
+.icon-14 {
+  width: 14px;
+  height: 14px;
+}
+
+.icon-22 {
+  width: 22px;
+  height: 22px;
+}
+
 
 

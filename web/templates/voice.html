@@ -34,14 +34,6 @@
 
     </div>
 
-    <div class="flex items-center gap-xs">
-
-      <span class="badge badge-accent font-mono text-xs">AI Agent</span>
-
-      <span class="badge badge-subtle font-mono text-xs">Jodhpur (HQ)</span>
-
-    </div>
-
   </div>
 
 
@@ -52,7 +44,7 @@
       <svg class="icon"><use href="/static/icons.svg#icon-info"></use></svg>
     </div>
     <div class="voice-notice-text">
-      <strong>Browser Speech Privacy Notice:</strong> Speech recognition uses the browser's speech service and may send audio to the browser vendor; not offline. Downstream AI reasoning and hardware actuation remain strictly local on AegisAgent.
+      <strong>Browser Speech Privacy Notice:</strong> Speech recognition uses the browser's speech service and may send audio to the browser vendor; not offline. Downstream AI reasoning and device actions remain strictly local on AegisAgent.
     </div>
   </div>
   {% else %}
@@ -166,7 +158,7 @@
 
   <!-- Inline Operator Authorization Modal (Appears directly on voice page!) -->
 
-  <div class="voice-approval-card" id="voice-approval-alert" style="display: none;">
+  <div class="voice-approval-card is-hidden" id="voice-approval-alert">
 
     <div class="flex items-start gap-md">
 
@@ -224,7 +216,7 @@
 
           <div class="approval-progress-track">
 
-            <div class="approval-progress-fill" id="voice-approval-progress" style="width: 100%;"></div>
+            <div class="approval-progress-fill" id="voice-approval-progress"></div>
 
           </div>
 
@@ -298,7 +290,7 @@
 
     <!-- User transcript bubble -->
 
-    <div class="transcript-line user" id="voice-user-line" style="display: none;">
+    <div class="transcript-line user is-hidden" id="voice-user-line">
 
       <div class="transcript-avatar user">
 
@@ -352,7 +344,7 @@
 
     <!-- Mini Security Stepper for Voice Commands -->
 
-    <div class="mt-xs pt-xs border-t border-subtle" id="voice-stepper-container" style="display: none;">
+    <div class="mt-xs pt-xs border-t border-subtle is-hidden" id="voice-stepper-container">
 
       <div class="text-xs text-muted mb-xs font-semibold uppercase">Security Pipeline Verification</div>
 

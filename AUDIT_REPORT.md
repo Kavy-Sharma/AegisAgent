@@ -3,7 +3,7 @@
 **Branch:** `web-ui`  
 **Date:** 2026-10-31  
 **Auditor:** Security Audit Team  
-**Scope:** Full codebase audit covering Authentication, Session Management, Zero-Trust Execution Pipeline, Hardware Bridging, Microcontroller Firmware, Audit Chain Integrity, Aura Neural Voice Gateway, and Detection Robustness.
+**Scope:** Full codebase audit covering Authentication, Session Management, multi-layer Execution Pipeline, Hardware Bridging, Microcontroller Firmware, Audit Chain Integrity, Aura Voice input, and Detection Robustness.
 
 ---
 
@@ -11,13 +11,13 @@
 
 The AegisAgent codebase implements a multi-stage security gateway between user input and IoT hardware actuation. The core mechanisms include SHA-256 HMAC request signing, canonical approval request hashing, audit log tamper detection across concurrent multi-process logging, prompt injection detection, and role-based access control (RBAC).
 
-Phase B remediation has systematically resolved identified vulnerabilities, hardened input validation and error handling across all web endpoints, enforced hardware truth contracts, isolated rate limiting per user, bounded disk and memory utilization, and implemented external anchor verification for the cryptographic audit log.
+Phase B remediation has systematically resolved identified vulnerabilities, hardened input validation and error handling across all web endpoints, enforced hardware truth contracts, isolated rate limiting per user, bounded disk and memory utilization, and implemented external anchor verification for the hash-chained audit log.
 
 ```mermaid
 flowchart TD
     User([User Voice / Web Input]) --> WebGuards[Web Guards: Host Header & Rate Limit]
     WebGuards --> Auth[Session & Role Authentication]
-    Auth --> Gateway[Aegis Zero-Trust Security Gateway]
+    Auth --> Gateway[Aegis multi-layer Security Gateway]
     
     subgraph Pipeline [7-Stage Security Pipeline]
         Gateway --> Stage1[1. Prompt Injection Detection]
@@ -86,7 +86,7 @@ flowchart TD
 - **Console Threat Window State:** When prompt injection is detected, the UI locks the input field, transitions the pipeline diagram to red, and displays an admin override action. Non-admin users cannot dismiss threat containment.
 - **Polling Intervals & Backoff:** Overview dashboard polls at 3,000ms; approval card polls at 1,000ms; voice turn completion polls at 1,000ms with a strict 75s timeout (exceeding approval timeout + 10s). *(Note: legacy Streamlit dashboard removed; replaced by web/)*
 
-### A9. Neural Voice Gateway (Aura)
+### A9. Voice input (Aura)
 - **Policy Default:** Set `voice.enabled: false` by default in `policy.yaml`.
 - **Privacy Disclosure:** Mandatory visual disclosure banner rendered whenever microphone capture is initialized.
 - **Authorization Gating:** Voice commands route through standard security gateway with `req.source = "voice"`. Voice inputs cannot authorize high-risk approvals (`/api/approvals/decide` rejects non-interactive approval tokens).
@@ -229,13 +229,13 @@ Empirical evaluation of 60 novel attack variations evaluated across 4 defense co
 
 ---
 
-## Cryptographic Audit Log Tamper Demonstration
+## Hash-Chained Audit Log Tamper Demonstration
 
 Execution of `python scripts/demo_tamper.py` on a copy of the audit log demonstrating 5 distinct attack vectors:
 
 ```
 ======================================================================
-PHASE B - AUDIT LOG CRYPTOGRAPHIC TAMPER DEMONSTRATION
+PHASE B - AUDIT LOG HASH-CHAINED TAMPER DEMONSTRATION
 ======================================================================
 [*] Generating 10 sample audit events in audit_copy.jsonl...
 [*] Created external anchor: count=10, head_hash=ccce580fc79e4079...

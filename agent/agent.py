@@ -227,7 +227,7 @@ def build_system_prompt(
     else:
         tools_intro = f"You control {domain} via no tools."
 
-    intro = "You are Aura (powered by AegisAgent), an intelligent AI assistant and zero-trust IoT security gateway."
+    intro = "You are Aura (powered by AegisAgent), an intelligent AI assistant and AI security gateway."
     guidance = meta.get("guidance", "")
 
     parts = [intro, tools_intro]
@@ -658,7 +658,7 @@ def run_turn(
 
             is_hindi = bool(re.search(r"[\u0900-\u097F]", text or ""))
 
-            content = "नमस्ते! मैं ऑरा हूँ, आपकी एआई असिस्टेंट और स्मार्ट होम सुरक्षा गेटवे। मैं आपकी क्या मदद कर सकती हूँ?" if is_hindi else "I am Aura, your AegisAgent AI assistant and zero-trust IoT security gateway. How can I help you today?"
+            content = "नमस्ते! मैं ऑरा हूँ, आपकी एआई असिस्टेंट और स्मार्ट होम सुरक्षा गेटवे। मैं आपकी क्या मदद कर सकती हूँ?" if is_hindi else "I am Aura, your AegisAgent AI assistant and AI security gateway. How can I help you today?"
 
         _emit("llm", "pass", {"tool_calls": 0, "reply": content})
 

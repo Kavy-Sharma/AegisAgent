@@ -437,7 +437,7 @@
       }
 
       if (userTextEl) userTextEl.textContent = transcript;
-      if (userLine) userLine.style.display = "flex";
+      if (userLine) userLine.classList.remove("is-hidden");
 
       if (event.results[0] && event.results[0].isFinal) {
         try { rec.stop(); } catch (e) {}
@@ -510,11 +510,11 @@
     }
 
     // Reset UI transcript states immediately
-    if (stepperContainer) stepperContainer.style.display = "block";
+    if (stepperContainer) stepperContainer.classList.remove("is-hidden");
     resetVoiceStepper();
 
-    if (approvalAlert) approvalAlert.style.display = "none";
-    if (userLine) userLine.style.display = "flex";
+    if (approvalAlert) approvalAlert.classList.add("is-hidden");
+    if (userLine) userLine.classList.remove("is-hidden");
     if (userTextEl) userTextEl.textContent = text;
     if (userLangLabel) userLangLabel.textContent = currentLang === "hi" ? "हिंदी" : "English";
 
@@ -576,7 +576,7 @@
 
           if (data.final) {
             if (!approvalTriggered && approvalAlert) {
-              approvalAlert.style.display = "none";
+              approvalAlert.classList.add("is-hidden");
             }
             var reply = data.final.reply || (data.final.error ? ("Blocked: " + data.final.error) : "Done.");
             lastSpokenText = reply;
@@ -646,7 +646,7 @@
     currentApprovalHash = (detail && detail.request_hash) ? detail.request_hash : "";
     var toolArgs = (detail && detail.args) ? detail.args : {};
 
-    if (approvalAlert) approvalAlert.style.display = "block";
+    if (approvalAlert) approvalAlert.classList.remove("is-hidden");
     if (approvalToolEl) approvalToolEl.textContent = toolName;
 
     var hashEl = document.getElementById("voice-approval-hash-display");
@@ -735,7 +735,7 @@
           clearInterval(approvalCountdownTimer);
           approvalCountdownTimer = null;
         }
-        if (approvalAlert) approvalAlert.style.display = "none";
+        if (approvalAlert) approvalAlert.classList.add("is-hidden");
         if (window.showToast) window.showToast("Action Authorized", "Approval confirmed. Executing command...", "ok", 4000);
         speakText("Action approved by operator. Executing command now...");
         if (agentTextEl) agentTextEl.textContent = "Authorized by administrator. Executing command...";
@@ -767,7 +767,7 @@
           clearInterval(approvalCountdownTimer);
           approvalCountdownTimer = null;
         }
-        if (approvalAlert) approvalAlert.style.display = "none";
+        if (approvalAlert) approvalAlert.classList.add("is-hidden");
         if (window.showToast) window.showToast("Action Denied", "Operation denied and audited.", "warn", 4000);
         speakText("Action denied by operator.");
         if (agentTextEl) agentTextEl.textContent = "Operator denied action.";
@@ -786,7 +786,7 @@
         clearInterval(approvalCountdownTimer);
         approvalCountdownTimer = null;
       }
-      if (approvalAlert) approvalAlert.style.display = "none";
+      if (approvalAlert) approvalAlert.classList.add("is-hidden");
       if (window.showToast) window.showToast("Banner Dismissed", "Action remains held in security queue.", "info");
     });
   }
@@ -881,7 +881,7 @@
     }
   });
 
-  if (approvalAlert) approvalAlert.style.display = "none";
+  if (approvalAlert) approvalAlert.classList.add("is-hidden");
 
   // Greet on load (with fallback on first click if blocked by browser autoplay)
   setTimeout(function () {

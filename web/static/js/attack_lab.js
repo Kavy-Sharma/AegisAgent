@@ -708,11 +708,32 @@
   function updateScoreboard() {
     var scoreUnprot = document.getElementById("score-unprotected-num");
     var scoreProt = document.getElementById("score-protected-num");
+    var tagUnprot = document.getElementById("score-unprotected-tag");
+    var tagProt = document.getElementById("score-protected-tag");
     if (scoreUnprot) {
       scoreUnprot.textContent = unprotSuccessCount + " of " + totalRuns;
     }
     if (scoreProt) {
       scoreProt.textContent = protBreachCount + " of " + totalRuns;
+    }
+    if (totalRuns > 0) {
+      if (tagUnprot) {
+        tagUnprot.className = "stat-tag text-danger";
+        tagUnprot.textContent = "Compromised";
+      }
+      if (tagProt) {
+        tagProt.className = "stat-tag text-ok";
+        tagProt.textContent = protBreachCount === 0 ? "Protected in Test" : "Breached";
+      }
+    } else {
+      if (tagUnprot) {
+        tagUnprot.className = "stat-tag text-muted";
+        tagUnprot.textContent = "No runs yet";
+      }
+      if (tagProt) {
+        tagProt.className = "stat-tag text-muted";
+        tagProt.textContent = "No runs yet";
+      }
     }
   }
 
@@ -991,7 +1012,7 @@
     if (runQueue.length === 0) {
       setControlsDisabled(false);
       var runAllLabel = document.getElementById("btn-run-all-label");
-      if (runAllLabel) runAllLabel.textContent = "Run all 5";
+      if (runAllLabel) runAllLabel.textContent = "Run all " + getActiveScenariosList().length;
       return;
     }
 
@@ -1097,6 +1118,8 @@
 
     // Run All Button
     var runAllBtn = document.getElementById("btn-run-all");
+    var runAllInitLabel = document.getElementById("btn-run-all-label");
+    if (runAllInitLabel) runAllInitLabel.textContent = "Run all " + getActiveScenariosList().length;
     if (runAllBtn) {
       runAllBtn.addEventListener("click", function () {
         if (isRunning) return;
