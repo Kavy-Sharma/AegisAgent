@@ -15,11 +15,21 @@
   var ICON_REPLAY = ["M3 12a9 9 0 1 0 3-6.7", "M3 4v5h5"];
 
   var rail = null;
+  var headTitle = null;
+  var headMeta = null;
   var allDecisions = [];
   var currentFilter = "all";
   var lastTouch = 0;
   var timer = null;
-  var stageLabels = ["Detection", "Intent lock", "Model", "Role", "Parameters", "Rate limit", "Approval", "Device (simulated)", "Output scan"];
+  var stageLabels = (window.AegisDecisionMap && window.AegisDecisionMap.getGateLabels(false)) || ["Detection", "Intent lock", "Model", "Role", "Parameters", "Rate limit", "Approval", "Device (simulated)", "Output scan"];
+
+  function railPlay(d) {
+    if (headTitle && d) {
+      headTitle.textContent = d.text || "Latest decision";
+      headMeta.textContent = (d.t || "") + " · " + (d.tool || "none") + " · " + (d.role || "admin");
+    }
+    if (rail && d) rail.play(d);
+  }
 
   function touch() {
     lastTouch = Date.now();
@@ -120,7 +130,7 @@
             type: "button",
             onclick: function () {
               if (rail) {
-                rail.play(d);
+                railPlay(d);
                 var host = document.getElementById("rail-host");
                 if (host && host.scrollIntoView) {
                   host.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "center" });
@@ -135,7 +145,7 @@
       );
       li.append(detailEl);
       if (rail) {
-        rail.play(d);
+        railPlay(d);
         markLive(i);
       }
     }
@@ -145,7 +155,7 @@
     var filtered = getFilteredList();
     var d = filtered[i];
     if (d && rail) {
-      rail.play(d);
+      railPlay(d);
       markLive(i);
     }
   }
@@ -272,6 +282,10 @@
   function init() {
     var host = document.getElementById("rail-host");
     if (host && GL.createRail) {
+      clear(host);
+      headTitle = h("h2", { text: "Latest decision" });
+      headMeta = h("span", { class: "mono", text: "" });
+      host.append(h("div", { class: "rail-head" }, headTitle, headMeta));
       rail = GL.createRail(host, { idle: "Loading the latest decision…" });
     }
 

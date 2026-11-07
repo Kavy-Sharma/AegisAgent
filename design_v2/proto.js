@@ -174,7 +174,11 @@
     }
     function setLabels(ls) {
       labels = ls; clear(gatesEl);
-      gates = ls.map(function (l) { var g = h("li", { class: "gate" }, h("span", { class: "gate-bar" }), h("span", { class: "gate-label", text: l })); gatesEl.append(g); return g; });
+      gates = ls.map(function (l, i) {
+        var label = h("span", { class: "gate-label" }, ls.length > 1 ? h("span", { class: "gate-n", text: String(i + 1) }) : null, l);
+        var g = h("li", { class: "gate" }, h("span", { class: "gate-bar" }), label);
+        g.style.setProperty("--i", i); gatesEl.append(g); return g;
+      });
       el.style.setProperty("--n", ls.length);
       resetVisual();
       setCaption([{ text: opts.idle || "Pick a decision to watch it travel through the gates." }]);
@@ -201,7 +205,8 @@
 
   /* ---------- overview ---------- */
   var overview = (function () {
-    var rail, feedEl, openIdx = -1, timer = null, built = false;
+    var rail, feedEl, openIdx = -1, timer = null, built = false, headTitle, headMeta;
+    function railPlay(d) { if (headTitle) { headTitle.textContent = d.text; headMeta.textContent = d.t + " · " + d.tool + " · " + d.role; } rail.play(d); }
     function countUp(el, to) {
       if (reduce) { el.textContent = to.toLocaleString(); return; }
       var t0 = performance.now(), dur = 900;
@@ -220,8 +225,10 @@
         h("div", { class: "hero" },
           h("h1", { text: "Every action an AI takes passes nine gates." }),
           h("p", { text: "Aegis sits between the agent and its tools. Watch the latest decision travel through the guard, or click any row below to replay it." })),
-        h("div", { class: "panel panel-pad", id: "rail-host" })
+        h("div", { class: "panel panel-pad rail-panel", id: "rail-host" })
       );
+      headTitle = h("h2", { text: "Latest decision" }); headMeta = h("span", { class: "mono", text: "" });
+      $("#rail-host").append(h("div", { class: "rail-head" }, headTitle, headMeta));
       rail = createRail($("#rail-host"), { idle: "Loading the latest decision…" });
       var f = e.figures;
       var figs = h("div", { class: "figures" },
@@ -261,11 +268,11 @@
             h("div", null, h("dt", { text: "Role" }), h("dd", { text: d.role })),
             h("div", null, h("dt", { text: "Tool" }), h("dd", { class: "mono", text: d.tool })),
             h("div", null, h("dt", { text: "Rule" }), h("dd", { class: "mono", text: d.rule }))),
-          h("div", null, h("button", { class: "btn", type: "button", onclick: function () { rail.play(d); $("#rail-host").scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "center" }); } }, svgIcon(ICON.replay), "Replay on the gate line"))));
-        rail.play(d);
+          h("div", null, h("button", { class: "btn", type: "button", onclick: function () { railPlay(d); $("#rail-host").scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "center" }); } }, svgIcon(ICON.replay), "Replay on the gate line"))));
+        railPlay(d);
       }
     }
-    function play(i) { var d = list()[i]; if (d && rail) { rail.play(d); markLive(i); } }
+    function play(i) { var d = list()[i]; if (d && rail) { railPlay(d); markLive(i); } }
     function markLive(i) { var rows = feedEl ? feedEl.querySelectorAll(".row") : []; rows.forEach(function (r) { r.classList.remove("is-live"); }); if (rows[i]) { void rows[i].offsetWidth; rows[i].classList.add("is-live"); } }
     function touch() { state.lastTouch = Date.now(); }
     function cycle() {

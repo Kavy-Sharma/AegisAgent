@@ -904,14 +904,19 @@ def api_overview():
         }
 
     from web.api_audit import format_plain_summary
+    is_admin = (current_role == "admin" and current_real_role == "admin")
 
     # V2 Figures and Decisions Feed for v2 Overview
     all_events = _read_log_tail(log_file, max_lines=10000)
     events_by_req = {}
+    events_by_hash = {}
     for ev in all_events:
         r_id = ev.get("request_id")
         if r_id:
             events_by_req.setdefault(r_id, []).append(ev)
+        e_hash = ev.get("entry_hash")
+        if e_hash:
+            events_by_hash[e_hash] = ev
 
     STAGE_MAP = {
         'detection': 0, 'injection': 0, 'quarantine': 0,
@@ -954,6 +959,21 @@ def api_overview():
                         stop_idx = STAGE_MAP[str(s).lower()]
                         proven_stage = str(s).lower()
                         break
+            if stop_idx == -1 and t.get("prev_hash"):
+                prev_ev = events_by_hash.get(t.get("prev_hash"))
+                if prev_ev and prev_ev.get("decision") in ("BLOCK", "DENY"):
+                    p_reason = str(prev_ev.get("reason", "")).lower()
+                    if "permission denied" in p_reason or "role" in p_reason:
+                        stop_idx = 3; proven_stage = "rbac"
+                    elif "outside intent" in p_reason or "scope" in p_reason:
+                        stop_idx = 1; proven_stage = "intent"
+                    elif "rate limit" in p_reason:
+                        stop_idx = 5; proven_stage = "rate_limit"
+                    elif "honeypot" in p_reason:
+                        stop_idx = 3; proven_stage = "rbac"
+            if stop_idx == -1 and t.get("tool") and t.get("role"):
+                if not security.policy_loader.is_tool_allowed_for_role(t.get("tool"), t.get("role")):
+                    stop_idx = 3; proven_stage = "rbac"
             if stop_idx == -1 and t.get("rule_ids"):
                 stop_idx = 0
                 proven_stage = "detection"
@@ -986,6 +1006,20 @@ def api_overview():
         ts_str = t.get("timestamp", "")
         time_str = _format_ist(ts_str, "%H:%M:%S")
 
+        if not is_admin:
+            if t_dec in ("BLOCK", "DENY"):
+                why_clean = f"Stopped at {STAGE_LABELS[stop_idx]}." if (proven_stage and stop_idx >= 0) else "Stopped by security policy."
+                rule_clean = "policy"
+            elif t_dec in ("REVIEW", "WAITING"):
+                why_clean = "Waiting for human supervisor approval."
+                rule_clean = "approval"
+            else:
+                why_clean = why
+                rule_clean = "none"
+        else:
+            why_clean = why
+            rule_clean = ", ".join(t.get("rule_ids", [])) if t.get("rule_ids") else (proven_stage or ("none" if t_dec == "ALLOW" else "policy"))
+
         v2_feed.append({
             "id": t.get("entry_hash") or req_id,
             "raw_id": (t.get("entry_hash") or req_id)[:12],
@@ -995,11 +1029,11 @@ def api_overview():
             "kind": kind,
             "stop": stop_idx,
             "stage_name": stage_name,
-            "text": format_plain_summary(t),
-            "why": why,
+            "text": format_plain_summary(t, is_admin=is_admin),
+            "why": why_clean,
             "tool": t.get("tool") or "none reached",
             "role": t.get("role") or "admin",
-            "rule": ", ".join(t.get("rule_ids", [])) if t.get("rule_ids") else (proven_stage or ("none" if t_dec == "ALLOW" else "policy"))
+            "rule": rule_clean
         })
 
     return jsonify({
@@ -1453,14 +1487,25 @@ def api_console_poll(req_id: str):
 
 
 
+    stopped_stage = None
+    if steps:
+        for s in steps:
+            if s.get("status") in ("block", "deny", "error"):
+                stopped_stage = s.get("stage")
+                break
+            elif s.get("status") == "review":
+                stopped_stage = "approval"
+    if not stopped_stage and final_entry:
+        if final_entry.get("decision") in ("BLOCK", "DENY"):
+            stopped_stage = final_entry.get("stopped_at") or final_entry.get("stage") or "detection"
+        elif final_entry.get("decision") in ("REVIEW", "WAITING"):
+            stopped_stage = "approval"
+
     return jsonify({
-
         "steps": steps,
-
         "final": final_entry,
-
         "status": "completed" if final_entry else "running",
-
+        "stopped_stage": stopped_stage,
     })
 
 
@@ -1630,6 +1675,20 @@ def api_console_release_quarantine():
 
 
 # 5d. Attack Lab: Run Scenario (Admin only)
+
+@api_bp.route("/attack_lab/scenarios", methods=["GET"])
+@role_required("admin")
+def api_attack_lab_scenarios():
+    """Returns active attack lab scenarios for current environment."""
+    import security.attack_lab
+    scenarios = security.attack_lab.list_scenarios()
+    import agent.agent
+    env_name = getattr(agent.agent, "_ACTIVE_ENV", "smart_home")
+    return jsonify({
+        "environment": env_name,
+        "scenarios": scenarios
+    })
+
 
 @api_bp.route("/attack_lab/run", methods=["POST"])
 @role_required("admin")

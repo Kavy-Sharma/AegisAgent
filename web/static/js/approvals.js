@@ -1,560 +1,225 @@
 /**
- * AegisAgent Web UI - Approvals Queue & History Controller
- * Strict CSP: No inline event handlers or innerHTML. Pure DOM manipulation.
+ * AegisAgent Approvals Controller (v2)
+ * Pure DOM, zero innerHTML, zero inline styles.
+ * Polls pending queue & decision history with live server countdowns.
  */
-
 (function () {
   "use strict";
 
-  let seenPendingIds = new Set();
-  let currentPendingData = [];
-  let currentHistoryData = [];
-  let currentFilter = "all";
-  let pollTimer = null;
-  let countdownTimer = null;
-  const originalTitle = document.title || "Approvals -- AegisAgent";
+  var GL = window.AegisGateLine || {};
+  var h = GL.h || function (tag, attrs) {
+    var e = document.createElement(tag);
+    if (attrs) Object.keys(attrs).forEach(function (k) {
+      var v = attrs[k];
+      if (v == null || v === false) return;
+      if (k === "class") e.className = v;
+      else if (k === "text") e.textContent = v;
+      else if (k.slice(0, 2) === "on") e.addEventListener(k.slice(2), v);
+      else e.setAttribute(k, v === true ? "" : v);
+    });
+    for (var i = 2; i < arguments.length; i++) {
+      var kids = [].concat(arguments[i]);
+      kids.forEach(function (c) { if (c == null || c === false) return; e.append(c.nodeType ? c : document.createTextNode(c)); });
+    }
+    return e;
+  };
+  var clear = GL.clear || function (el) { el.replaceChildren(); return el; };
 
-  function init() {
-    setupFilterChips();
-    setupReturnLink();
-    pollApprovals();
-    pollTimer = setInterval(pollApprovals, 2000);
-    countdownTimer = setInterval(updateCountdowns, 1000);
-  }
+  var currentPending = [];
+  var currentHistory = [];
+  var activeFilter = "all";
+  var countdownMap = {};
+  var pollTimer = null;
+  var tickTimer = null;
 
-  function setupReturnLink() {
-    try {
-      const returnTo = new URLSearchParams(window.location.search).get("return_to");
-      const returnLink = document.getElementById("approvals-return-link");
-      const returnText = document.getElementById("approvals-return-text");
-      if (returnTo && returnLink) {
-        returnLink.href = returnTo;
-        returnLink.classList.remove("is-hidden");
-        if (returnText) {
-          if (returnTo.indexOf("voice") !== -1) {
-            returnText.textContent = "← Return to Aura Voice";
-          } else if (returnTo === "/" || returnTo.indexOf("overview") !== -1) {
-            returnText.textContent = "← Return to Overview";
-          } else if (returnTo.indexOf("console") !== -1) {
-            returnText.textContent = "← Return to Console";
-          } else {
-            returnText.textContent = "← Return to Previous Page";
-          }
-        }
-      }
-    } catch (e) {}
-  }
+  function renderPending(items) {
+    var container = document.getElementById("pending-container");
+    if (!container) return;
+    clear(container);
 
-  function setupFilterChips() {
-    const chips = document.querySelectorAll(".history-filter-chip");
-    chips.forEach((chip) => {
-      chip.addEventListener("click", () => {
-        chips.forEach((c) => c.classList.remove("active"));
-        chip.classList.add("active");
-        currentFilter = chip.getAttribute("data-filter") || "all";
-        renderHistory(currentHistoryData);
+    if (!items || !items.length) {
+      container.append(h("p", { class: "empty", id: "pending-empty", text: "Nothing is waiting for approval." }));
+      return;
+    }
+
+    items.forEach(function (p) {
+      var reqId = p.request_id;
+      var tool = p.tool || "action";
+      var role = p.role || "admin";
+      var remaining = Math.max(0, Math.round(p.remaining_seconds != null ? p.remaining_seconds : 60));
+      var total = p.timeout_seconds || 60;
+      countdownMap[reqId] = { rem: remaining, total: total };
+
+      var barFill = h("i");
+      barFill.style.setProperty("--p", String(remaining / total));
+      var bar = h("div", { class: "bar" }, barFill);
+
+      var timerText = h("p", {
+        class: "mono",
+        id: "timer-" + reqId,
+        text: "Waiting for a human OK. Expires in " + remaining + " s."
       });
+
+      var plainDesc = p.plain_summary || ("Operation '" + tool.replace(/_/g, " ") + "' held for supervisor confirmation.");
+
+      var card = h("div", { class: "approve", id: "approve-card-" + reqId },
+        h("div", { class: "flex justify-between items-center" },
+          h("h3", { text: tool + " · " + role }),
+          timerText
+        ),
+        h("p", { text: plainDesc }),
+        bar,
+        h("div", { class: "btns" },
+          h("button", {
+            class: "btn good",
+            type: "button",
+            onclick: function () { decideRequest(p, true); }
+          }, "Approve"),
+          h("button", {
+            class: "btn danger",
+            type: "button",
+            onclick: function () { decideRequest(p, false); }
+          }, "Deny")
+        )
+      );
+
+      container.append(card);
     });
   }
 
-  async function pollApprovals() {
-    try {
-      const [pendingRes, historyRes] = await Promise.all([
-        AegisAPI.getPendingApprovals(),
-        AegisAPI.getApprovalHistory()
-      ]);
+  async function decideRequest(p, approved) {
+    var card = document.getElementById("approve-card-" + p.request_id);
+    if (card) {
+      clear(card).append(h("p", {
+        text: approved ? "Approved. Command dispatched to pipeline." : "Denied. Request terminated."
+      }));
+    }
 
-      if (pendingRes && pendingRes.pending !== undefined) {
-        currentPendingData = pendingRes.pending || [];
-        if (pendingRes.timeout_seconds !== undefined) {
-          const timeoutValEl = document.getElementById("approvals-timeout-val");
-          if (timeoutValEl) {
-            timeoutValEl.textContent = String(pendingRes.timeout_seconds);
-          }
-        }
-        renderPending(currentPendingData);
-        updateDocumentTitle(currentPendingData.length);
+    if (typeof api !== "undefined" && api.post) {
+      try {
+        await api.post("/api/approvals/decide", {
+          request_id: p.request_id,
+          request_hash: p.request_hash,
+          approved: approved
+        });
+        setTimeout(poll, 300);
+      } catch (err) {
+        console.warn("Decide error:", err);
+      }
+    }
+  }
+
+  function renderHistory(items) {
+    var feed = document.getElementById("history-feed");
+    if (!feed) return;
+    clear(feed);
+
+    var filtered = (items || []).filter(function (it) {
+      if (activeFilter === "all") return true;
+      var d = String(it.decision || "").toLowerCase();
+      if (activeFilter === "approved") return d === "approved" || it.approved === true;
+      if (activeFilter === "denied") return d === "denied" || (d !== "timed_out" && it.approved === false);
+      if (activeFilter === "timed_out") return d === "timed_out" || it.timed_out === true;
+      return true;
+    });
+
+    if (!filtered.length) {
+      feed.append(h("li", null, h("p", { class: "empty", text: "No approval history recorded." })));
+      return;
+    }
+
+    filtered.forEach(function (it) {
+      var d = String(it.decision || (it.approved ? "Approved" : (it.timed_out ? "Timed Out" : "Denied")));
+      var isOk = (d.toLowerCase() === "approved");
+      var isWait = (d.toLowerCase() === "timed out" || d.toLowerCase() === "timed_out");
+      var outCls = isOk ? "ok" : (isWait ? "wait" : "stop");
+
+      var tStr = it.time_ist || it.timestamp || "--";
+      if (tStr.length > 8 && tStr.indexOf("T") !== -1) {
+        tStr = tStr.split("T")[1].slice(0, 8);
       }
 
+      var toolStr = it.tool || "action";
+      var summaryStr = it.plain_summary || (toolStr + ": " + (it.reason || d));
+      var deciderStr = it.decided_by || it.role || "supervisor";
+
+      var row = h("li", { class: "row" },
+        h("span", { class: "t mono", text: tStr }),
+        h("span", { class: "out " + outCls }, h("i"), d),
+        h("span", { class: "txt", text: summaryStr }),
+        h("span", { class: "tool mono", text: deciderStr })
+      );
+
+      feed.append(row);
+    });
+  }
+
+  function tickCountdowns() {
+    Object.keys(countdownMap).forEach(function (reqId) {
+      var item = countdownMap[reqId];
+      if (!item) return;
+      item.rem--;
+      if (item.rem <= 0) {
+        delete countdownMap[reqId];
+        poll();
+        return;
+      }
+      var textEl = document.getElementById("timer-" + reqId);
+      if (textEl) {
+        textEl.textContent = "Waiting for a human OK. Expires in " + item.rem + " s.";
+      }
+      var card = document.getElementById("approve-card-" + reqId);
+      if (card) {
+        var barFill = card.querySelector(".bar i");
+        if (barFill) barFill.style.setProperty("--p", String(item.rem / item.total));
+      }
+    });
+  }
+
+  async function poll() {
+    if (typeof api === "undefined" || !api.get) return;
+    try {
+      var pendingRes = await api.get("/api/approvals/pending");
+      if (pendingRes && pendingRes.pending !== undefined) {
+        currentPending = pendingRes.pending || [];
+        renderPending(currentPending);
+      }
+
+      var historyRes = await api.get("/api/approvals/history");
       if (historyRes && historyRes.history !== undefined) {
-        currentHistoryData = historyRes.history || [];
-        renderHistory(currentHistoryData);
+        currentHistory = historyRes.history || [];
+        renderHistory(currentHistory);
       }
     } catch (err) {
       console.warn("Approvals polling error:", err);
     }
   }
 
-  function updateDocumentTitle(count) {
-    if (count > 0) {
-      document.title = `(${count}) Approvals -- AegisAgent`;
-    } else {
-      document.title = originalTitle;
-    }
-  }
-
-  function renderPending(pendingList) {
-    const container = document.getElementById("pending-queue-container");
-    if (!container) return;
-
-    // Check for newly arrived approvals to toast
-    pendingList.forEach((req) => {
-      if (req.request_id && !seenPendingIds.has(req.request_id)) {
-        seenPendingIds.add(req.request_id);
-        if (window.showToast) {
-          window.showToast(`New authorization request for tool: ${req.tool || "action"}`, "warn");
-        }
-      }
-    });
-
-    if (pendingList.length === 0) {
-      container.innerHTML = "";
-      const emptyDiv = document.createElement("div");
-      emptyDiv.className = "empty-state";
-
-      const iconSvg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-      iconSvg.setAttribute("class", "icon empty-icon");
-      const use = document.createElementNS("http://www.w3.org/2000/svg", "use");
-      use.setAttributeNS("http://www.w3.org/1999/xlink", "href", "/static/icons.svg#icon-check-circle");
-      iconSvg.appendChild(use);
-      emptyDiv.appendChild(iconSvg);
-
-      const title = document.createElement("div");
-      title.className = "empty-title";
-      title.textContent = "Queue Clear";
-      emptyDiv.appendChild(title);
-
-      const hint = document.createElement("div");
-      hint.className = "empty-hint";
-      hint.textContent = "No actions currently require approval. All systems operating normally.";
-      emptyDiv.appendChild(hint);
-
-      container.appendChild(emptyDiv);
-      return;
-    }
-
-    // Remove any empty-state placeholder if present
-    const existingEmpty = container.querySelector(".empty-state");
-    if (existingEmpty) {
-      existingEmpty.remove();
-    }
-
-    // Build set of current pending IDs
-    const newIds = new Set(pendingList.map((r) => r.request_id));
-
-    // Remove cards no longer pending
-    const existingCards = container.querySelectorAll(".pending-approval-card");
-    existingCards.forEach((card) => {
-      const reqId = card.getAttribute("data-request-id");
-      if (!newIds.has(reqId)) {
-        card.remove();
-      }
-    });
-
-    // Keyed update: reuse existing cards (keeping button state) or append new
-    pendingList.forEach((req) => {
-      let card = container.querySelector(`.pending-approval-card[data-request-id="${req.request_id}"]`);
-      if (!card) {
-        card = createPendingCard(req);
-        container.appendChild(card);
-      } else {
-        card.setAttribute("data-expires-at", req.expires_at || "");
-        if (req.expires_in_seconds !== undefined) {
-          card.setAttribute("data-expires-in-seconds", String(req.expires_in_seconds));
-          card.setAttribute("data-received-at", String(Date.now()));
-        }
-        if (req.timeout_seconds !== undefined) {
-          card.setAttribute("data-total-duration", String(req.timeout_seconds));
-        }
-      }
-    });
-  }
-
-  function createPendingCard(req) {
-    const card = document.createElement("div");
-    card.className = "card pending-approval-card";
-    card.setAttribute("data-request-id", req.request_id);
-    card.setAttribute("data-expires-at", req.expires_at || "");
-    if (req.expires_in_seconds !== undefined) {
-      card.setAttribute("data-expires-in-seconds", String(req.expires_in_seconds));
-      card.setAttribute("data-received-at", String(Date.now()));
-    }
-
-    let totalDuration = 60;
-    if (req.timeout_seconds !== undefined) {
-      totalDuration = Number(req.timeout_seconds);
-    } else if (req.expires_in_seconds !== undefined) {
-      totalDuration = Number(req.expires_in_seconds);
-    } else if (req.expires_in) {
-      totalDuration = Number(req.expires_in);
-    } else if (req.timeout) {
-      totalDuration = Number(req.timeout);
-    } else if (req.expires_at && req.created_at) {
-      const diff = (new Date(req.expires_at).getTime() - new Date(req.created_at).getTime()) / 1000;
-      if (diff > 0) totalDuration = diff;
-    }
-    card.setAttribute("data-total-duration", String(totalDuration));
-
-    // Header: Kind & Tool & Risk
-    const header = document.createElement("div");
-    header.className = "pending-card-header";
-
-    const titleGroup = document.createElement("div");
-    titleGroup.className = "flex items-center gap-sm";
-
-    const kindPill = document.createElement("span");
-    kindPill.className = "pill pill-info font-mono text-xs";
-    kindPill.textContent = req.kind || "tool_call";
-    titleGroup.appendChild(kindPill);
-
-    const toolName = document.createElement("h3");
-    toolName.className = "font-bold text-lg";
-    toolName.textContent = req.tool || "High-Risk Operation";
-    titleGroup.appendChild(toolName);
-
-    const riskLevel = (req.risk || "HIGH").toUpperCase();
-    const riskPill = document.createElement("span");
-    riskPill.className = riskLevel === "CRITICAL" ? "pill pill-danger" : "pill pill-warn";
-    riskPill.textContent = riskLevel;
-    titleGroup.appendChild(riskPill);
-
-    header.appendChild(titleGroup);
-
-    // ID caption
-    const idSpan = document.createElement("span");
-    idSpan.className = "text-xs font-mono text-muted";
-    idSpan.textContent = `ID: ${(req.request_id || "").slice(0, 16)}...`;
-    header.appendChild(idSpan);
-
-    card.appendChild(header);
-
-    // Warning strip if injection or suspicious activity flagged
-    const reasons = req.reasons || [];
-    const hasWarning = reasons.some((r) => /injection|suspicion|override|malicious/i.test(r)) || req.session_flagged;
-    if (hasWarning) {
-      const warnBox = document.createElement("div");
-      warnBox.className = "warning-strip flex items-center gap-sm";
-      
-      const warnIcon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-      warnIcon.setAttribute("class", "icon text-danger");
-      const use = document.createElementNS("http://www.w3.org/2000/svg", "use");
-      use.setAttributeNS("http://www.w3.org/1999/xlink", "href", "/static/icons.svg#icon-alert-triangle");
-      warnIcon.appendChild(use);
-      warnBox.appendChild(warnIcon);
-
-      const warnText = document.createElement("div");
-      warnText.className = "text-sm text-danger font-semibold";
-      warnText.textContent = "High Risk: This request was triggered following prompt injection or security suspicion.";
-      warnBox.appendChild(warnText);
-
-      card.appendChild(warnBox);
-    }
-
-    // Reasons list
-    if (reasons.length > 0) {
-      const reasonsSection = document.createElement("div");
-      reasonsSection.className = "pending-card-reasons";
-      const reasonsTitle = document.createElement("div");
-      reasonsTitle.className = "text-xs font-semibold text-muted uppercase";
-      reasonsTitle.textContent = "Triggered Review Conditions";
-      reasonsSection.appendChild(reasonsTitle);
-
-      const ul = document.createElement("ul");
-      ul.className = "reasons-list";
-      reasons.forEach((r) => {
-        const li = document.createElement("li");
-        li.textContent = r;
-        ul.appendChild(li);
-      });
-      reasonsSection.appendChild(ul);
-      card.appendChild(reasonsSection);
-    }
-
-    // Arguments block
-    const argsSection = document.createElement("div");
-    argsSection.className = "pending-card-args";
-    const argsTitle = document.createElement("div");
-    argsTitle.className = "text-xs font-semibold text-muted uppercase";
-    argsTitle.textContent = "Operation Arguments";
-    argsSection.appendChild(argsTitle);
-
-    const pre = document.createElement("pre");
-    pre.className = "code-block font-mono text-xs";
-    pre.textContent = JSON.stringify(req.args || {}, null, 2);
-    argsSection.appendChild(pre);
-    card.appendChild(argsSection);
-
-    // Footer: Timer countdown ring & Action buttons
-    const footer = document.createElement("div");
-    footer.className = "pending-card-footer flex items-center justify-between";
-
-    // Countdown ring container
-    const ringContainer = document.createElement("div");
-    ringContainer.className = "countdown-ring-container flex items-center gap-sm";
-
-    const svgRing = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-    svgRing.setAttribute("class", "countdown-ring-svg");
-    svgRing.setAttribute("width", "36");
-    svgRing.setAttribute("height", "36");
-    svgRing.setAttribute("viewBox", "0 0 36 36");
-
-    const bgCircle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
-    bgCircle.setAttribute("class", "countdown-ring-bg");
-    bgCircle.setAttribute("cx", "18");
-    bgCircle.setAttribute("cy", "18");
-    bgCircle.setAttribute("r", "15");
-    bgCircle.setAttribute("fill", "none");
-    bgCircle.setAttribute("stroke-width", "3");
-    svgRing.appendChild(bgCircle);
-
-    const fillCircle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
-    fillCircle.setAttribute("class", "countdown-ring-fill");
-    fillCircle.setAttribute("cx", "18");
-    fillCircle.setAttribute("cy", "18");
-    fillCircle.setAttribute("r", "15");
-    fillCircle.setAttribute("fill", "none");
-    fillCircle.setAttribute("stroke-width", "3");
-    fillCircle.setAttribute("stroke-dasharray", "94.25");
-    fillCircle.setAttribute("stroke-dashoffset", "0");
-    svgRing.appendChild(fillCircle);
-
-    ringContainer.appendChild(svgRing);
-
-    const countdownText = document.createElement("span");
-    countdownText.className = "countdown-text font-mono text-sm font-semibold";
-    countdownText.textContent = "--s";
-    ringContainer.appendChild(countdownText);
-
-    footer.appendChild(ringContainer);
-
-    // Action buttons
-    const actionGroup = document.createElement("div");
-    actionGroup.className = "flex items-center gap-sm";
-
-    const userRole = (document.body && document.body.getAttribute("data-role")) || "guest";
-    const isGuest = userRole === "guest";
-
-    if (isGuest) {
-      const guestBadge = document.createElement("span");
-      guestBadge.className = "pill pill-warn text-xs";
-      guestBadge.textContent = "Guest Mode (Read-Only) — Admin Required to Decide";
-      actionGroup.appendChild(guestBadge);
-    }
-
-    const denyBtn = document.createElement("button");
-    denyBtn.className = "btn btn-danger btn-sm";
-    denyBtn.textContent = "Deny";
-    if (isGuest) {
-      denyBtn.disabled = true;
-      denyBtn.title = "Administrative privileges required to deny operations";
-    } else {
-      denyBtn.addEventListener("click", () => handleDecision(req.request_id, req.request_hash, false, denyBtn, approveBtn));
-    }
-    actionGroup.appendChild(denyBtn);
-
-    const approveBtn = document.createElement("button");
-    approveBtn.className = "btn btn-primary btn-sm";
-    approveBtn.textContent = "Authorize Action";
-    if (isGuest) {
-      approveBtn.disabled = true;
-      approveBtn.title = "Administrative privileges required to authorize operations";
-    } else {
-      approveBtn.addEventListener("click", () => handleDecision(req.request_id, req.request_hash, true, approveBtn, denyBtn));
-    }
-    actionGroup.appendChild(approveBtn);
-
-    footer.appendChild(actionGroup);
-    card.appendChild(footer);
-
-    return card;
-  }
-
-  function updateCountdowns() {
-    const cards = document.querySelectorAll(".pending-approval-card");
-    const now = Date.now();
-
-    cards.forEach((card) => {
-      let diffSec = null;
-      const expInSecStr = card.getAttribute("data-expires-in-seconds");
-      const recAtStr = card.getAttribute("data-received-at");
-
-      if (expInSecStr !== null && recAtStr !== null) {
-        const expInSec = parseFloat(expInSecStr);
-        const recAt = parseFloat(recAtStr);
-        const elapsed = Math.floor((now - recAt) / 1000);
-        diffSec = Math.max(0, expInSec - elapsed);
-      } else {
-        const expStr = card.getAttribute("data-expires-at");
-        if (!expStr) return;
-        const expTime = new Date(expStr).getTime();
-        diffSec = Math.max(0, Math.floor((expTime - now) / 1000));
-      }
-
-      const textEl = card.querySelector(".countdown-text");
-      const ringFill = card.querySelector(".countdown-ring-fill");
-      const buttons = card.querySelectorAll("button");
-
-      if (textEl) {
-        textEl.textContent = `${diffSec}s remaining`;
-      }
-
-      if (ringFill) {
-        const totalDuration = parseFloat(card.getAttribute("data-total-duration")) || 60;
-        const fraction = Math.max(0, Math.min(1, diffSec / totalDuration));
-        const offset = 94.25 * (1 - fraction);
-        ringFill.style.strokeDashoffset = offset.toFixed(2);
-        if (diffSec <= 5) {
-          ringFill.style.stroke = "var(--danger)";
-        } else if (diffSec <= 12) {
-          ringFill.style.stroke = "var(--warn)";
-        } else {
-          ringFill.style.stroke = "var(--accent)";
-        }
-      }
-
-      if (diffSec <= 0) {
-        if (textEl) textEl.textContent = "Expired";
-        buttons.forEach((b) => {
-          b.disabled = true;
-          b.classList.add("btn-disabled");
+  function initFilters() {
+    var chips = document.getElementById("history-filter-chips");
+    if (!chips) return;
+    chips.querySelectorAll(".chip").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var f = btn.getAttribute("data-filter") || "all";
+        activeFilter = f;
+        chips.querySelectorAll(".chip").forEach(function (b) {
+          b.setAttribute("aria-pressed", String(b.getAttribute("data-filter") === f));
         });
-      }
+        renderHistory(currentHistory);
+      });
     });
   }
 
-  async function handleDecision(requestId, requestHash, approved, activeBtn, otherBtn) {
-    activeBtn.disabled = true;
-    otherBtn.disabled = true;
-    const origText = activeBtn.textContent;
-    activeBtn.textContent = "Submitting...";
-
-    try {
-      const res = await AegisAPI.decideApproval(requestId, requestHash, approved);
-      if (res && res.status === "ok") {
-        if (window.showToast) {
-          window.showToast(approved ? "Operation authorized." : "Operation denied.", approved ? "ok" : "warn");
-        }
-        await pollApprovals();
-
-        // Round-trip return navigation
-        const urlParams = new URLSearchParams(window.location.search);
-        const returnTo = urlParams.get("return_to");
-        if (returnTo) {
-          if (window.showToast) {
-            window.showToast("Returning to Previous Screen", "Decision confirmed. Navigating back...", "info", 2000);
-          }
-          setTimeout(() => {
-            window.location.href = returnTo;
-          }, 1000);
-        }
-      } else {
-        const msg = (res && res.error) || "Decision submission failed.";
-        if (window.showToast) window.showToast(msg, "danger");
-        activeBtn.disabled = false;
-        otherBtn.disabled = false;
-        activeBtn.textContent = origText;
-      }
-    } catch (err) {
-      if (window.showToast) window.showToast(err.message || "Failed to communicate decision.", "danger");
-      activeBtn.disabled = false;
-      otherBtn.disabled = false;
-      activeBtn.textContent = origText;
-    }
+  function init() {
+    initFilters();
+    poll();
+    pollTimer = setInterval(poll, 2000);
+    tickTimer = setInterval(tickCountdowns, 1000);
   }
 
-  function renderHistory(historyList) {
-    const tbody = document.getElementById("approval-history-tbody");
-    if (!tbody) return;
-
-    let filtered = historyList;
-    if (currentFilter === "approved") {
-      filtered = historyList.filter((item) => item.approved === true);
-    } else if (currentFilter === "denied") {
-      filtered = historyList.filter((item) => item.approved === false && !item.timed_out);
-    } else if (currentFilter === "timed_out") {
-      filtered = historyList.filter((item) => item.timed_out === true);
-    }
-
-    tbody.innerHTML = "";
-
-    if (filtered.length === 0) {
-      const tr = document.createElement("tr");
-      const td = document.createElement("td");
-      td.colSpan = 5;
-      td.className = "text-center text-muted py-lg";
-      td.textContent = "No authorization history records match the selected filter.";
-      tr.appendChild(td);
-      tbody.appendChild(tr);
-      return;
-    }
-
-    filtered.slice(0, 50).forEach((entry) => {
-      const tr = document.createElement("tr");
-
-      // Timestamp IST with date + time
-      const tdTime = document.createElement("td");
-      tdTime.className = "font-mono text-xs whitespace-nowrap text-muted";
-      tdTime.textContent = formatIstDateTime(entry.timestamp || entry.decided_at);
-      tr.appendChild(tdTime);
-
-      // Tool / Operation
-      const tdTool = document.createElement("td");
-      tdTool.className = "font-semibold";
-      tdTool.textContent = entry.tool || (entry.reason && entry.reason.includes("unlock") ? "unlock_door" : (entry.reason && entry.reason.includes("alarm") ? "activate_alarm" : (entry.kind || "High-Risk Actuation")));
-      tr.appendChild(tdTool);
-
-      // Status Pill
-      const tdStatus = document.createElement("td");
-      const pill = document.createElement("span");
-      if (entry.timed_out) {
-        pill.className = "pill pill-warn text-xs";
-        pill.textContent = "Timed Out";
-      } else if (entry.approved) {
-        pill.className = "pill pill-ok text-xs";
-        pill.textContent = "Approved";
-      } else {
-        pill.className = "pill pill-danger text-xs";
-        pill.textContent = "Denied";
-      }
-      tdStatus.appendChild(pill);
-      tr.appendChild(tdStatus);
-
-      // Operator / Decided By
-      const tdBy = document.createElement("td");
-      tdBy.className = "text-xs font-mono";
-      tdBy.textContent = entry.decided_by || entry.username || "operator";
-      tr.appendChild(tdBy);
-
-      // Reason / Detail
-      const tdReason = document.createElement("td");
-      tdReason.className = "text-xs text-muted";
-      tdReason.textContent = entry.reason || "--";
-      tr.appendChild(tdReason);
-
-      tbody.appendChild(tr);
-    });
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", init);
+  } else {
+    init();
   }
-
-  function formatIstDateTime(isoStr) {
-    if (!isoStr) return "--";
-    try {
-      const date = new Date(isoStr);
-      return (
-        date.toLocaleString("en-IN", {
-          timeZone: "Asia/Kolkata",
-          year: "numeric",
-          month: "short",
-          day: "2-digit",
-          hour: "2-digit",
-          minute: "2-digit",
-          second: "2-digit",
-          hour12: false,
-        }) + " IST"
-      );
-    } catch {
-      return isoStr;
-    }
-  }
-
-  document.addEventListener("DOMContentLoaded", init);
 })();

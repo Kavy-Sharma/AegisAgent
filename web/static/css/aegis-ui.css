@@ -214,15 +214,17 @@ main { padding-block: 40px 72px; }
 
 /* ---------- gate line ---------- */
 .rail { --n: 9; width: 100%; }
-.rail-stage { position: relative; padding-top: 0; }
-.rail-track { position: absolute; left: 0; right: 0; top: 22px; height: 2px; background: var(--line); border-radius: 2px; }
-.rail-fill { position: absolute; left: 0; top: 0; height: 100%; width: 0; background: var(--ok); border-radius: 2px; transition: width .38s var(--ease), background .2s; }
+.rail-stage { position: relative; padding-top: 0; overflow: hidden; }
+.rail-track { position: absolute; left: 0; right: 0; top: 22px; height: 2px; background: var(--line); border-radius: 2px; overflow: hidden; }
+.rail-fill { position: absolute; left: 0; top: 0; height: 100%; width: 0; max-width: 100%; background: var(--ok); border-radius: 2px; transition: width .38s var(--ease), background .2s; }
 .rail.is-stopped .rail-fill { background: var(--stop); }
 .rail.is-waiting .rail-fill { background: var(--wait); }
 .rail-gates { position: relative; display: grid; grid-template-columns: repeat(var(--n), 1fr); list-style: none; margin: 0; padding: 0; }
 .gate { position: relative; display: flex; flex-direction: column; align-items: center; gap: 12px; min-width: 0; transition: opacity .3s; }
-.gate-bar { width: 8px; height: 44px; border-radius: 4px; background: var(--line-strong); transition: background .25s, transform .3s var(--ease); position: relative; }
-.gate-label { font-size: .75rem; line-height: 1.25; text-align: center; color: var(--ink-3); font-weight: 600; padding: 0 2px; overflow-wrap: anywhere; }
+.gate-bar { width: 8px; height: 44px; border-radius: 4px; background: var(--line-strong); transition: background .25s, transform .3s var(--ease); position: relative; transform-origin: 50% 50%; animation: rise .55s var(--ease) backwards; animation-delay: calc(var(--i, 0) * 45ms); }
+@keyframes rise { from { transform: scaleY(0); opacity: 0; } to { transform: none; opacity: 1; } }
+.gate-n { font-family: var(--font-mono); font-size: .6875rem; font-weight: 500; color: var(--ink-3); opacity: .85; }
+.gate-label { display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: .75rem; line-height: 1.25; text-align: center; color: var(--ink-3); font-weight: 600; padding: 0 2px; overflow-wrap: anywhere; }
 .gate.is-pass .gate-bar { background: var(--ok); }
 .gate.is-pass .gate-label { color: var(--ink-2); }
 .gate.is-stop .gate-bar { background: var(--stop); transform: scaleY(1.28); }
@@ -244,7 +246,7 @@ main { padding-block: 40px 72px; }
 .rail.harm .gate.is-pass .gate-bar { background: var(--stop); }
 .rail.harm .rail-fill { background: var(--stop); }
 .rail.harm .token.is-ok { background: var(--stop); box-shadow: 0 0 0 4px var(--stop-soft); }
-.rail-caption { margin-top: 18px; min-height: 3em; font-size: 1.0625rem; color: var(--ink-2); max-width: 78ch; }
+.rail-caption { margin-top: 16px; min-height: 2.4em; font-size: 1.0625rem; color: var(--ink-2); max-width: 78ch; }
 .rail-caption strong { color: var(--ink); font-weight: 700; }
 .rail-caption .tone-stop { color: var(--stop); }
 .rail-caption .tone-ok { color: var(--ok); }
@@ -397,6 +399,17 @@ main { padding-block: 40px 72px; }
 .explain { padding: 14px 16px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); color: var(--ink-2); min-height: 3.6em; max-width: 78ch; }
 
 .proto-foot { margin-top: 56px; padding-top: 18px; border-top: 1px solid var(--line); color: var(--ink-3); font-size: .8125rem; }
+
+/* gate line panel: faint blueprint grid + header naming the decision that is playing */
+.rail-panel { position: relative; overflow: hidden; }
+.rail-panel::before { content: ""; position: absolute; inset: 0; pointer-events: none;
+  background-image: radial-gradient(color-mix(in srgb, var(--line-strong) 55%, transparent) 1px, transparent 1.2px);
+  background-size: 20px 20px;
+  -webkit-mask-image: linear-gradient(to bottom, #000 0, transparent 75%); mask-image: linear-gradient(to bottom, #000 0, transparent 75%); }
+.rail-panel > * { position: relative; }
+.rail-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 20px; margin-bottom: 26px; }
+.rail-head h2 { font-size: clamp(1.1rem, 2.2vw, 1.4rem); font-weight: 700; max-width: 62ch; }
+.rail-head .mono { color: var(--ink-3); white-space: nowrap; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }

@@ -1,97 +1,51 @@
 {% extends "base.html" %}
 
-{% block head_extra %}
-  <link rel="stylesheet" href="/static/css/tokens.css">
-  <link rel="stylesheet" href="/static/css/base.css">
-  <link rel="stylesheet" href="/static/css/components.css">
-  <link rel="stylesheet" href="/static/css/pages.css">
-{% endblock %}
-
-
 {% block title %}Approvals — AegisAgent{% endblock %}
-{% block breadcrumb %}Approvals{% endblock %}
 
 {% block content %}
-<div class="approvals-page">
-  <!-- Page Header -->
-  <div class="page-header">
+<div class="view" id="view-approvals">
+  <div class="hero">
+    <h1>Approvals</h1>
+    <p>Human-in-the-loop authorization for high-risk operations. Requests fail closed after 60 seconds.</p>
+  </div>
+
+  <div class="section-head">
     <div>
-      <h1 class="page-title">Human-In-The-Loop Approvals</h1>
-      <p class="page-subtitle">Human approval console for high-risk operations and suspicious agent tool invocations.</p>
-    </div>
-    <div class="header-actions flex items-center gap-sm">
-      <a href="/" id="approvals-return-link" class="btn btn-secondary btn-xs flex items-center gap-xs is-hidden">
-        <svg class="icon icon-xs"><use href="/static/icons.svg#icon-chevron-left"></use></svg>
-        <span id="approvals-return-text">Return to Previous Screen</span>
-      </a>
-      <span class="text-xs text-muted font-mono flex items-center gap-xs">
-        <svg class="icon"><use href="/static/icons.svg#icon-shield"></use></svg>
-        <span>HMAC-SHA256 Signed Authorization</span>
-      </span>
+      <h2>Pending approval</h2>
+      <p>Requests waiting for supervisor confirmation.</p>
     </div>
   </div>
 
-  <!-- Section 1: Pending Authorization Queue -->
-  <div class="approvals-section">
-    <div class="section-title-wrap mb-md flex items-center justify-between">
-      <h2 class="text-base font-bold">Pending Authorization Queue</h2>
-      <span class="text-xs text-muted" id="approvals-timeout-hint">Auto-expires after <span id="approvals-timeout-val">60</span>s (Fail-Closed)</span>
-    </div>
+  <div id="pending-container" class="lanes">
+    <p class="empty" id="pending-empty">Nothing is waiting for approval.</p>
+  </div>
 
-    <!-- Container for dynamic pending cards -->
-    <div class="pending-queue-container" id="pending-queue-container">
-      <div class="empty-state">
-        <svg class="icon empty-icon"><use href="/static/icons.svg#icon-check-circle"></use></svg>
-        <div class="empty-title">Queue Clear</div>
-        <div class="empty-hint">No approval requests currently require administrator authorization.</div>
-      </div>
+  <div class="section-head">
+    <div>
+      <h2>Approval history</h2>
+      <p>Recent human authorization decisions from the audit ledger.</p>
+    </div>
+    <div class="chips" role="group" aria-label="Filter approvals" id="history-filter-chips">
+      <button class="chip" type="button" data-filter="all" aria-pressed="true">All</button>
+      <button class="chip" type="button" data-filter="approved">Approved</button>
+      <button class="chip" type="button" data-filter="denied">Denied</button>
+      <button class="chip" type="button" data-filter="timed_out">Timed Out</button>
     </div>
   </div>
 
-  <hr class="divider my-xl">
-
-  <!-- Section 2: Decision History Table -->
-  <div class="approvals-section">
-    <div class="section-title-wrap mb-md flex items-center justify-between">
-      <div>
-        <h2 class="text-base font-bold">Authorization Audit History</h2>
-        <p class="text-xs text-muted">Historical log of the last 50 human authorization events from the tamper-evident audit ledger.</p>
-      </div>
-
-      <!-- Filter Chips -->
-      <div class="history-filter-chips flex items-center gap-xs">
-        <button type="button" class="btn btn-secondary btn-xs history-filter-chip active" data-filter="all">All</button>
-        <button type="button" class="btn btn-secondary btn-xs history-filter-chip" data-filter="approved">Approved</button>
-        <button type="button" class="btn btn-secondary btn-xs history-filter-chip" data-filter="denied">Denied</button>
-        <button type="button" class="btn btn-secondary btn-xs history-filter-chip" data-filter="timed_out">Timed Out</button>
-      </div>
-    </div>
-
-    <!-- Data Table with Sticky Header -->
-    <div class="table-card card">
-      <div class="table-responsive">
-        <table class="data-table">
-          <thead>
-            <tr>
-              <th class="col-time">Timestamp</th>
-              <th>Operation / Tool</th>
-              <th class="col-decision">Decision</th>
-              <th class="col-user">Decided By</th>
-              <th>Review Summary</th>
-            </tr>
-          </thead>
-          <tbody id="approval-history-tbody">
-            <tr>
-              <td colspan="5" class="text-center text-muted py-lg">Loading authorization ledger...</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
+  <div class="panel">
+    <ul class="feed" id="history-feed">
+      <li><p class="empty">Loading authorization history…</p></li>
+    </ul>
   </div>
+
+  <p class="note">
+    <b>Note. </b>Approvals are signed. In this demo an admin can approve a request they started themselves.
+  </p>
 </div>
 {% endblock %}
 
 {% block extra_js %}
-<script src="/static/js/approvals.js?v=20261031_v4"></script>
+<script src="/static/js/gateline.js"></script>
+<script src="/static/js/approvals.js"></script>
 {% endblock %}

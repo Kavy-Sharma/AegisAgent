@@ -49,7 +49,7 @@ def _check_tamper_rate_limit(client_ip: str) -> bool:
     return True
 
 
-def format_plain_summary(entry: dict[str, Any]) -> str:
+def format_plain_summary(entry: dict[str, Any], is_admin: bool = True) -> str:
     """
     Template-based plain-English explanation of the audit record.
     Deterministic, human-readable, NO LLM.
@@ -65,8 +65,10 @@ def format_plain_summary(entry: dict[str, Any]) -> str:
     if event == "turn_summary":
         rule_ids = entry.get("rule_ids") or []
         if decision in ("BLOCK", "DENY"):
-            if rule_ids:
+            if rule_ids and is_admin:
                 return f"Blocked: Prompt injection caught by detection rules ({', '.join(rule_ids)})."
+            elif rule_ids:
+                return "Blocked: Prompt injection caught by detection rules."
             if tool:
                 tool_clean = tool.replace("_", " ")
                 return f"Blocked: Attempted '{tool_clean}' was denied by security policy."
@@ -88,15 +90,19 @@ def format_plain_summary(entry: dict[str, Any]) -> str:
         if decision == "BLOCK":
             if "mismatch" in reason.lower() or "read" in reason.lower():
                 return f"Blocked: User only asked to read, but payload attempted '{tool}'."
-            return f"Blocked: {role.title()} attempted '{tool_clean}' ({reason or 'denied by policy'})."
+            reason_str = f" ({reason or 'denied by policy'})" if is_admin else ""
+            return f"Blocked: {role.title()} attempted '{tool_clean}'{reason_str}."
         elif decision == "ALLOW":
-            arg_str = ", ".join(f"{k}={v}" for k, v in list(args.items())[:2])
-            suffix = f" with {arg_str}" if arg_str else ""
-            return f"Allowed: Executed '{tool_clean}'{suffix} ({reason or 'authorized'})."
+            if is_admin:
+                arg_str = ", ".join(f"{k}={v}" for k, v in list(args.items())[:2])
+                suffix = f" with {arg_str}" if arg_str else ""
+                return f"Allowed: Executed '{tool_clean}'{suffix} ({reason or 'authorized'})."
+            return f"Allowed: Executed '{tool_clean}'."
         elif decision in ("REVIEW", "WAITING"):
             return f"Waiting: High-risk operation '{tool_clean}' held for human supervisor approval."
         elif decision == "ERROR":
-            return f"Error: Tool '{tool_clean}' failed ({reason or 'execution error'})."
+            err_str = f" ({reason or 'execution error'})" if is_admin else ""
+            return f"Error: Tool '{tool_clean}' failed{err_str}."
 
     # 2. Injection scanner checks
     if event == "injection_check":
@@ -104,7 +110,7 @@ def format_plain_summary(entry: dict[str, Any]) -> str:
         source = entry.get("source", "input")
         rule_ids = entry.get("rule_ids") or []
         if decision == "BLOCK":
-            rules_str = f" [Rules: {', '.join(rule_ids)}]" if rule_ids else ""
+            rules_str = f" [Rules: {', '.join(rule_ids)}]" if (rule_ids and is_admin) else ""
             return f"Blocked: Prompt injection caught in {source} (score: {score:.2f}){rules_str}."
         return f"Passed: Content verified safe from prompt injection (score: {score:.2f})."
 

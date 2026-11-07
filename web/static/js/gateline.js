@@ -52,7 +52,12 @@
       parts.forEach(function (p) { cap.append(p.tone ? h("span", { class: "tone-" + p.tone }, p.text) : p.strong ? h("strong", { text: p.text }) : document.createTextNode(p.text)); });
     }
     function xOf(i) { return gates[i].offsetLeft + gates[i].offsetWidth / 2; }
-    function move(x) { token.style.transform = "translateX(" + x + "px)"; fill.style.width = x + "px"; }
+    function move(x) {
+      var limit = gatesEl.offsetWidth || x;
+      var clamped = Math.min(x, limit);
+      token.style.transform = "translateX(" + clamped + "px)";
+      fill.style.width = clamped + "px";
+    }
     function resetVisual() {
       gates.forEach(function (g) { g.className = "gate"; });
       el.classList.remove("is-stopped", "is-waiting");
@@ -120,7 +125,11 @@
     }
     function setLabels(ls) {
       labels = ls; clear(gatesEl);
-      gates = ls.map(function (l) { var g = h("li", { class: "gate" }, h("span", { class: "gate-bar" }), h("span", { class: "gate-label", text: l })); gatesEl.append(g); return g; });
+      gates = ls.map(function (l, i) {
+        var label = h("span", { class: "gate-label" }, ls.length > 1 ? h("span", { class: "gate-n", text: String(i + 1) }) : null, l);
+        var g = h("li", { class: "gate" }, h("span", { class: "gate-bar" }), label);
+        g.style.setProperty("--i", i); gatesEl.append(g); return g;
+      });
       el.style.setProperty("--n", ls.length);
       resetVisual();
       setCaption([{ text: opts.idle || "Pick a decision to watch it travel through the gates." }]);
@@ -129,7 +138,14 @@
     window.addEventListener("resize", function () {
       if (token.classList.contains("on") && el.isConnected) {
         var cur = gates.findIndex(function (g) { return g.classList.contains("is-stop") || g.classList.contains("is-wait"); });
-        if (cur >= 0) { token.style.transition = "none"; move(xOf(cur)); void token.offsetWidth; token.style.transition = ""; }
+        token.style.transition = "none";
+        if (cur >= 0) {
+          move(xOf(cur));
+        } else if (token.classList.contains("is-ok")) {
+          move(gatesEl.offsetWidth);
+        }
+        void token.offsetWidth;
+        token.style.transition = "";
       }
     });
     var defaultLabels = ["Detection", "Intent lock", "Model", "Role", "Parameters", "Rate limit", "Approval", "Device (simulated)", "Output scan"];
@@ -145,3 +161,4 @@
     svgIcon: svgIcon
   };
 })();
+

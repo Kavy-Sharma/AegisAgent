@@ -1,1716 +1,272 @@
 /**
-
- * AegisAgent Console Controller
-
- * Real-time chat streaming, pipeline stepper progression, inline approvals, and suggestions.
-
+ * AegisAgent Console Controller (v2)
+ * Pure DOM, compact gate line playback, real backend polling, and HMAC approval flow.
+ * Zero innerHTML, zero inline styles.
  */
-
 (function () {
+  "use strict";
 
-  var chatStream = document.getElementById("chat-stream");
+  var GL = window.AegisGateLine || {};
+  var h = GL.h;
+  var clear = GL.clear;
+  var svgIcon = GL.svgIcon;
 
-  var chatTextarea = document.getElementById("chat-textarea");
+  var DM = window.AegisDecisionMap || {};
+  var stageLabels = (DM.getGateLabels && DM.getGateLabels(false)) || [
+    "Detection", "Intent lock", "Model", "Role", "Parameters", "Rate limit", "Approval", "Device (simulated)", "Output scan"
+  ];
 
-  var chatSendBtn = document.getElementById("chat-send-btn");
-
-  var workerBanner = document.getElementById("console-worker-banner");
-
-  var userRole = (document.body && document.body.getAttribute("data-role")) || "guest";
-
-
-
-  if (!chatStream || !chatTextarea) return;
-
-
-
-  var STAGES = ["detection", "intent", "llm", "rbac", "param_guard", "rate_limit", "approval", "hardware", "output_scan"];
-
-  var STAGE_LABELS = {
-
-    detection: "Detection",
-
-    intent: "Intent",
-
-    llm: "LLM",
-
-    rbac: "RBAC",
-
-    param_guard: "Param Guard",
-
-    rate_limit: "Rate Limit",
-
-    approval: "Approval",
-
-    hardware: "Hardware",
-
-    output_scan: "Output Scan",
-
-  };
-
-
-
-  var isQuarantineActive = false;
+  var reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  var ICON_SHIELD = ["M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"];
   var isTurnRunning = false;
-
-
-
-  function setQuarantineLockdown(locked) {
-
-    isQuarantineActive = locked;
-
-    var container = document.querySelector(".chat-input-bar") || document.querySelector(".chat-input-wrap");
-
-    var existingBar = document.getElementById("console-quarantine-bar");
-
-
-
-    if (locked) {
-
-      if (chatTextarea) {
-
-        chatTextarea.disabled = true;
-
-        chatTextarea.placeholder = "🚨 SESSION QUARANTINED: Hardware protected. Admin release required.";
-
-      }
-
-      if (chatSendBtn) {
-
-        chatSendBtn.disabled = true;
-
-      }
-
-      if (!existingBar && container) {
-
-        var bar = document.createElement("div");
-
-        bar.id = "console-quarantine-bar";
-
-        bar.className = "console-quarantine-bar";
-
-        bar.innerHTML = '<div class="flex items-center gap-xs">' +
-
-          '<svg class="icon text-danger icon-sm"><use href="/static/icons.svg#icon-alert-triangle"></use></svg>' +
-
-          '<strong class="text-danger text-xs uppercase tracking-wider">Air-Gap Containment Active — 3 Injections Exceeded</strong>' +
-
-          '</div>' +
-
-          '<button type="button" class="btn btn-danger btn-xs" id="bar-release-quarantine-btn">' +
-
-          '<span>Admin Override: Instant Release</span>' +
-
-          '</button>';
-
-        container.parentNode.insertBefore(bar, container);
-
-
-
-        var btn = document.getElementById("bar-release-quarantine-btn");
-
-        if (btn) {
-
-          btn.addEventListener("click", function () {
-
-            btn.disabled = true;
-
-            btn.textContent = "Releasing...";
-
-            api.releaseQuarantine().then(function () {
-
-              setQuarantineLockdown(false);
-
-              app.showToast("Quarantine Released", "Threat score reset. Console ready for commands.", "ok", 4000);
-
-            }).catch(function (err) {
-
-              app.showToast("Release Error", err.message, "danger");
-
-              btn.disabled = false;
-
-              btn.textContent = "Admin Override: Instant Release";
-
-            });
-
-          });
-
-        }
-
-      }
-
-      if (window.AegisApp && window.AegisApp.openQuarantineModal) {
-
-        window.AegisApp.openQuarantineModal();
-
-      }
-
-    } else {
-
-      if (existingBar && existingBar.parentNode) {
-
-        existingBar.parentNode.removeChild(existingBar);
-
-      }
-
-      if (chatTextarea) {
-
-        chatTextarea.disabled = false;
-
-        chatTextarea.placeholder = "Dispatched command or prompt (e.g. 'Turn on the light', 'What is the temperature?')...";
-
-        if (chatTextarea.focus) chatTextarea.focus();
-
-      }
-
-      if (chatSendBtn) {
-
-        chatSendBtn.disabled = false;
-
-      }
-
-      if (window.AegisApp && window.AegisApp.closeQuarantineModal) {
-
-        window.AegisApp.closeQuarantineModal();
-
-      }
-
-    }
-
-  }
-
-
+  var currentApprovalCountdown = null;
 
   function setTurnRunning(running) {
-    isTurnRunning = !!running;
+    isTurnRunning = running;
+    var sendBtn = document.getElementById("send-btn");
+    var askInput = document.getElementById("ask");
+    if (sendBtn) sendBtn.disabled = running;
+    if (askInput) askInput.disabled = running;
+  }
 
-    if (isQuarantineActive) {
-
-      if (chatSendBtn) chatSendBtn.disabled = true;
-
-      if (chatTextarea) chatTextarea.disabled = true;
-
-      return;
-
+  function addMessage(node) {
+    var thread = document.getElementById("chat-thread");
+    if (!thread) return;
+    thread.append(node);
+    if (node.scrollIntoView) {
+      node.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "nearest" });
     }
-
-    if (chatSendBtn) chatSendBtn.disabled = running;
-
-    if (chatTextarea) chatTextarea.disabled = running;
-
-    if (!running && chatTextarea) {
-
-      if (chatTextarea.focus) chatTextarea.focus();
-
-    }
-
   }
 
-
-
-  function scrollToBottom() {
-
-    chatStream.scrollTop = chatStream.scrollHeight;
-
-  }
-
-
-
-  function appendUserMessage(text) {
-
-    var msg = document.createElement("div");
-
-    msg.className = "chat-msg user";
-
-
-
-    var avatar = document.createElement("div");
-
-    avatar.className = "chat-msg-avatar";
-
-    avatar.innerHTML = '<svg class="icon"><use href="/static/icons.svg#icon-user"></use></svg>';
-
-
-
-    var bubble = document.createElement("div");
-
-    bubble.className = "chat-msg-bubble";
-
-    bubble.textContent = text;
-
-
-
-    msg.appendChild(avatar);
-
-    msg.appendChild(bubble);
-
-    chatStream.appendChild(msg);
-
-    scrollToBottom();
-
-  }
-
-
-
-  function createAssistantTurn() {
-
-    var msg = document.createElement("div");
-
-    msg.className = "chat-msg assistant";
-
-
-
-    var avatar = document.createElement("div");
-
-    avatar.className = "chat-msg-avatar";
-
-    avatar.innerHTML = '<svg class="icon"><use href="/static/icons.svg#icon-shield"></use></svg>';
-
-
-
-    var bubble = document.createElement("div");
-
-    bubble.className = "chat-msg-bubble";
-
-
-
-    // 1. Pipeline stepper container (Rendered ON TOP as requested)
-
-    var stepper = document.createElement("div");
-
-    stepper.className = "pipeline-stepper";
-
-
-
-    var nodeMap = {};
-
-    var connectorMap = {};
-
-
-
-    STAGES.forEach(function (stage, idx) {
-
-      var node = document.createElement("div");
-
-      node.className = "step-node step-pending";
-
-      node.dataset.stage = stage;
-
-      node.textContent = STAGE_LABELS[stage] || stage;
-
-      stepper.appendChild(node);
-
-      nodeMap[stage] = node;
-
-
-
-      if (idx < STAGES.length - 1) {
-
-        var conn = document.createElement("div");
-
-        conn.className = "step-connector";
-
-        stepper.appendChild(conn);
-
-        connectorMap[stage] = conn;
-
-      }
-
-    });
-
-
-
-    bubble.appendChild(stepper);
-
-
-
-    // 2. Callout container for blocks or warnings
-
-    var callout = document.createElement("div");
-
-    callout.className = "turn-callout";
-
-    callout.style.setProperty("display", "none");
-
-    bubble.appendChild(callout);
-
-
-
-    // 3. Catchy Agent Response Card (Rendered BELOW the stepper)
-
-    var responseCard = document.createElement("div");
-
-    responseCard.className = "assistant-response-card";
-
-
-
-    var responseHeader = document.createElement("div");
-
-    responseHeader.className = "assistant-response-tag";
-
-    var tagSvg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-
-    tagSvg.setAttribute("class", "icon icon-xs");
-
-    var tagUse = document.createElementNS("http://www.w3.org/2000/svg", "use");
-
-    tagUse.setAttribute("href", "/static/icons.svg#icon-shield");
-
-    tagSvg.appendChild(tagUse);
-
-    var tagLabel = document.createElement("span");
-
-    tagLabel.textContent = "Agent Response";
-
-    responseHeader.appendChild(tagSvg);
-
-    responseHeader.appendChild(tagLabel);
-
-    responseCard.appendChild(responseHeader);
-
-
-
-    var textEl = document.createElement("div");
-
-    textEl.className = "assistant-text";
-
-    textEl.textContent = "Processing request...";
-
-    responseCard.appendChild(textEl);
-
-
-
-    bubble.appendChild(responseCard);
-
-
-
-    msg.appendChild(avatar);
-
-    msg.appendChild(bubble);
-
-    chatStream.appendChild(msg);
-
-    scrollToBottom();
-
-
-
-    return {
-
-      msg: msg,
-
-      textEl: textEl,
-
-      responseCard: responseCard,
-
-      bubble: bubble,
-
-      stepper: stepper,
-
-      nodeMap: nodeMap,
-
-      connectorMap: connectorMap,
-
-      callout: callout,
-
-      pollTimer: null,
-
-    };
-
-  }
-
-
-
-  function pollTurn(reqId, turnUi) {
-
-    var pollStartTime = Date.now();
-
-
-
-    turnUi.pollTimer = setInterval(function () {
-
-      // 120s poll timeout
-
-      if (Date.now() - pollStartTime >= 120000) {
-
-        clearInterval(turnUi.pollTimer);
-
-        turnUi.pollTimer = null;
-
-        setTurnRunning(false);
-
-        turnUi.textEl.textContent = "Worker not responding";
-
-        return;
-
-      }
-
-
-
-      api.get("/api/console/poll/" + encodeURIComponent(reqId))
-
-        .then(function (data) {
-
-          var steps = data.steps || [];
-
-          var final = data.final;
-
-
-
-          // Update stages in stepper
-
-          steps.forEach(function (step) {
-
-            var node = turnUi.nodeMap[step.stage];
-
-            if (node) {
-
-              node.className = "step-node step-" + (step.status || "pending");
-
-              if (step.detail && Object.keys(step.detail).length > 0) {
-
-                var detailStr = JSON.stringify(step.detail);
-
-                node.title = detailStr;
-
-              }
-
-            }
-
-            var conn = turnUi.connectorMap[step.stage];
-
-            if (conn && step.status === "pass") {
-
-              conn.classList.add("connector-filled");
-
-            }
-
-
-
-            // Provide real-time friendly feedback during LLM reasoning
-
-            if (step.stage === "llm" && step.status === "running" && !final && !turnUi.approvalShown) {
-
-              turnUi.textEl.textContent = "AegisAgent reasoning with Ollama (llama3.1)...";
-
-            }
-
-          });
-
-
-
-          // Check if approval is actually pending right now
-
-          var lastApproval = null;
-
-          for (var i = steps.length - 1; i >= 0; i--) {
-
-            if (steps[i].stage === "approval") {
-
-              lastApproval = steps[i];
-
-              break;
-
-            }
-
-          }
-
-          var isApprovalPending = lastApproval && lastApproval.status === "running" && !final;
-
-          if (isApprovalPending && !turnUi.approvalShown) {
-
-            turnUi.approvalShown = true;
-
-            var targetTool = "high_risk_tool";
-
-            var targetArgs = {};
-
-            var targetHash = "";
-
-            var approvalReqId = reqId;
-
-
-
-            if (lastApproval && lastApproval.detail) {
-
-              if (lastApproval.detail.tool) targetTool = lastApproval.detail.tool;
-
-              if (lastApproval.detail.args) targetArgs = lastApproval.detail.args;
-
-              if (lastApproval.detail.request_hash) targetHash = lastApproval.detail.request_hash;
-
-              if (lastApproval.detail.request_id) approvalReqId = lastApproval.detail.request_id;
-
-            }
-
-
-
-            for (var j = 0; j < steps.length; j++) {
-
-              if (steps[j].detail) {
-
-                if (steps[j].detail.tool) targetTool = steps[j].detail.tool;
-
-                if (steps[j].detail.args && Object.keys(targetArgs).length === 0) targetArgs = steps[j].detail.args;
-
-                if (steps[j].detail.request_hash && !targetHash) targetHash = steps[j].detail.request_hash;
-
-                if (steps[j].detail.request_id && approvalReqId === reqId) approvalReqId = steps[j].detail.request_id;
-
-              }
-
-            }
-
-
-
-            if (userRole === "admin" && (!targetHash || Object.keys(targetArgs).length === 0)) {
-
-              api.get("/api/approvals/pending").then(function (res) {
-
-                var items = (res && res.pending) || [];
-
-                for (var k = 0; k < items.length; k++) {
-
-                  if (items[k].tool === targetTool || items[k].request_id === approvalReqId) {
-
-                    approvalReqId = items[k].request_id;
-
-                    targetArgs = items[k].args || targetArgs;
-
-                    targetHash = items[k].request_hash || targetHash;
-
-                    break;
-
-                  }
-
-                }
-
-                showInlineApproval(turnUi, approvalReqId, targetTool, targetArgs, targetHash);
-
-              }).catch(function () {
-
-                showInlineApproval(turnUi, approvalReqId, targetTool, targetArgs, targetHash);
-
-              });
-
-            } else {
-
-              showInlineApproval(turnUi, approvalReqId, targetTool, targetArgs, targetHash);
-
-            }
-
-          } else if (!isApprovalPending && turnUi.approvalCard) {
-
-            if (turnUi.approvalCard.parentNode) {
-
-              turnUi.approvalCard.parentNode.removeChild(turnUi.approvalCard);
-
-            }
-
-            turnUi.approvalCard = null;
-
-            turnUi.approvalShown = false;
-
-          }
-
-
-
-          if (final) {
-
-            clearInterval(turnUi.pollTimer);
-
-            turnUi.pollTimer = null;
-
-            setTurnRunning(false);
-
-
-
-            if (turnUi.approvalCard && turnUi.approvalCard.parentNode) {
-
-              turnUi.approvalCard.parentNode.removeChild(turnUi.approvalCard);
-
-              turnUi.approvalCard = null;
-
-            }
-
-
-
-            if (final.decision === "BLOCK") {
-
-              if (turnUi.responseCard) turnUi.responseCard.style.setProperty("display", "none");
-
-              turnUi.textEl.textContent = "";
-
-              turnUi.callout.className = "callout-blocked";
-
-              turnUi.callout.style.setProperty("display", "block");
-
-              var errDetail = final.error || "Policy violation";
-
-              var isCumulative = errDetail.indexOf("Cumulative suspicion") !== -1;
-
-              var isOutOfScope = errDetail.indexOf("outside intent scope") !== -1;
-
-              var isQuarantine = errDetail.indexOf("SESSION QUARANTINED") !== -1;
-
-              if (isQuarantine) {
-
-                setQuarantineLockdown(true);
-
-              }
-
-              var ruleMatch = errDetail.match(/INJ-[0-9]{3}/);
-
-              var ruleBadge = ruleMatch ? ruleMatch[0] : (isCumulative ? "CTX-WINDOW" : (isOutOfScope ? "OUT-OF-SCOPE" : (isQuarantine ? "QUARANTINE" : "SECURITY-GATE")));
-
-
-
-              // Pure DOM creation + textContent
-
-              turnUi.callout.replaceChildren();
-
-
-
-              var header = document.createElement("div");
-
-              header.className = "callout-blocked-header";
-
-
-
-              var titleWrap = document.createElement("div");
-
-              titleWrap.className = "callout-blocked-title";
-
-              var iconSvg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-
-              iconSvg.setAttribute("class", "icon icon-sm text-danger");
-
-              var iconUse = document.createElementNS("http://www.w3.org/2000/svg", "use");
-
-              iconUse.setAttribute("href", "/static/icons.svg#icon-shield-alert");
-
-              iconSvg.appendChild(iconUse);
-
-              var titleSpan = document.createElement("span");
-
-              titleSpan.textContent = "Policy Enforcement: Execution Blocked";
-
-              titleWrap.appendChild(iconSvg);
-
-              titleWrap.appendChild(titleSpan);
-
-
-
-              var badgeSpan = document.createElement("span");
-
-              badgeSpan.className = "callout-blocked-badge";
-
-              badgeSpan.textContent = ruleBadge;
-
-
-
-              header.appendChild(titleWrap);
-
-              header.appendChild(badgeSpan);
-
-              turnUi.callout.appendChild(header);
-
-
-
-              var body = document.createElement("div");
-
-              body.className = "callout-blocked-body";
-
-
-
-              var errDiv = document.createElement("div");
-
-              errDiv.className = "text-danger font-medium";
-
-              errDiv.textContent = errDetail;
-
-              body.appendChild(errDiv);
-
-
-
-              if (isCumulative) {
-
-                var cumP = document.createElement("p");
-
-                cumP.className = "text-xs text-muted mt-xs";
-
-                cumP.textContent = "Multi-turn protection active: Threat suspicion retained in sliding window to protect IoT hardware from follow-up attacks.";
-
-                body.appendChild(cumP);
-
-              }
-
-              turnUi.callout.appendChild(body);
-
-
-
-              var isHumanDenied = errDetail.indexOf("Denied by operator") !== -1 || errDetail.indexOf("human_denied") !== -1 || errDetail.indexOf("Operator Disapproved") !== -1;
-
-              var isTimeout = errDetail.indexOf("timed out") !== -1 || errDetail.indexOf("approval_timeout") !== -1;
-
-
-
-              if (userRole === "admin" && !isHumanDenied && !isTimeout) {
-
-                var footer = document.createElement("div");
-
-                footer.className = "callout-blocked-footer";
-
-
-
-                var footerSpan = document.createElement("span");
-
-                footerSpan.className = "text-xs text-muted";
-
-                footerSpan.textContent = "Admin Override: Reset threat window without losing chat history";
-
-
-
-                var clearBtn = document.createElement("button");
-
-                clearBtn.type = "button";
-
-                clearBtn.className = "btn-clear-threat";
-
-                var clearSvg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-
-                clearSvg.setAttribute("class", "icon icon-xs");
-
-                var clearUse = document.createElementNS("http://www.w3.org/2000/svg", "use");
-
-                clearUse.setAttribute("href", "/static/icons.svg#icon-refresh");
-
-                clearSvg.appendChild(clearUse);
-
-                var clearText = document.createElement("span");
-
-                clearText.textContent = isQuarantine ? "Release Session Quarantine" : "Acknowledge & Clear Threat Window";
-
-                if (isQuarantine) {
-
-                  footerSpan.textContent = "Admin Override: Instant release session quarantine";
-
-                }
-
-                clearBtn.appendChild(clearSvg);
-
-                clearBtn.appendChild(clearText);
-
-
-
-                clearBtn.addEventListener("click", function () {
-
-                  clearBtn.disabled = true;
-
-                  if (isQuarantine) {
-
-                    clearBtn.textContent = "Releasing quarantine...";
-
-                    api.releaseQuarantine()
-
-                      .then(function () {
-
-                        setQuarantineLockdown(false);
-
-                        app.showToast("Quarantine Released", "Session restored. Normal commands can now execute.", "ok", 5000);
-
-                        var okSpan = document.createElement("span");
-
-                        okSpan.className = "text-xs text-ok font-semibold";
-
-                        okSpan.textContent = "[OK] Quarantine released -- session restored.";
-
-                        clearBtn.replaceWith(okSpan);
-
-                      })
-
-                      .catch(function (err) {
-
-                        app.showToast("Release Error", err.message, "danger");
-
-                        clearBtn.disabled = false;
-
-                        clearBtn.textContent = "Release Session Quarantine";
-
-                      });
-
-                    return;
-
-                  }
-
-                  clearBtn.textContent = "Clearing threat window...";
-
-                  api.clearThreat()
-
-                    .then(function () {
-
-                      app.showToast("Threat Window Cleared", "Sliding window reset. Normal commands can now execute.", "ok", 5000);
-
-                      var okSpan = document.createElement("span");
-
-                      okSpan.className = "text-xs text-ok font-semibold";
-
-                      okSpan.textContent = "[OK] Threat window cleared -- ready for new commands.";
-
-                      clearBtn.replaceWith(okSpan);
-
-                    })
-
-                    .catch(function () {
-
-                      api.newSession()
-
-                        .then(function () {
-
-                          app.showToast("Threat Window Cleared", "Session token refreshed cleanly. Normal commands can now execute.", "ok", 5000);
-
-                          var okSpan = document.createElement("span");
-
-                          okSpan.className = "text-xs text-ok font-semibold";
-
-                          okSpan.textContent = "[OK] Clean session resumed -- ready for new commands.";
-
-                          clearBtn.replaceWith(okSpan);
-
-                        })
-
-                        .catch(function (err2) {
-
-                          app.showToast("Clear Error", err2.message, "danger");
-
-                          clearBtn.disabled = false;
-
-                          clearBtn.textContent = "Acknowledge & Clear Threat Window";
-
-                        });
-
-                    });
-
-                });
-
-
-
-                footer.appendChild(footerSpan);
-
-                footer.appendChild(clearBtn);
-
-                turnUi.callout.appendChild(footer);
-
-              }
-
-            } else if (final.decision === "DENY") {
-
-              if (turnUi.responseCard) turnUi.responseCard.style.setProperty("display", "none");
-
-              turnUi.textEl.textContent = "";
-
-              turnUi.callout.className = "callout-warning";
-
-              turnUi.callout.style.setProperty("display", "block");
-
-              turnUi.callout.textContent = "Action denied by human operator.";
-
-            } else {
-
-              if (turnUi.responseCard) turnUi.responseCard.style.setProperty("display", "block");
-
-              turnUi.callout.style.setProperty("display", "none");
-
-              turnUi.textEl.textContent = final.reply || "Done.";
-
-            }
-
-
-
-            scrollToBottom();
-
-          }
-
-        })
-
-        .catch(function (err) {
-
-          clearInterval(turnUi.pollTimer);
-
-          turnUi.pollTimer = null;
-
-          setTurnRunning(false);
-
-          turnUi.textEl.textContent = "Error: " + err.message;
-
+  function renderApprovalCard(container, rail, reqId, reqHash, toolName) {
+    var secs = 60;
+    var barFill = h("i");
+    var bar = h("div", { class: "bar" }, barFill);
+    var label = h("p", { text: "Waiting for a human OK. Expires in 60 s." });
+    var card = h("div", { class: "approve" }, label, bar);
+    var done = false;
+
+    function finish(ok) {
+      if (done) return;
+      done = true;
+      if (currentApprovalCountdown) clearInterval(currentApprovalCountdown);
+
+      clear(card);
+      card.append(h("p", { text: ok ? "Approved by supervisor. Action dispatched." : "Denied by supervisor. Nothing was executed." }));
+
+      if (typeof api !== "undefined" && api.post) {
+        api.post("/api/approvals/decide", {
+          request_id: reqId,
+          request_hash: reqHash,
+          approved: ok
+        }).catch(function (err) {
+          console.warn("Approval submit error:", err);
         });
-
-    }, 300);
-
-  }
-
-
-
-  function showInlineApproval(turnUi, reqId, toolName, toolArgs, requestHash) {
-
-    turnUi.approvalShown = true;
-
-    toolName = toolName || "high_risk_tool";
-
-    toolArgs = toolArgs || {};
-
-    requestHash = requestHash || "";
-
-
-
-    app.showToast("Operator Authorization Required", "Action '" + toolName + "' requires human authorization. Click 'Approve Action' below.", "warn", 10000);
-
-
-
-    var card = document.createElement("div");
-
-    card.className = "card-approval-inline";
-
-    turnUi.approvalCard = card;
-
-
-
-    // 1. Header (Pure DOM)
-
-    var header = document.createElement("div");
-
-    header.className = "approval-card-header";
-
-
-
-    var titleGroup = document.createElement("div");
-
-    titleGroup.className = "approval-card-title-group";
-
-
-
-    var shieldWrap = document.createElement("div");
-
-    shieldWrap.className = "approval-shield-icon";
-
-    var shieldSvg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-
-    shieldSvg.setAttribute("class", "icon");
-
-    var shieldUse = document.createElementNS("http://www.w3.org/2000/svg", "use");
-
-    shieldUse.setAttribute("href", "/static/icons.svg#icon-shield-alert");
-
-    shieldSvg.appendChild(shieldUse);
-
-    shieldWrap.appendChild(shieldSvg);
-
-
-
-    var titleTextDiv = document.createElement("div");
-
-    var cardTitle = document.createElement("div");
-
-    cardTitle.className = "approval-card-title";
-
-    cardTitle.textContent = "Operator Authorization Required";
-
-    var cardSub = document.createElement("span");
-
-    cardSub.className = "text-xs text-muted";
-
-    cardSub.textContent = "Direct Inline Gate -- No need to leave console";
-
-    titleTextDiv.appendChild(cardTitle);
-
-    titleTextDiv.appendChild(cardSub);
-
-
-
-    titleGroup.appendChild(shieldWrap);
-
-    titleGroup.appendChild(titleTextDiv);
-
-
-
-    var riskBadge = document.createElement("span");
-
-    riskBadge.className = "badge badge-warn font-mono text-xs";
-
-    riskBadge.textContent = "HIGH RISK";
-
-
-
-    header.appendChild(titleGroup);
-
-    header.appendChild(riskBadge);
-
-    card.appendChild(header);
-
-
-
-    // 2. Body Details (Pure DOM + textContent + formatted arguments pre)
-
-    var body = document.createElement("div");
-
-    body.className = "approval-card-body";
-
-
-
-    var intro = document.createElement("div");
-
-    intro.textContent = "AegisAgent planned a privileged action requiring verified authorization:";
-
-    body.appendChild(intro);
-
-
-
-    var metaRow = document.createElement("div");
-
-    metaRow.className = "mt-xs flex items-center justify-between";
-
-
-
-    var toolRow = document.createElement("span");
-
-    toolRow.textContent = "Target Action: ";
-
-    var toolStrong = document.createElement("strong");
-
-    toolStrong.className = "approval-tool-highlight";
-
-    toolStrong.textContent = toolName;
-
-    toolRow.appendChild(toolStrong);
-
-
-
-    var hashRow = document.createElement("span");
-
-    hashRow.className = "text-xs text-muted font-mono";
-
-    var displayHash = requestHash ? requestHash.slice(0, 12) : (reqId ? reqId.slice(0, 12) : "pending");
-
-    hashRow.textContent = "Hash: " + displayHash;
-
-
-
-    metaRow.appendChild(toolRow);
-
-    metaRow.appendChild(hashRow);
-
-    body.appendChild(metaRow);
-
-
-
-    // Informative Action Impact & Parameters Block
-    var infoBox = document.createElement("div");
-    infoBox.className = "approval-info-box mt-xs p-xs rounded";
-    infoBox.style.cssText = "background: rgba(15, 23, 42, 0.4); border: 1px solid rgba(245, 158, 11, 0.25); border-radius: 6px; padding: 10px; margin-top: 8px;";
-
-    var hasArgs = toolArgs && typeof toolArgs === "object" && Object.keys(toolArgs).length > 0;
-    if (hasArgs) {
-      var argsTitle = document.createElement("div");
-      argsTitle.className = "text-xs font-semibold uppercase mb-xs";
-      argsTitle.style.cssText = "font-size: 11px; color: #f59e0b; margin-bottom: 4px; font-weight: 700;";
-      argsTitle.textContent = "Operation Parameters:";
-      infoBox.appendChild(argsTitle);
-
-      var argsList = document.createElement("div");
-      argsList.className = "text-xs font-mono";
-      for (var k in toolArgs) {
-        var row = document.createElement("div");
-        row.className = "approval-arg-row";
-        row.textContent = k + ": " + toolArgs[k];
-        argsList.appendChild(row);
       }
-      infoBox.appendChild(argsList);
-    } else {
-      var desc = document.createElement("div");
-      desc.className = "text-xs approval-action-desc";
 
-      var actionStrong = document.createElement("strong");
-      var actionText = document.createTextNode("");
-      var lineBreak = document.createElement("br");
-      var policySpan = document.createElement("span");
-      policySpan.className = "action-policy-note";
-
-      if (toolName.indexOf("door") !== -1) {
-        actionStrong.className = "action-label-primary";
-        actionStrong.textContent = "Physical Action: ";
-        actionText.textContent = "Door lock solenoid will pulse for 3 seconds to unlatch the front door, then auto-relock.";
-        policySpan.textContent = "⚠️ Aegis security policy requires administrator approval before actuating physical security locks.";
-        desc.appendChild(actionStrong);
-        desc.appendChild(actionText);
-        desc.appendChild(lineBreak);
-        desc.appendChild(policySpan);
-      } else if (toolName.indexOf("alarm") !== -1) {
-        actionStrong.className = "action-label-warn";
-        actionStrong.textContent = "Physical Action: ";
-        actionText.textContent = "Audible piezo buzzer siren and yellow strobe LED will activate on hardware.";
-        policySpan.textContent = "⚠️ High-risk audible siren requires operator verification.";
-        desc.appendChild(actionStrong);
-        desc.appendChild(actionText);
-        desc.appendChild(lineBreak);
-        desc.appendChild(policySpan);
-      } else {
-        actionStrong.className = "action-label-primary";
-        actionStrong.textContent = "Standard Action: ";
-        actionText.textContent = "Direct physical hardware actuation requested. Awaiting administrator signature.";
-        desc.appendChild(actionStrong);
-        desc.appendChild(actionText);
-      }
-      infoBox.appendChild(desc);
+      rail.play({
+        kind: ok ? "allow" : "stop",
+        stop: ok ? -1 : 6,
+        say: ok ? "Approved by supervisor." : "Denied by supervisor. Nothing was executed.",
+        why: ok ? "Human operator confirmed the request." : "Supervisor declined authorization."
+      });
     }
-    body.appendChild(infoBox);
 
+    var btns = h("div", { class: "btns" },
+      h("button", {
+        class: "btn good",
+        type: "button",
+        onclick: function () { finish(true); }
+      }, "Approve"),
+      h("button", {
+        class: "btn danger",
+        type: "button",
+        onclick: function () { finish(false); }
+      }, "Deny")
+    );
 
+    card.append(btns);
+    container.append(card);
+    barFill.style.setProperty("--p", "1");
 
-    card.appendChild(body);
-
-
-
-    // 3. Countdown Progress Bar (Pure DOM)
-
-    var countdownWrap = document.createElement("div");
-
-    countdownWrap.className = "approval-countdown-wrap";
-
-
-
-    var cdSpan = document.createElement("span");
-
-    cdSpan.textContent = "Auto-rejects in ";
-
-    var secStrong = document.createElement("strong");
-
-    secStrong.textContent = "60";
-
-    cdSpan.appendChild(secStrong);
-
-    cdSpan.appendChild(document.createTextNode("s"));
-
-
-
-    var trackDiv = document.createElement("div");
-
-    trackDiv.className = "approval-progress-track";
-
-    var fillDiv = document.createElement("div");
-
-    fillDiv.className = "approval-progress-fill";
-
-    trackDiv.appendChild(fillDiv);
-
-
-
-    countdownWrap.appendChild(cdSpan);
-
-    countdownWrap.appendChild(trackDiv);
-
-    card.appendChild(countdownWrap);
-
-
-
-    var secondsLeft = 60;
-
-    var timerInterval = setInterval(function () {
-
-      secondsLeft -= 1;
-
-      secStrong.textContent = String(Math.max(0, secondsLeft));
-
-      fillDiv.style.width = Math.max(0, (secondsLeft / 60) * 100) + "%";
-
-      if (secondsLeft <= 0) {
-
-        clearInterval(timerInterval);
-
+    if (currentApprovalCountdown) clearInterval(currentApprovalCountdown);
+    currentApprovalCountdown = setInterval(function () {
+      secs--;
+      label.textContent = "Waiting for a human OK. Expires in " + secs + " s.";
+      barFill.style.setProperty("--p", String(secs / 60));
+      if (secs <= 0) {
+        clearInterval(currentApprovalCountdown);
+        if (!done) {
+          done = true;
+          clear(card).append(h("p", { text: "Timed out. Nothing was executed." }));
+          rail.play({
+            kind: "stop",
+            stop: 6,
+            say: "Timed out. Nobody answered in 60 s, so the request failed closed.",
+            why: "Approval deadline expired."
+          });
+        }
       }
-
     }, 1000);
-
-
-
-    // 4. Action Buttons
-
-    if (userRole === "admin") {
-
-      var actBar = document.createElement("div");
-
-      actBar.className = "approval-action-bar";
-
-
-
-      var btnGroup = document.createElement("div");
-
-      btnGroup.className = "approval-btn-group";
-
-
-
-      var appBtn = document.createElement("button");
-
-      appBtn.type = "button";
-
-      appBtn.className = "btn btn-sm approval-btn-approve";
-
-      var checkSvg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-
-      checkSvg.setAttribute("class", "icon icon-sm");
-
-      var checkUse = document.createElementNS("http://www.w3.org/2000/svg", "use");
-
-      checkUse.setAttribute("href", "/static/icons.svg#icon-check-circle");
-
-      checkSvg.appendChild(checkUse);
-
-      var appSpan = document.createElement("span");
-
-      appSpan.textContent = "Approve Action";
-
-      appBtn.appendChild(checkSvg);
-
-      appBtn.appendChild(appSpan);
-
-
-
-      appBtn.addEventListener("click", function () {
-
-        clearInterval(timerInterval);
-
-        appBtn.disabled = true;
-
-        denyBtn.disabled = true;
-
-        appSpan.textContent = "Authorizing...";
-
-
-
-        api.post("/api/approvals/decide", { request_id: reqId, request_hash: requestHash, approved: true })
-
-          .then(function () {
-
-            if (turnUi && turnUi.textEl) {
-
-              turnUi.textEl.textContent = "Authorized by operator. Executing command...";
-
-            }
-
-            app.showToast("Action Authorized", "Approval confirmed. Executing command...", "ok", 4000);
-
-            if (card.parentNode) card.parentNode.removeChild(card);
-
-          })
-
-          .catch(function (err) {
-
-            app.showToast("Approval Error", err.message, "danger");
-
-            appBtn.disabled = false;
-
-            denyBtn.disabled = false;
-
-            appSpan.textContent = "Approve Action";
-
-          });
-
-      });
-
-
-
-      var denyBtn = document.createElement("button");
-
-      denyBtn.type = "button";
-
-      denyBtn.className = "btn btn-sm approval-btn-deny";
-
-      var denySvg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-
-      denySvg.setAttribute("class", "icon icon-sm");
-
-      var denyUse = document.createElementNS("http://www.w3.org/2000/svg", "use");
-
-      denyUse.setAttribute("href", "/static/icons.svg#icon-x-circle");
-
-      denySvg.appendChild(denyUse);
-
-      var denySpan = document.createElement("span");
-
-      denySpan.textContent = "Deny";
-
-      denyBtn.appendChild(denySvg);
-
-      denyBtn.appendChild(denySpan);
-
-
-
-      denyBtn.addEventListener("click", function () {
-
-        clearInterval(timerInterval);
-
-        appBtn.disabled = true;
-
-        denyBtn.disabled = true;
-
-        denySpan.textContent = "Denying...";
-
-
-
-        api.post("/api/approvals/decide", { request_id: reqId, request_hash: requestHash, approved: false })
-
-          .then(function () {
-
-            if (turnUi && turnUi.textEl) {
-
-              turnUi.textEl.textContent = "Operator denied action.";
-
-            }
-
-            app.showToast("Action Denied", "Operation blocked and audited.", "warn", 4000);
-
-            if (card.parentNode) card.parentNode.removeChild(card);
-
-          })
-
-          .catch(function (err) {
-
-            app.showToast("Denial Error", err.message, "danger");
-
-            appBtn.disabled = false;
-
-            denyBtn.disabled = false;
-
-            denySpan.textContent = "Deny";
-
-          });
-
-      });
-
-
-
-      btnGroup.appendChild(appBtn);
-
-      btnGroup.appendChild(denyBtn);
-
-      actBar.appendChild(btnGroup);
-
-
-
-      var queueLink = document.createElement("a");
-
-      queueLink.href = "/approvals";
-
-      queueLink.className = "btn btn-sm btn-outline text-xs";
-
-      queueLink.textContent = "Open Approvals Queue ↗";
-
-      queueLink.title = "View and manage in Approvals queue";
-
-      actBar.appendChild(queueLink);
-
-
-
-      card.appendChild(actBar);
-
-    } else {
-
-      var waitText = document.createElement("div");
-
-      waitText.className = "text-xs text-muted flex items-center justify-between";
-
-
-
-      var waitSpan = document.createElement("span");
-
-      waitSpan.textContent = "Waiting for an administrator to review this action...";
-
-      var waitLink = document.createElement("a");
-
-      waitLink.href = "/approvals";
-
-      waitLink.target = "_blank";
-
-      waitLink.className = "text-xs text-accent";
-
-      waitLink.textContent = "View Queue ->";
-
-
-
-      waitText.appendChild(waitSpan);
-
-      waitText.appendChild(waitLink);
-
-      card.appendChild(waitText);
-
-    }
-
-
-
-    turnUi.bubble.appendChild(card);
-
-    scrollToBottom();
-
   }
 
-
-
-  function sendPrompt(text) {
-
-    if (isTurnRunning) return;
-
+  async function handleSend(text) {
     text = (text || "").trim();
-
-    if (!text) return;
-
-
+    if (!text || isTurnRunning) return;
 
     setTurnRunning(true);
+    addMessage(h("div", { class: "msg user", text: text }));
 
-    appendUserMessage(text);
+    var host = h("div");
+    var agentMsg = h("div", { class: "msg agent" },
+      h("div", { class: "who" }, svgIcon(ICON_SHIELD), "Aegis"),
+      host
+    );
+    addMessage(agentMsg);
 
-    chatTextarea.value = "";
+    var rail = GL.createRail(host, {
+      compact: true,
+      labels: stageLabels,
+      idle: "Sending request to Aegis gateway…"
+    });
 
-    chatTextarea.style.height = "auto";
+    if (typeof api === "undefined" || !api.post) {
+      setTurnRunning(false);
+      return;
+    }
 
-
-
-    var turnUi = createAssistantTurn();
-
-
-
-    api.post("/api/console/send", { text: text })
-
-      .then(function (res) {
-
-        pollTurn(res.id, turnUi);
-
-      })
-
-      .catch(function (err) {
-
+    try {
+      var sendRes = await api.post("/api/console/send", { text: text });
+      if (!sendRes || !sendRes.req_id) {
+        rail.play({
+          kind: "stop",
+          stop: 0,
+          say: "Failed to dispatch request.",
+          why: sendRes && sendRes.error ? sendRes.error : "Network error"
+        });
         setTurnRunning(false);
+        return;
+      }
 
-        var msg = (err && err.message) || "Failed to dispatch request";
-        turnUi.textEl.textContent = "Failed to dispatch request: " + msg;
-        if (msg.toLowerCase().indexOf("quarantin") !== -1 || (err && err.status === 423)) {
-          setQuarantineLockdown(true);
+      var reqId = sendRes.req_id;
+      var pollStart = Date.now();
+      var approvalRendered = false;
+
+      var pollTimer = setInterval(async function () {
+        if (Date.now() - pollStart > 120000) {
+          clearInterval(pollTimer);
+          setTurnRunning(false);
+          rail.play({
+            kind: "stop",
+            stop: 2,
+            say: "Agent timed out waiting for execution.",
+            why: "Worker service did not respond."
+          });
+          return;
         }
 
+        try {
+          var pollRes = await api.get("/api/console/poll/" + encodeURIComponent(reqId));
+          if (!pollRes) return;
+
+          var steps = pollRes.steps || [];
+          var final = pollRes.final;
+
+          // Check if waiting for approval
+          var approvalStep = steps.find(function (s) { return s.stage === "approval" && s.status === "running"; });
+          if (approvalStep && !approvalRendered && !final) {
+            approvalRendered = true;
+            var detail = approvalStep.detail || {};
+            renderApprovalCard(agentMsg, rail, reqId, detail.request_hash || "", detail.tool || "action");
+          }
+
+          if (final) {
+            clearInterval(pollTimer);
+            setTurnRunning(false);
+
+            var dec = String(final.decision || "BLOCK").toUpperCase();
+            var isAllow = (dec === "ALLOW");
+            var isWait = (dec === "REVIEW" || dec === "WAITING");
+
+            var stopStage = pollRes.stopped_stage || final.stopped_at || final.stage;
+            if (!stopStage && steps.length > 0) {
+              for (var i = 0; i < steps.length; i++) {
+                if (steps[i].status === "block" || steps[i].status === "error") {
+                  stopStage = steps[i].stage;
+                  break;
+                }
+              }
+            }
+
+            var stopIdx = isAllow ? -1 : (DM.layerToGateIndex ? DM.layerToGateIndex(stopStage) : 0);
+            if (stopIdx === -1 && !isAllow) stopIdx = 0;
+
+            var say = final.reply || final.error || (isAllow ? "Allowed." : "Request stopped by security policy.");
+            var why = final.error || (isAllow ? "All nine gates passed." : "Stopped by security policy.");
+
+            await rail.play({
+              kind: isAllow ? "allow" : (isWait ? "wait" : "stop"),
+              stop: stopIdx,
+              say: say,
+              why: why
+            });
+
+            if (isWait && !approvalRendered) {
+              approvalRendered = true;
+              renderApprovalCard(agentMsg, rail, reqId, final.request_hash || "", final.tool_called || "action");
+            }
+          }
+        } catch (pollErr) {
+          console.warn("Poll error:", pollErr);
+        }
+      }, 500);
+
+    } catch (err) {
+      console.warn("Console send error:", err);
+      rail.play({
+        kind: "stop",
+        stop: 0,
+        say: "Error communicating with server.",
+        why: err && err.message ? err.message : "Network error"
       });
-
-  }
-
-
-
-  window.sendConsolePrompt = sendPrompt;
-
-
-
-  // Event Listeners
-
-  if (chatSendBtn) {
-
-    chatSendBtn.addEventListener("click", function () {
-
-      sendPrompt(chatTextarea.value);
-
-    });
-
-  }
-
-
-
-  chatTextarea.addEventListener("keydown", function (e) {
-
-    if (e.key === "Enter" && !e.shiftKey) {
-
-      e.preventDefault();
-
-      sendPrompt(chatTextarea.value);
-
+      setTurnRunning(false);
     }
+  }
 
-  });
-
-
-
-  // Suggested prompt chip clicks and dynamic loading from /api/environment
-  function bindChip(chip) {
-    chip.addEventListener("click", function () {
-      var prompt = chip.dataset.prompt || chip.textContent.trim();
-      sendPrompt(prompt);
+  function initSuggestions() {
+    var container = document.getElementById("suggest-chips");
+    if (!container) return;
+    container.querySelectorAll(".chip").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var text = btn.textContent;
+        var askInput = document.getElementById("ask");
+        if (askInput) askInput.value = text;
+        handleSend(text);
+      });
     });
   }
 
-  var chips = document.querySelectorAll(".chip-btn");
-  chips.forEach(bindChip);
+  function initForm() {
+    var form = document.getElementById("console-form");
+    var askInput = document.getElementById("ask");
+    if (!form || !askInput) return;
 
-  var chipsContainer = document.getElementById("chips-scroll");
-  if (chipsContainer) {
-    fetch("/api/environment")
-      .then(function (res) {
-        if (!res.ok) return null;
-        return res.json();
-      })
-      .then(function (data) {
-        if (!data || !Array.isArray(data.suggestions) || data.suggestions.length === 0) return;
-        while (chipsContainer.firstChild) {
-          chipsContainer.removeChild(chipsContainer.firstChild);
-        }
-        data.suggestions.forEach(function (s) {
-          var btn = document.createElement("button");
-          btn.type = "button";
-          btn.className = "chip-btn";
-          btn.dataset.prompt = s.prompt;
-
-          var iconWrap = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-          iconWrap.setAttribute("class", "icon icon-xs");
-          var useEl = document.createElementNS("http://www.w3.org/2000/svg", "use");
-          useEl.setAttribute("href", "/static/icons.svg#icon-terminal");
-          iconWrap.appendChild(useEl);
-          btn.appendChild(iconWrap);
-
-          var span = document.createElement("span");
-          span.textContent = s.label || s.prompt;
-          btn.appendChild(span);
-
-          bindChip(btn);
-          chipsContainer.appendChild(btn);
-        });
-      })
-      .catch(function () {});
-  }
-
-
-
-  // Start Worker Button on offline banner
-
-  var startWorkerBtn = document.getElementById("btn-start-worker");
-
-  if (startWorkerBtn) {
-
-    startWorkerBtn.addEventListener("click", function () {
-
-      startWorkerBtn.disabled = true;
-
-      startWorkerBtn.classList.add("is-loading");
-
-      api.post("/api/worker/start", {})
-
-        .then(function () {
-
-          app.showToast("Worker Starting", "Worker process initiated.", "ok");
-
-          setTimeout(function () { window.location.reload(); }, 1200);
-
-        })
-
-        .catch(function (err) {
-
-          app.showToast("Worker Error", err.message, "danger");
-
-          startWorkerBtn.disabled = false;
-
-          startWorkerBtn.classList.remove("is-loading");
-
-        });
-
+    form.addEventListener("submit", function (ev) {
+      ev.preventDefault();
+      var text = askInput.value;
+      askInput.value = "";
+      handleSend(text);
     });
-
   }
 
-
-
-  // Reset Session Button
-
-  var newSessionBtn = document.getElementById("btn-new-session");
-
-  if (newSessionBtn) {
-
-    newSessionBtn.addEventListener("click", function () {
-
-      newSessionBtn.disabled = true;
-
-      api.post("/api/console/new_session", {})
-
-        .then(function () {
-
-          app.showToast("Session Reset", "Started fresh chat session.", "ok");
-
-          setTimeout(function () { window.location.reload(); }, 500);
-
-        })
-
-        .catch(function (err) {
-
-          app.showToast("Reset Error", err.message, "danger");
-
-          newSessionBtn.disabled = false;
-
-        });
-
-    });
-
+  function init() {
+    initSuggestions();
+    initForm();
   }
 
-
-
-  // Check URL query param for instant prompt
-
-  var urlParams = new URLSearchParams(window.location.search);
-
-  var initialPrompt = urlParams.get("prompt");
-
-  if (initialPrompt) {
-
-    history.replaceState(null, "", window.location.pathname);
-
-    if (chatTextarea.focus) chatTextarea.focus();
-
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", init);
+  } else {
+    init();
   }
-
-
-
-  // Listen for global quarantine release from modal
-
-  window.addEventListener("aegis:quarantine_released", function () {
-
-    setQuarantineLockdown(false);
-
-  });
-
-  if (!isQuarantineActive && chatTextarea) {
-    chatTextarea.disabled = false;
-    if (chatTextarea.focus) chatTextarea.focus();
-  }
-  if (!isQuarantineActive && chatSendBtn) {
-    chatSendBtn.disabled = false;
-  }
-
-  window.addEventListener("aegis:health", function (e) {
-    var health = e.detail;
-    if (health && health.worker) {
-      if (health.worker.alive) {
-        if (workerBanner) workerBanner.style.display = "none";
-        if (!isQuarantineActive && chatTextarea && chatTextarea.disabled && !isTurnRunning) {
-          chatTextarea.disabled = false;
-        }
-        if (!isQuarantineActive && chatSendBtn && chatSendBtn.disabled && !isTurnRunning) {
-          chatSendBtn.disabled = false;
-        }
-      } else {
-        if (workerBanner) workerBanner.style.display = "";
-      }
-    }
-    if (health && health.quarantined !== undefined) {
-      if (health.quarantined && !isQuarantineActive) {
-        setQuarantineLockdown(true);
-      } else if (!health.quarantined && isQuarantineActive) {
-        setQuarantineLockdown(false);
-      }
-    }
-    var isSimulated = (health && (health.environment === "office" || health.hardware_mode === "virtual" || (health.device && health.device.transport === "virtual")));
-    STAGE_LABELS.hardware = isSimulated ? "Device (simulated)" : "Hardware";
-  });
-
 })();
-
