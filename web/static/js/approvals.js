@@ -108,7 +108,11 @@
     });
 
     if (pendingList.length === 0) {
-      container.innerHTML = "";
+      if (container.replaceChildren) {
+        container.replaceChildren();
+      } else {
+        while (container.firstChild) container.removeChild(container.firstChild);
+      }
       const emptyDiv = document.createElement("div");
       emptyDiv.className = "empty-state";
 
@@ -475,7 +479,11 @@
       filtered = historyList.filter((item) => item.timed_out === true);
     }
 
-    tbody.innerHTML = "";
+    if (tbody.replaceChildren) {
+      tbody.replaceChildren();
+    } else {
+      while (tbody.firstChild) tbody.removeChild(tbody.firstChild);
+    }
 
     if (filtered.length === 0) {
       const tr = document.createElement("tr");

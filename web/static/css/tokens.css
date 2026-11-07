@@ -1,23 +1,65 @@
 /*
-  AegisAgent Design System Tokens — Calm Control Room
-  Light is the default; Dark is selectable.
+  AegisAgent Design System Tokens — Formal Security Ledger / Control Room
+  Self-hosted IBM Plex Sans & IBM Plex Mono
 */
+
+/* Self-hosted Typography */
+@font-face {
+  font-family: "IBM Plex Sans";
+  src: url("/static/fonts/ibm-plex-sans-latin-400-normal.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "IBM Plex Sans";
+  src: url("/static/fonts/ibm-plex-sans-latin-500-normal.woff2") format("woff2");
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "IBM Plex Sans";
+  src: url("/static/fonts/ibm-plex-sans-latin-600-normal.woff2") format("woff2");
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "IBM Plex Mono";
+  src: url("/static/fonts/ibm-plex-mono-latin-400-normal.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "IBM Plex Mono";
+  src: url("/static/fonts/ibm-plex-mono-latin-500-normal.woff2") format("woff2");
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
 
 :root {
   /* Common typography */
-  --font-sans: "Segoe UI Variable", "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
-  --font-mono: ui-monospace, "SF Mono", "Cascadia Code", "Segoe UI Mono", Menlo, Consolas, monospace;
+  --font-sans: "IBM Plex Sans", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 
-  /* Typography scale */
-  --text-xs: 0.75rem;    /* 12px */
-  --text-sm: 0.8125rem;  /* 13px */
-  --text-base: 0.875rem; /* 14px */
+  /* Typography scale — meta text never below 13px */
+  --text-xs: 0.8125rem;  /* 13px */
+  --text-sm: 0.875rem;   /* 14px */
+  --text-base: 0.9375rem;/* 15px */
   --text-md: 1rem;       /* 16px */
-  --text-lg: 1.25rem;    /* 20px */
-  --text-xl: 1.875rem;   /* 30px */
-  --text-2xl: 2.25rem;   /* 36px */
+  --text-lg: 1.125rem;   /* 18px */
+  --text-xl: 1.25rem;    /* 20px */
+  --text-2xl: 1.875rem;  /* 30px */
+  --line-height: 1.5;
 
-  /* Spacing (8px grid) */
+  /* Spacing */
   --space-1: 4px;
   --space-2: 8px;
   --space-3: 12px;
@@ -31,150 +73,198 @@
   /* Border radius */
   --radius-sm: 6px;
   --radius-md: 8px;
-  --radius-lg: 12px;
-  --radius-xl: 16px;
+  --radius-lg: 8px;
+  --radius-xl: 10px;
   --radius-pill: 999px;
 
+  /* Button and input controls */
+  --btn-height: 40px;
+  --input-height: 40px;
+  --control-radius: 8px;
+
   /* Transitions */
-  --transition-fast: 150ms cubic-bezier(0.16, 1, 0.3, 1);
-  --transition-normal: 200ms cubic-bezier(0.16, 1, 0.3, 1);
-  --transition-slow: 250ms cubic-bezier(0.16, 1, 0.3, 1);
+  --transition-fast: 120ms ease;
+  --transition-normal: 180ms ease;
+  --transition-slow: 240ms ease;
 
   /* Layout dimensions */
-  --sidebar-width: 252px;
-  --sidebar-collapsed-width: 72px;
+  --sidebar-width: 232px;
+  --sidebar-collapsed-width: 64px;
   --topbar-height: 56px;
-  --content-max-width: 1320px;
+  --content-max-width: 1280px;
 
-  /* Persistent Deep Ink Navy Sidebar Tokens across BOTH themes */
-  --sidebar-bg: #0F1B2D;
-  --sidebar-border: #1A2942;
-  --sidebar-text: #94A3B8;
-  --sidebar-text-hover: #F8FAFC;
-  --sidebar-active-bg: rgba(14, 124, 114, 0.22);
-  --sidebar-active-text: #2DD4BF;
-  --sidebar-active-border: rgba(45, 212, 191, 0.35);
-  --sidebar-active-glow: 0 0 16px rgba(45, 212, 191, 0.22);
-  --sidebar-card-bg: rgba(11, 20, 34, 0.70);
-  --sidebar-card-border: rgba(255, 255, 255, 0.08);
-  --sidebar-footer-bg: #0B1422;
+  /* Shadows: none for flat security ledger aesthetic (1px borders only) */
+  --shadow-card: none;
+  --shadow-card-hover: none;
+  --shadow-dropdown: 0 4px 12px rgba(0, 0, 0, 0.08);
+  --shadow-modal: 0 8px 24px rgba(0, 0, 0, 0.15);
 }
 
-/* Light Theme (Default — Calm Control Room) */
+/* Light Theme (Default — Warm White Page, White Cards, 1px Borders) */
 html[data-theme="light"],
 html:not([data-theme="dark"]) {
   color-scheme: light;
 
-  --bg: #EEF1F6;
-  --bg-gradient: radial-gradient(ellipse 85% 420px at 50% 0%, rgba(14, 124, 114, 0.09) 0%, rgba(14, 124, 114, 0) 100%), linear-gradient(180deg, #F4F7FB 0%, #EEF1F6 280px, #EEF1F6 100%);
+  --bg: #F7F7F5;
+  --bg-gradient: none;
   --surface: #FFFFFF;
-  --surface-2: #F8FAFC;
-  --surface-3: #F1F5F9;
-  --border: #D8DFE9;
-  --border-subtle: #E8EDF5;
+  --surface-2: #F1F1EF;
+  --surface-3: #EAEAE7;
+  --border: #E2E2DF;
+  --border-subtle: #EBEBE8;
   --text: #0F172A;
-  --text-secondary: #334155;
-  --muted: #64748B;
+  --text-secondary: #475569;
+  --muted: #526071;
 
-  /* Accent: Teal + Secondary Indigo */
-  --accent: #0E7C72;
-  --accent-hover: #09635B;
-  --accent-soft: #E6F5F3;
-  --accent-text: #0B6B62;
+  /* ONE Accent: Teal */
+  --accent: #0F766E;
+  --accent-hover: #0D655E;
+  --accent-soft: #F0FDFA;
+  --accent-text: #0F766E;
+  --accent-border: #99F6E4;
 
-  --secondary: #4F46E5;
-  --secondary-hover: #4338CA;
-  --secondary-soft: #EEF2FF;
-  --secondary-text: #4338CA;
+  --secondary: #475569;
+  --secondary-hover: #334155;
+  --secondary-soft: #F1F5F9;
+  --secondary-text: #334155;
 
-  /* Control Room Hero & Gradients */
-  --hero-bg: linear-gradient(135deg, #0B132B 0%, #151F38 55%, #1C2744 100%);
-  --hero-border: rgba(255, 255, 255, 0.12);
-  --hero-text: #F8FAFC;
-  --gradient-primary: linear-gradient(135deg, #0E7C72 0%, #4338CA 100%);
-  --gradient-primary-hover: linear-gradient(135deg, #0B6A62 0%, #3730A3 100%);
+  /* Red ONLY for stopped/blocked */
+  --danger-text: #991B1B;
+  --danger-bg: #FEF2F2;
+  --danger-border: #FCA5A5;
+  --danger: #991B1B;
 
-  --ok-text: #067647;
-  --ok-bg: #ECFDF3;
-  --ok-border: #A6F4C5;
+  /* Amber ONLY for waiting for human */
+  --warn-text: #92400E;
+  --warn-bg: #FFFBEB;
+  --warn-border: #FCD34D;
+  --warn: #92400E;
 
-  --warn-text: #B54708;
-  --warn-bg: #FFFAEB;
-  --warn-border: #FEDF89;
+  /* Passed / Allowed */
+  --ok-text: #0F766E;
+  --ok-bg: #F0FDFA;
+  --ok-border: #99F6E4;
+  --ok: #0F766E;
 
-  --danger-text: #B42318;
-  --danger-bg: #FEF3F2;
-  --danger-border: #FECDCA;
+  /* Informational neutral */
+  --info-text: #334155;
+  --info-bg: #F1F5F9;
+  --info-border: #CBD5E1;
+  --info: #334155;
 
-  --info-text: #175CD3;
-  --info-bg: #EFF8FF;
-  --info-border: #B2DDFF;
+  /* Inputs */
+  --input-bg: #FFFFFF;
+  --input-border: #D1D5DB;
+  --input-text: #0F172A;
+  --input-placeholder: #64748B;
 
-  --shadow-card: 0 1px 3px rgba(15, 23, 42, 0.06), 0 6px 18px rgba(15, 23, 42, 0.06);
-  --shadow-card-hover: 0 4px 14px rgba(15, 23, 42, 0.10), 0 16px 36px rgba(15, 23, 42, 0.08);
-  --shadow-dropdown: 0 6px 20px rgba(15, 23, 42, 0.12);
-  --shadow-modal: 0 16px 40px rgba(15, 23, 42, 0.20);
+  /* Sidebar follows theme */
+  --sidebar-bg: #F7F7F5;
+  --sidebar-border: #E2E2DF;
+  --sidebar-text: #475569;
+  --sidebar-text-hover: #0F172A;
+  --sidebar-active-bg: #FFFFFF;
+  --sidebar-active-text: #0F766E;
+  --sidebar-active-border: #0F766E;
+  --sidebar-card-bg: #FFFFFF;
+  --sidebar-card-border: #E2E2DF;
+  --sidebar-footer-bg: #F7F7F5;
 
-  --chart-grid: #D8DFE9;
+  --chart-grid: #E2E2DF;
   --chart-tooltip-bg: #FFFFFF;
-  --chart-tooltip-border: #D8DFE9;
+  --chart-tooltip-border: #E2E2DF;
   --chart-tooltip-text: #0F172A;
 }
 
-/* Dark Theme (Soft Charcoal & Midnight) */
+/* Dark Theme (Neutral Slate #0E1116 page, #161B22 cards, 1px borders) */
 html[data-theme="dark"] {
   color-scheme: dark;
 
-  --bg: #0B0E14;
-  --bg-gradient: radial-gradient(ellipse 85% 420px at 50% 0%, rgba(45, 212, 191, 0.08) 0%, rgba(45, 212, 191, 0) 100%), linear-gradient(180deg, #0F131C 0%, #0B0E14 280px, #0B0E14 100%);
-  --surface: #141923;
-  --surface-2: #1A202C;
-  --surface-3: #222938;
-  --border: #262E3D;
-  --border-subtle: #1F2532;
-  --text: #F1F5F9;
-  --text-secondary: #CBD5E1;
-  --muted: #94A3B8;
+  --bg: #0E1116;
+  --bg-gradient: none;
+  --surface: #161B22;
+  --surface-2: #1C2128;
+  --surface-3: #22272E;
+  --border: #30363D;
+  --border-subtle: #21262D;
+  --text: #F0F6FC;
+  --text-secondary: #C9D1D9;
+  --muted: #919DAA;
 
+  /* ONE Accent: Teal */
   --accent: #2DD4BF;
   --accent-hover: #14B8A6;
-  --accent-soft: rgba(45, 212, 191, 0.14);
-  --accent-text: #5EEAD4;
+  --accent-soft: rgba(45, 212, 191, 0.12);
+  --accent-text: #2DD4BF;
+  --accent-border: rgba(45, 212, 191, 0.35);
 
-  --secondary: #818CF8;
-  --secondary-hover: #6366F1;
-  --secondary-soft: rgba(129, 140, 248, 0.14);
-  --secondary-text: #A5B4FC;
+  --secondary: #94A3B8;
+  --secondary-hover: #CBD5E1;
+  --secondary-soft: rgba(148, 163, 184, 0.12);
+  --secondary-text: #CBD5E1;
 
-  --hero-bg: linear-gradient(135deg, #060A12 0%, #0D1424 55%, #131D33 100%);
-  --hero-border: rgba(255, 255, 255, 0.10);
-  --hero-text: #F8FAFC;
-  --gradient-primary: linear-gradient(135deg, #0E7C72 0%, #4338CA 100%);
-  --gradient-primary-hover: linear-gradient(135deg, #0B6A62 0%, #3730A3 100%);
+  /* Red ONLY for stopped/blocked */
+  --danger-text: #FCA5A5;
+  --danger-bg: rgba(239, 68, 68, 0.15);
+  --danger-border: rgba(239, 68, 68, 0.35);
+  --danger: #F87171;
 
-  --ok-text: #48C78E;
-  --ok-bg: rgba(6, 118, 71, 0.22);
-  --ok-border: rgba(72, 199, 142, 0.35);
+  /* Amber ONLY for waiting for human */
+  --warn-text: #FCD34D;
+  --warn-bg: rgba(245, 158, 11, 0.15);
+  --warn-border: rgba(245, 158, 11, 0.35);
+  --warn: #FBBF24;
 
-  --warn-text: #FBBF24;
-  --warn-bg: rgba(181, 71, 8, 0.22);
-  --warn-border: rgba(251, 191, 36, 0.35);
+  /* Passed / Allowed */
+  --ok-text: #2DD4BF;
+  --ok-bg: rgba(45, 212, 191, 0.12);
+  --ok-border: rgba(45, 212, 191, 0.35);
+  --ok: #2DD4BF;
 
-  --danger-text: #F87171;
-  --danger-bg: rgba(180, 35, 24, 0.22);
-  --danger-border: rgba(248, 113, 113, 0.35);
+  /* Informational neutral */
+  --info-text: #CBD5E1;
+  --info-bg: rgba(203, 213, 225, 0.10);
+  --info-border: #30363D;
+  --info: #CBD5E1;
 
-  --info-text: #60A5FA;
-  --info-bg: rgba(23, 92, 211, 0.22);
-  --info-border: rgba(96, 165, 250, 0.35);
+  /* Inputs */
+  --input-bg: #0E1116;
+  --input-border: #30363D;
+  --input-text: #F0F6FC;
+  --input-placeholder: #64748B;
 
-  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.3), 0 4px 16px rgba(0, 0, 0, 0.2);
-  --shadow-card-hover: 0 6px 20px rgba(0, 0, 0, 0.4), 0 16px 36px rgba(0, 0, 0, 0.3);
-  --shadow-dropdown: 0 4px 20px rgba(0, 0, 0, 0.50);
-  --shadow-modal: 0 16px 40px rgba(0, 0, 0, 0.70);
+  /* Sidebar follows theme */
+  --sidebar-bg: #0E1116;
+  --sidebar-border: #30363D;
+  --sidebar-text: #8B949E;
+  --sidebar-text-hover: #F0F6FC;
+  --sidebar-active-bg: #161B22;
+  --sidebar-active-text: #2DD4BF;
+  --sidebar-active-border: #2DD4BF;
+  --sidebar-card-bg: #161B22;
+  --sidebar-card-border: #30363D;
+  --sidebar-footer-bg: #0E1116;
 
-  --chart-grid: #262E3D;
-  --chart-tooltip-bg: #1A202C;
-  --chart-tooltip-border: #262E3D;
-  --chart-tooltip-text: #F1F5F9;
+  --chart-grid: #30363D;
+  --chart-tooltip-bg: #161B22;
+  --chart-tooltip-border: #30363D;
+  --chart-tooltip-text: #F0F6FC;
+}
+
+/* Accessibility: Focus visible ring */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Accessibility: Reduced motion preference */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

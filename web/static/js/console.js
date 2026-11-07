@@ -89,19 +89,29 @@
 
         bar.className = "console-quarantine-bar";
 
-        bar.innerHTML = '<div class="flex items-center gap-xs">' +
+        var alertGroup = document.createElement("div");
+        alertGroup.className = "flex items-center gap-xs";
+        var warnSvg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+        warnSvg.setAttribute("class", "icon text-danger icon-sm");
+        var warnUse = document.createElementNS("http://www.w3.org/2000/svg", "use");
+        warnUse.setAttribute("href", "/static/icons.svg#icon-alert-triangle");
+        warnSvg.appendChild(warnUse);
+        var strongEl = document.createElement("strong");
+        strongEl.className = "text-danger text-xs uppercase tracking-wider";
+        strongEl.textContent = "Air-Gap Containment Active \u2014 3 Injections Exceeded";
+        alertGroup.appendChild(warnSvg);
+        alertGroup.appendChild(strongEl);
 
-          '<svg class="icon text-danger icon-sm"><use href="/static/icons.svg#icon-alert-triangle"></use></svg>' +
+        var releaseBtn = document.createElement("button");
+        releaseBtn.type = "button";
+        releaseBtn.className = "btn btn-danger btn-xs";
+        releaseBtn.id = "bar-release-quarantine-btn";
+        var btnSpan = document.createElement("span");
+        btnSpan.textContent = "Admin Override: Instant Release";
+        releaseBtn.appendChild(btnSpan);
 
-          '<strong class="text-danger text-xs uppercase tracking-wider">Air-Gap Containment Active — 3 Injections Exceeded</strong>' +
-
-          '</div>' +
-
-          '<button type="button" class="btn btn-danger btn-xs" id="bar-release-quarantine-btn">' +
-
-          '<span>Admin Override: Instant Release</span>' +
-
-          '</button>';
+        bar.appendChild(alertGroup);
+        bar.appendChild(releaseBtn);
 
         container.parentNode.insertBefore(bar, container);
 
@@ -225,10 +235,13 @@
 
 
     var avatar = document.createElement("div");
-
     avatar.className = "chat-msg-avatar";
-
-    avatar.innerHTML = '<svg class="icon"><use href="/static/icons.svg#icon-user"></use></svg>';
+    var userSvg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    userSvg.setAttribute("class", "icon");
+    var userUse = document.createElementNS("http://www.w3.org/2000/svg", "use");
+    userUse.setAttribute("href", "/static/icons.svg#icon-user");
+    userSvg.appendChild(userUse);
+    avatar.appendChild(userSvg);
 
 
 
@@ -261,10 +274,13 @@
 
 
     var avatar = document.createElement("div");
-
     avatar.className = "chat-msg-avatar";
-
-    avatar.innerHTML = '<svg class="icon"><use href="/static/icons.svg#icon-shield"></use></svg>';
+    var shieldSvg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    shieldSvg.setAttribute("class", "icon");
+    var shieldUse = document.createElementNS("http://www.w3.org/2000/svg", "use");
+    shieldUse.setAttribute("href", "/static/icons.svg#icon-shield");
+    shieldSvg.appendChild(shieldUse);
+    avatar.appendChild(shieldSvg);
 
 
 

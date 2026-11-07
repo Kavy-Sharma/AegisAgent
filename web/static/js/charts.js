@@ -12,14 +12,29 @@ var charts = (function () {
   function renderDecisionTimeline(containerId, minuteBuckets) {
     var container = document.getElementById(containerId);
     if (!container) return;
-    container.innerHTML = "";
+    if (container.replaceChildren) {
+      container.replaceChildren();
+    } else {
+      while (container.firstChild) container.removeChild(container.firstChild);
+    }
 
     if (!minuteBuckets || minuteBuckets.length === 0) {
       var empty = document.createElement("div");
       empty.className = "empty-state";
-      empty.innerHTML = '<svg class="empty-state-icon"><use href="/static/icons.svg#icon-dashboard"></use></svg>' +
-        '<div class="empty-state-title">No Recent Decisions</div>' +
-        '<div class="empty-state-desc">No gateway requests recorded in the last 30 minutes.</div>';
+      var svgIcon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+      svgIcon.setAttribute("class", "empty-state-icon");
+      var useEl = document.createElementNS("http://www.w3.org/2000/svg", "use");
+      useEl.setAttribute("href", "/static/icons.svg#icon-dashboard");
+      svgIcon.appendChild(useEl);
+      var titleDiv = document.createElement("div");
+      titleDiv.className = "empty-state-title";
+      titleDiv.textContent = "No Recent Decisions";
+      var descDiv = document.createElement("div");
+      descDiv.className = "empty-state-desc";
+      descDiv.textContent = "No gateway requests recorded in the last 30 minutes.";
+      empty.appendChild(svgIcon);
+      empty.appendChild(titleDiv);
+      empty.appendChild(descDiv);
       container.appendChild(empty);
       return;
     }
@@ -149,7 +164,11 @@ var charts = (function () {
   function renderTopRules(containerId, rulesList) {
     var container = document.getElementById(containerId);
     if (!container) return;
-    container.innerHTML = "";
+    if (container.replaceChildren) {
+      container.replaceChildren();
+    } else {
+      while (container.firstChild) container.removeChild(container.firstChild);
+    }
 
     if (!rulesList || rulesList.length === 0) {
       var empty = document.createElement("div");
@@ -225,7 +244,11 @@ var charts = (function () {
   // 3. KPI Sparkline (Mini SVG polyline)
   function renderSparkline(svgElement, dataPoints, color) {
     if (!svgElement || !dataPoints || dataPoints.length < 2) return;
-    svgElement.innerHTML = "";
+    if (svgElement.replaceChildren) {
+      svgElement.replaceChildren();
+    } else {
+      while (svgElement.firstChild) svgElement.removeChild(svgElement.firstChild);
+    }
 
     var width = 72;
     var height = 28;

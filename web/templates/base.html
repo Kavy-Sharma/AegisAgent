@@ -133,55 +133,26 @@
 
 
       <!-- System Health Telemetry -->
-
       <div class="sidebar-health-panel">
-
         <div class="health-header">
-
           <span class="text-xs uppercase font-semibold text-muted">Subsystem Health</span>
-
         </div>
-
         <div class="health-item">
-
-          <span class="pulse-dot offline" id="health-dot-worker"></span>
-
-          <span class="health-name">Worker</span>
-
-          <span class="health-val font-mono" id="health-label-worker">Polling...</span>
-
+          <span class="health-name">Policy</span>
+          <span class="health-val font-mono" id="health-label-policy">Active</span>
         </div>
-
         <div class="health-item">
-
-          <span class="pulse-dot {% if active_env == 'office' or hardware_mode == 'virtual' %}live{% else %}offline{% endif %}" id="health-dot-device"></span>
-
-          <span class="health-name" id="health-name-device">{% if active_env == 'office' %}Office Sandbox{% elif hardware_mode == 'virtual' %}Virtual Home{% else %}ESP32{% endif %}</span>
-
-          <span class="health-val font-mono" id="health-label-device">{% if active_env == 'office' or hardware_mode == 'virtual' %}Simulated{% else %}Polling...{% endif %}</span>
-
+          <span class="health-name">Audit Hash-Chain</span>
+          <span class="health-val font-mono" id="health-label-audit">Intact</span>
         </div>
-
         <div class="health-item">
-
-          <span class="pulse-dot offline" id="health-dot-ollama"></span>
-
-          <span class="health-name">Ollama</span>
-
-          <span class="health-val font-mono" id="health-label-ollama">Polling...</span>
-
+          <span class="health-name">Signing Key</span>
+          <span class="health-val font-mono" id="health-label-signing">Valid</span>
         </div>
-
         <div class="health-item">
-
-          <span class="pulse-dot offline" id="health-dot-audit"></span>
-
-          <span class="health-name">Audit Log</span>
-
-          <span class="health-val font-mono" id="health-label-audit">Polling...</span>
-
+          <span class="health-name">Rate Limiter</span>
+          <span class="health-val font-mono" id="health-label-rate">Normal</span>
         </div>
-
       </div>
 
 
@@ -257,68 +228,38 @@
 
 
         <div class="topbar-right">
+          <!-- Environment Label -->
+          <span class="text-xs text-muted font-mono" id="env-badge">{% if active_env == 'office' %}Office (simulated){% else %}Smart Home (simulated){% endif %}</span>
 
-          <!-- Environment Badge -->
-          <span class="pill pill-info text-xs" id="env-badge">Environment: {% if active_env == 'office' %}Office Assistant{% else %}Smart Home{% endif %}</span>
-
-          <!-- Global System Status Chip -->
-
-          <span class="pill text-xs" id="global-system-status">Checking systems...</span>
-
-
+          <!-- Global System Status Chip (hidden by default when all ok) -->
+          <span class="pill text-xs is-hidden" id="global-system-status" hidden>Checking systems...</span>
 
           <!-- Audit Log Verifier Trigger -->
-
           <button type="button" class="btn btn-secondary btn-xs flex items-center gap-xs" id="verify-ledger-trigger-btn" title="Verify tamper-evident Audit Ledger Chain">
-
             <svg class="icon text-accent icon-sm"><use href="/static/icons.svg#icon-shield"></use></svg>
-
             <span>Verify Ledger</span>
-
           </button>
 
-
-
-          <!-- Role Simulator Switcher for Live Demos -->
-
+          <!-- Role Indicator / Switcher -->
           {% if session.get('real_role') == 'admin' %}
-
           <button type="button" class="btn btn-secondary btn-xs flex items-center gap-xs" id="role-toggle-btn" title="Toggle Demo Role between Admin and Guest">
-
             <span class="text-xs text-muted">Role:</span>
-
             <strong id="current-sim-role" class="text-accent">{{ session.get('role', 'guest')|capitalize }}</strong>
-
           </button>
-
+          {% else %}
+          <span class="pill pill-info text-xs uppercase font-mono" id="current-user-role-badge">{{ session.get('role', 'guest') }}</span>
           {% endif %}
 
-
-
           <!-- Command Palette Trigger -->
-
-          <button type="button" class="command-palette-trigger" id="palette-trigger-btn" title="Open Command Palette (Ctrl+K)">
-
+          <button type="button" class="btn-icon command-palette-trigger" id="palette-trigger-btn" title="Quick actions (Ctrl+K)" aria-label="Quick actions (Ctrl+K)">
             <svg class="icon"><use href="/static/icons.svg#icon-search"></use></svg>
-
-            <span class="palette-btn-text">Quick actions...</span>
-
-            <kbd class="kbd-shortcut">Ctrl+K</kbd>
-
           </button>
-
-
 
           <!-- Theme Toggle Button -->
-
-          <button type="button" class="btn-icon theme-toggle-btn" id="theme-toggle-btn" title="Toggle Light / Dark mode (T)">
-
+          <button type="button" class="btn-icon theme-toggle-btn" id="theme-toggle-btn" title="Toggle Light / Dark mode (T)" aria-label="Toggle light / dark mode">
             <svg class="icon icon-sun"><use href="/static/icons.svg#icon-sun"></use></svg>
-
             <svg class="icon icon-moon"><use href="/static/icons.svg#icon-moon"></use></svg>
-
           </button>
-
         </div>
 
       </header>
@@ -646,6 +587,7 @@
   <!-- Core Scripts -->
   <script src="/static/js/api.js?t=20261102b"></script>
   <script src="/static/js/app.js?t=20261102b"></script>
+  <script src="/static/js/decision_rail.js?t=20261107"></script>
   <script src="/static/js/shortcuts.js?t=20261102b"></script>
 
   {% block extra_js %}{% endblock %}

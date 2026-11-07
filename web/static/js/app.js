@@ -333,17 +333,16 @@ var app = (function () {
 
 
         // Topbar global badge
-
         var topBadge = document.getElementById("global-system-status");
-
         if (topBadge) {
-
           var allOk = health.worker.alive && health.audit_chain.intact;
-
-          topBadge.className = "pill " + (allOk ? "pill-ok" : "pill-warn");
-
-          topBadge.textContent = allOk ? "All systems normal" : "Attention needed";
-
+          if (allOk) {
+            topBadge.hidden = true;
+          } else {
+            topBadge.hidden = false;
+            topBadge.className = "pill pill-warn text-xs";
+            topBadge.textContent = "Attention needed";
+          }
         }
 
 
@@ -379,29 +378,32 @@ var app = (function () {
             var banner = document.createElement("div");
 
             banner.id = "global-approval-banner";
-
             banner.className = "global-approval-banner";
-
             banner.setAttribute("data-count", String(pendingCount));
 
-            banner.innerHTML = `
+            var leftGroup = document.createElement("div");
+            leftGroup.className = "flex items-center gap-sm";
+            var dot = document.createElement("span");
+            dot.className = "pulse-dot warn";
+            var bannerText = document.createElement("span");
+            bannerText.className = "banner-text";
+            var strongText = document.createElement("strong");
+            strongText.textContent = "Action Pending Authorization: ";
+            bannerText.appendChild(strongText);
+            bannerText.appendChild(document.createTextNode(pendingCount + " high-risk operation(s) require human authorization."));
+            leftGroup.appendChild(dot);
+            leftGroup.appendChild(bannerText);
 
-              <div class="flex items-center gap-sm">
+            var rightGroup = document.createElement("div");
+            rightGroup.className = "flex items-center gap-xs";
+            var actionLink = document.createElement("a");
+            actionLink.href = "/approvals?return_to=" + encodeURIComponent(window.location.pathname);
+            actionLink.className = "btn btn-primary btn-xs font-semibold";
+            actionLink.textContent = "Review & Authorize \u2192";
+            rightGroup.appendChild(actionLink);
 
-                <span class="pulse-dot warn"></span>
-
-                <span class="banner-text"><strong>Action Pending Authorization:</strong> ${pendingCount} high-risk operation(s) require human authorization.</span>
-
-              </div>
-
-              <div class="flex items-center gap-xs">
-
-                <a href="/approvals?return_to=${encodeURIComponent(window.location.pathname)}" class="btn btn-primary btn-xs font-semibold">Review & Authorize &rarr;</a>
-
-              </div>
-
-            `;
-
+            banner.appendChild(leftGroup);
+            banner.appendChild(rightGroup);
             bannerSlot.appendChild(banner);
 
             showToast("Approval Required", pendingCount + " high-risk action(s) waiting in authorization queue.", "warn", 6000);
@@ -413,9 +415,15 @@ var app = (function () {
             var bannerText = existingBanner.querySelector(".banner-text");
 
             if (bannerText) {
-
-              bannerText.innerHTML = `<strong>Action Pending Authorization:</strong> ${pendingCount} high-risk operation(s) require human authorization.`;
-
+              if (bannerText.replaceChildren) {
+                bannerText.replaceChildren();
+              } else {
+                bannerText.textContent = "";
+              }
+              var strongText = document.createElement("strong");
+              strongText.textContent = "Action Pending Authorization: ";
+              bannerText.appendChild(strongText);
+              bannerText.appendChild(document.createTextNode(pendingCount + " high-risk operation(s) require human authorization."));
             }
 
           }
@@ -435,13 +443,10 @@ var app = (function () {
       .catch(function () {
 
         var topBadge = document.getElementById("global-system-status");
-
         if (topBadge) {
-
+          topBadge.hidden = false;
           topBadge.className = "pill pill-warn text-xs";
-
           topBadge.textContent = "Backend unreachable";
-
         }
 
         updateDot("health-dot-worker", "offline");
@@ -639,7 +644,11 @@ var app = (function () {
   function renderPaletteResults(query) {
     var container = document.getElementById("palette-results-list");
     if (!container) return;
-    container.innerHTML = "";
+    if (container.replaceChildren) {
+      container.replaceChildren();
+    } else {
+      while (container.firstChild) container.removeChild(container.firstChild);
+    }
 
     var filtered = filterCommands(query);
 
