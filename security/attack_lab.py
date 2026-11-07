@@ -314,7 +314,11 @@ def run_protected(
     Returns: {steps, final, virtual_state, stopped_at}
     """
     is_office = scenario["id"].startswith("office_")
+    prev_env = None
     if is_office:
+        prev_env = getattr(agent.agent, "_ACTIVE_ENV", "smart_home")
+        if prev_env != "office":
+            agent.agent.load_environment("office")
         from agent.environments.office import OfficeSandbox
         OfficeSandbox.reset()
         if scenario["id"] == "office_poisoned_file":
@@ -444,6 +448,8 @@ def run_protected(
             "adapter": adapter,
         }
     finally:
+        if is_office and prev_env and prev_env != "office":
+            agent.agent.load_environment(prev_env)
         if lab_bridge is not None:
             lab_bridge.close()
             set_bridge(old_bridge)

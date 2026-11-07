@@ -379,45 +379,41 @@ var app = (function () {
             var banner = document.createElement("div");
 
             banner.id = "global-approval-banner";
-
             banner.className = "global-approval-banner";
-
             banner.setAttribute("data-count", String(pendingCount));
 
-            banner.innerHTML = `
+            var leftWrap = document.createElement("div");
+            leftWrap.className = "flex items-center gap-sm";
+            var dot = document.createElement("span");
+            dot.className = "pulse-dot warn";
+            var textSpan = document.createElement("span");
+            textSpan.className = "banner-text";
+            var strong = document.createElement("strong");
+            strong.textContent = "Action Pending Authorization: ";
+            textSpan.appendChild(strong);
+            textSpan.appendChild(document.createTextNode(pendingCount + " high-risk operation(s) require human authorization."));
+            leftWrap.appendChild(dot);
+            leftWrap.appendChild(textSpan);
 
-              <div class="flex items-center gap-sm">
+            var rightWrap = document.createElement("div");
+            rightWrap.className = "flex items-center gap-xs";
+            var btnLink = document.createElement("a");
+            btnLink.href = "/approvals?return_to=" + encodeURIComponent(window.location.pathname);
+            btnLink.className = "btn btn-primary btn-xs font-semibold";
+            btnLink.textContent = "Review & Authorize \u2192";
+            rightWrap.appendChild(btnLink);
 
-                <span class="pulse-dot warn"></span>
-
-                <span class="banner-text"><strong>Action Pending Authorization:</strong> ${pendingCount} high-risk operation(s) require human authorization.</span>
-
-              </div>
-
-              <div class="flex items-center gap-xs">
-
-                <a href="/approvals?return_to=${encodeURIComponent(window.location.pathname)}" class="btn btn-primary btn-xs font-semibold">Review & Authorize &rarr;</a>
-
-              </div>
-
-            `;
-
+            banner.replaceChildren(leftWrap, rightWrap);
             bannerSlot.appendChild(banner);
-
             showToast("Approval Required", pendingCount + " high-risk action(s) waiting in authorization queue.", "warn", 6000);
-
           } else if (existingBanner && existingBanner.getAttribute("data-count") !== String(pendingCount)) {
-
             existingBanner.setAttribute("data-count", String(pendingCount));
-
             var bannerText = existingBanner.querySelector(".banner-text");
-
             if (bannerText) {
-
-              bannerText.innerHTML = `<strong>Action Pending Authorization:</strong> ${pendingCount} high-risk operation(s) require human authorization.`;
-
+              var strong = document.createElement("strong");
+              strong.textContent = "Action Pending Authorization: ";
+              bannerText.replaceChildren(strong, document.createTextNode(pendingCount + " high-risk operation(s) require human authorization."));
             }
-
           }
 
         } else if (existingBanner && (pendingCount === 0 || isExemptPage)) {
@@ -639,7 +635,7 @@ var app = (function () {
   function renderPaletteResults(query) {
     var container = document.getElementById("palette-results-list");
     if (!container) return;
-    container.innerHTML = "";
+    container.replaceChildren();
 
     var filtered = filterCommands(query);
 

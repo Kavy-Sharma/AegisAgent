@@ -12,14 +12,23 @@ var charts = (function () {
   function renderDecisionTimeline(containerId, minuteBuckets) {
     var container = document.getElementById(containerId);
     if (!container) return;
-    container.innerHTML = "";
+    container.replaceChildren();
 
     if (!minuteBuckets || minuteBuckets.length === 0) {
       var empty = document.createElement("div");
       empty.className = "empty-state";
-      empty.innerHTML = '<svg class="empty-state-icon"><use href="/static/icons.svg#icon-dashboard"></use></svg>' +
-        '<div class="empty-state-title">No Recent Decisions</div>' +
-        '<div class="empty-state-desc">No gateway requests recorded in the last 30 minutes.</div>';
+      var svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+      svg.setAttribute("class", "empty-state-icon");
+      var use = document.createElementNS("http://www.w3.org/2000/svg", "use");
+      use.setAttribute("href", "/static/icons.svg#icon-dashboard");
+      svg.appendChild(use);
+      var title = document.createElement("div");
+      title.className = "empty-state-title";
+      title.textContent = "No Recent Decisions";
+      var desc = document.createElement("div");
+      desc.className = "empty-state-desc";
+      desc.textContent = "No gateway requests recorded in the last 30 minutes.";
+      empty.replaceChildren(svg, title, desc);
       container.appendChild(empty);
       return;
     }
@@ -149,7 +158,7 @@ var charts = (function () {
   function renderTopRules(containerId, rulesList) {
     var container = document.getElementById(containerId);
     if (!container) return;
-    container.innerHTML = "";
+    container.replaceChildren();
 
     if (!rulesList || rulesList.length === 0) {
       var empty = document.createElement("div");
@@ -225,7 +234,7 @@ var charts = (function () {
   // 3. KPI Sparkline (Mini SVG polyline)
   function renderSparkline(svgElement, dataPoints, color) {
     if (!svgElement || !dataPoints || dataPoints.length < 2) return;
-    svgElement.innerHTML = "";
+    svgElement.replaceChildren();
 
     var width = 72;
     var height = 28;

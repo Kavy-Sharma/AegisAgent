@@ -25,8 +25,8 @@
 
   function railPlay(d) {
     if (headTitle && d) {
-      headTitle.textContent = d.text || "Latest decision";
-      headMeta.textContent = (d.t || "") + " · " + (d.tool || "none") + " · " + (d.role || "admin");
+      headTitle.textContent = d.say || d.text || "Latest decision";
+      headMeta.textContent = (d.t || "") + " · " + (d.tool || "none") + " · " + (d.role || "unknown");
     }
     if (rail && d) rail.play(d);
   }
@@ -59,7 +59,8 @@
     } else if (d.kind === "wait") {
       text = "Waiting · Approval";
     } else {
-      text = d.stage_name ? "Stopped · " + d.stage_name : "Stopped";
+      var sName = d.stage_name || ((d.stop >= 0 && d.stop < stageLabels.length) ? stageLabels[d.stop] : null);
+      text = sName ? "Stopped · " + sName : "Stopped";
     }
     return h("span", { class: "out " + cls }, h("i"), text);
   }

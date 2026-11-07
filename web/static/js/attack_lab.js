@@ -242,7 +242,7 @@
     await unprotPromise;
 
     // 2. With Aegis Execution
-    var stoppedLayer = resultData.stopped_layer || "detection";
+    var stoppedLayer = resultData.stopped_layer || (resultData.protected && (resultData.protected.stopped_layer || resultData.protected.stopped_at)) || "detection";
     var stopIdx = DM.layerToGateIndex ? DM.layerToGateIndex(stoppedLayer) : 0;
     if (stopIdx === -1) stopIdx = 0;
     var gateName = stageLabels[stopIdx] || "Detection";

@@ -68,6 +68,7 @@ import security.health
 
 import security.logger
 import security.quarantine
+from web.stage_map import STAGE_MAP, get_gate_index, get_stage_labels
 
 import security.policy_loader
 
@@ -918,19 +919,7 @@ def api_overview():
         if e_hash:
             events_by_hash[e_hash] = ev
 
-    STAGE_MAP = {
-        'detection': 0, 'injection': 0, 'quarantine': 0,
-        'intent': 1, 'intent_lock': 1, 'scope': 1,
-        'llm': 2, 'model': 2,
-        'rbac': 3, 'role': 3,
-        'param_guard': 4, 'parameters': 4, 'parameter': 4,
-        'rate_limit': 5, 'rate': 5,
-        'approval': 6, 'human': 6,
-        'hardware': 7, 'device': 7, 'tool': 7,
-        'output_scan': 8, 'output': 8
-    }
-    tool_gate_label = 'Tool' if env_name == 'office' else 'Device (simulated)'
-    STAGE_LABELS = ['Detection', 'Intent lock', 'Model', 'Role', 'Parameters', 'Rate limit', 'Approval', tool_gate_label, 'Output scan']
+    STAGE_LABELS = get_stage_labels(env_name)
 
     turn_events = [x for x in all_events if x.get("event") == "turn_summary"]
     final_turn_decisions = [t for t in turn_events if str(t.get("decision", "")).upper() in ("ALLOW", "BLOCK", "DENY")]
@@ -949,53 +938,32 @@ def api_overview():
 
         if t_dec in ("BLOCK", "DENY"):
             stage = t.get("stopped_at") or t.get("layer") or t.get("stage")
-            if stage and stage.lower() in STAGE_MAP:
-                stop_idx = STAGE_MAP[stage.lower()]
-                proven_stage = stage.lower()
+            if stage:
+                g_idx = get_gate_index(str(stage))
+                if g_idx >= 0:
+                    stop_idx = g_idx
+                    proven_stage = str(stage).lower()
             if stop_idx == -1:
                 for ev in related:
-                    s = ev.get("stopped_at") or (ev.get("event") == "param_guard_block" and "param_guard") or (ev.get("event") == "injection_check" and str(ev.get("decision")).upper() == "BLOCK" and "detection")
-                    if s and str(s).lower() in STAGE_MAP:
-                        stop_idx = STAGE_MAP[str(s).lower()]
-                        proven_stage = str(s).lower()
-                        break
-            if stop_idx == -1 and t.get("prev_hash"):
-                prev_ev = events_by_hash.get(t.get("prev_hash"))
-                if prev_ev and prev_ev.get("decision") in ("BLOCK", "DENY"):
-                    p_reason = str(prev_ev.get("reason", "")).lower()
-                    if "permission denied" in p_reason or "role" in p_reason:
-                        stop_idx = 3; proven_stage = "rbac"
-                    elif "outside intent" in p_reason or "scope" in p_reason:
-                        stop_idx = 1; proven_stage = "intent"
-                    elif "rate limit" in p_reason:
-                        stop_idx = 5; proven_stage = "rate_limit"
-                    elif "honeypot" in p_reason:
-                        stop_idx = 3; proven_stage = "rbac"
-            if stop_idx == -1 and t.get("tool") and t.get("role"):
-                if not security.policy_loader.is_tool_allowed_for_role(t.get("tool"), t.get("role")):
-                    stop_idx = 3; proven_stage = "rbac"
+                    s = ev.get("stopped_at") or (ev.get("event") == "param_guard_block" and "param_guard") or (ev.get("event") == "injection_check" and str(ev.get("decision")).upper() == "BLOCK" and "detection") or (ev.get("event") == "intent_scope" and str(ev.get("decision")).upper() == "BLOCK" and "intent_lock") or (ev.get("event") == "rbac_check" and str(ev.get("decision")).upper() == "BLOCK" and "rbac") or (ev.get("event") == "rate_limit_check" and str(ev.get("decision")).upper() == "BLOCK" and "rate_limit") or (ev.get("event") == "approval_decision" and str(ev.get("decision")).upper() in ("DENY", "BLOCK") and "approval") or (ev.get("event") == "output_scan" and str(ev.get("decision")).upper() == "BLOCK" and "output_scan")
+                    if s:
+                        g_idx = get_gate_index(str(s))
+                        if g_idx >= 0:
+                            stop_idx = g_idx
+                            proven_stage = str(s).lower()
+                            break
             if stop_idx == -1 and t.get("rule_ids"):
                 stop_idx = 0
                 proven_stage = "detection"
-            if stop_idx == -1:
-                sess = t.get("session_id", "")
-                if "direct_override" in sess or "override" in sess or "inj" in sess:
-                    stop_idx = 0; proven_stage = "detection"
-                elif "memo_subtle" in sess or "hidden" in sess:
-                    stop_idx = 1; proven_stage = "intent"
-                elif "guest" in sess or "honey" in sess or "rbac" in sess:
-                    stop_idx = 3; proven_stage = "rbac"
-                elif "path" in sess or "sql" in sess or "param" in sess:
-                    stop_idx = 4; proven_stage = "param_guard"
-                elif "human" in sess or "approval" in sess:
-                    stop_idx = 6; proven_stage = "approval"
-                elif "poison" in sess or "memo_obvious" in sess:
-                    stop_idx = 8; proven_stage = "output_scan"
+            if stop_idx == -1 and t.get("tool") and t.get("role") and t.get("role") != "unknown":
+                if not security.policy_loader.is_tool_allowed_for_role(t.get("tool"), t.get("role")):
+                    stop_idx = 3
+                    proven_stage = "rbac"
 
             if proven_stage and stop_idx >= 0:
                 why = f"Stopped at {STAGE_LABELS[stop_idx]}. Gate rule: {proven_stage}."
             else:
-                why = "Stopped by security policy."
+                why = "Stopped. The layer was not recorded for this older entry."
         else:
             latency = t.get('latency_ms', 41)
             why = f"All nine gates passed in {latency:.0f} ms." if isinstance(latency, (int, float)) else "All nine gates passed."
@@ -1005,10 +973,11 @@ def api_overview():
 
         ts_str = t.get("timestamp", "")
         time_str = _format_ist(ts_str, "%H:%M:%S")
+        plain_say = format_plain_summary(t, is_admin=is_admin)
 
         if not is_admin:
             if t_dec in ("BLOCK", "DENY"):
-                why_clean = f"Stopped at {STAGE_LABELS[stop_idx]}." if (proven_stage and stop_idx >= 0) else "Stopped by security policy."
+                why_clean = f"Stopped at {STAGE_LABELS[stop_idx]}." if (proven_stage and stop_idx >= 0) else "Stopped. The layer was not recorded for this older entry."
                 rule_clean = "policy"
             elif t_dec in ("REVIEW", "WAITING"):
                 why_clean = "Waiting for human supervisor approval."
@@ -1029,10 +998,11 @@ def api_overview():
             "kind": kind,
             "stop": stop_idx,
             "stage_name": stage_name,
-            "text": format_plain_summary(t, is_admin=is_admin),
+            "text": plain_say,
+            "say": plain_say,
             "why": why_clean,
             "tool": t.get("tool") or "none reached",
-            "role": t.get("role") or "admin",
+            "role": t.get("role") or "unknown",
             "rule": rule_clean
         })
 
@@ -1337,6 +1307,8 @@ def api_console_send():
         "request_id": req_id,
 
         "id": req_id,
+
+        "req_id": req_id,
 
         "session_id": session_id,
 

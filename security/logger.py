@@ -461,6 +461,7 @@ def log_turn_summary(
     scope: list[str] | None = None,
     tainted: bool = False,
     role: str | None = None,
+    stopped_at: str | None = None,
 ) -> dict:
     """Constructs a tamper-evident audit log entry for a turn summary."""
     timestamp_str = datetime.now(timezone.utc).isoformat()
@@ -472,6 +473,7 @@ def log_turn_summary(
         "rule_ids": rule_ids or [],
         "scope": scope if scope is not None else [],
         "session_id": session_id,
+        "stopped_at": stopped_at,
         "tainted": tainted,
         "timestamp": timestamp_str,
         "tool": tool,

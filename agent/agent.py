@@ -419,6 +419,8 @@ def run_turn(
 
                 role=role,
 
+                stopped_at=res.stopped_at,
+
             )
 
         except Exception:
@@ -461,6 +463,8 @@ def run_turn(
             decision="BLOCK",
 
             error=quarantine_msg,
+
+            stopped_at="detection",
 
         ))
 
@@ -506,6 +510,8 @@ def run_turn(
 
                 error=quarantine_msg,
 
+                stopped_at="detection",
+
             ))
 
         top_reason = "Prompt injection detected"
@@ -542,6 +548,8 @@ def run_turn(
 
                 error=top_reason,
 
+                stopped_at="detection",
+
             ))
 
         else:
@@ -569,6 +577,8 @@ def run_turn(
                 decision="DENY",
 
                 error="Review denied",
+
+                stopped_at="detection",
 
             ))
 
@@ -706,6 +716,8 @@ def run_turn(
 
                 error=quarantine_msg,
 
+                stopped_at="detection",
+
             ))
 
 
@@ -737,6 +749,8 @@ def run_turn(
                 tool_called=function_name,
 
                 error="unknown tool",
+
+                stopped_at="rbac",
 
             ))
 
@@ -781,6 +795,8 @@ def run_turn(
                 tool_called=function_name,
 
                 error=reason_msg,
+
+                stopped_at="rbac",
 
             ))
 
@@ -831,6 +847,8 @@ def run_turn(
                 tool_called=function_name,
 
                 error=reason_msg,
+
+                stopped_at="intent_lock",
 
             ))
 
@@ -915,6 +933,8 @@ def run_turn(
 
                 error=reason_msg,
 
+                stopped_at="rate_limit",
+
             ))
 
         _emit("rate_limit", "pass", {"tool": function_name})
@@ -986,6 +1006,8 @@ def run_turn(
                 tool_called=function_name,
 
                 error=reason,
+
+                stopped_at="approval",
 
             ))
 
@@ -1090,6 +1112,8 @@ def run_turn(
 
                     error="tool output withheld",
 
+                    stopped_at="output_scan",
+
                 ))
 
             elif tool_verdict.decision == "REVIEW":
@@ -1113,6 +1137,8 @@ def run_turn(
                         tool_result=None,
 
                         error="tool output denied by operator",
+
+                        stopped_at="output_scan",
 
                     ))
 

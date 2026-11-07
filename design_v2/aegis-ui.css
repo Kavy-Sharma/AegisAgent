@@ -15,7 +15,7 @@
   --accent: #2A55E5;
   --accent-ink: #FFFFFF;
   --accent-soft: #E4EBFF;
-  --ok: #11805B;
+  --ok: #0D684A;
   --ok-soft: #DDF3EA;
   --stop: #C3352B;
   --stop-soft: #FBE4E1;
@@ -95,6 +95,7 @@ body::before {
 h1, h2, h3, p { margin: 0; }
 h1, h2, h3 { font-family: var(--font-display); text-wrap: balance; letter-spacing: -.02em; }
 button { font: inherit; color: inherit; cursor: pointer; }
+a { color: inherit; text-decoration: none; }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
 .mono { font-family: var(--font-mono); font-size: .8125rem; }
 .muted { color: var(--ink-3); }
@@ -120,10 +121,13 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .tab {
   position: relative; background: none; border: 0; padding: 20px 14px 18px; color: var(--ink-3);
   font-weight: 600; font-size: .9375rem; white-space: nowrap; transition: color .2s;
+  text-decoration: none; cursor: pointer;
 }
-.tab:hover { color: var(--ink); }
-.tab[aria-selected="true"] { color: var(--ink); }
-.tab[aria-selected="true"]::after {
+.tab:hover { color: var(--ink); text-decoration: none; }
+.tab[aria-selected="true"],
+.tab.active { color: var(--ink); text-decoration: none; }
+.tab[aria-selected="true"]::after,
+.tab.active::after {
   content: ""; position: absolute; left: 14px; right: 14px; bottom: -1px; height: 2px; background: var(--accent);
   animation: tabin .3s var(--ease);
 }
@@ -163,7 +167,7 @@ main { padding-block: 40px 72px; }
 .gate { position: relative; display: flex; flex-direction: column; align-items: center; gap: 12px; min-width: 0; transition: opacity .3s; }
 .gate-bar { width: 8px; height: 44px; border-radius: 4px; background: var(--line-strong); transition: background .25s, transform .3s var(--ease); position: relative; transform-origin: 50% 50%; animation: rise .55s var(--ease) backwards; animation-delay: calc(var(--i, 0) * 45ms); }
 @keyframes rise { from { transform: scaleY(0); opacity: 0; } to { transform: none; opacity: 1; } }
-.gate-n { font-family: var(--font-mono); font-size: .6875rem; font-weight: 500; color: var(--ink-3); opacity: .85; }
+.gate-n { font-family: var(--font-mono); font-size: .6875rem; font-weight: 500; color: var(--ink-3); }
 .gate-label { display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: .75rem; line-height: 1.25; text-align: center; color: var(--ink-3); font-weight: 600; padding: 0 2px; overflow-wrap: anywhere; }
 .gate.is-pass .gate-bar { background: var(--ok); }
 .gate.is-pass .gate-label { color: var(--ink-2); }
@@ -252,7 +256,7 @@ main { padding-block: 40px 72px; }
 .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
 .btn.primary:hover { filter: brightness(1.08); }
 .btn.danger { color: var(--stop); border-color: var(--stop); }
-.btn.good { background: var(--ok); border-color: var(--ok); color: var(--bg); }
+.btn.good { background: var(--ok); border-color: var(--ok); color: #FFFFFF; }
 .btn[disabled] { opacity: .5; cursor: not-allowed; }
 .btn svg { width: 16px; height: 16px; }
 

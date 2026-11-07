@@ -110,6 +110,16 @@
     }, 1000);
   }
 
+  function showRetryButton(host, retryText) {
+    if (!host) return;
+    var btn = h("button", { class: "btn btn-sm", text: "Retry" });
+    btn.addEventListener("click", function () {
+      btn.remove();
+      handleSend(retryText);
+    });
+    host.append(h("div", { class: "btnrow" }, btn));
+  }
+
   async function handleSend(text) {
     text = (text || "").trim();
     if (!text || isTurnRunning) return;
@@ -137,18 +147,20 @@
 
     try {
       var sendRes = await api.post("/api/console/send", { text: text });
-      if (!sendRes || !sendRes.req_id) {
+      var reqId = sendRes && (sendRes.request_id || sendRes.id || sendRes.req_id);
+      if (!sendRes || !reqId) {
+        var errSay = (sendRes && sendRes.error) ? sendRes.error : "Something went wrong. Try again.";
         rail.play({
           kind: "stop",
           stop: 0,
-          say: "Failed to dispatch request.",
-          why: sendRes && sendRes.error ? sendRes.error : "Network error"
+          say: errSay,
+          why: errSay
         });
+        showRetryButton(host, text);
         setTurnRunning(false);
         return;
       }
 
-      var reqId = sendRes.req_id;
       var pollStart = Date.now();
       var approvalRendered = false;
 
@@ -223,12 +235,14 @@
 
     } catch (err) {
       console.warn("Console send error:", err);
+      var errMsg = (err && err.data && err.data.error) || "Something went wrong. Try again.";
       rail.play({
         kind: "stop",
         stop: 0,
-        say: "Error communicating with server.",
-        why: err && err.message ? err.message : "Network error"
+        say: errMsg,
+        why: errMsg
       });
+      showRetryButton(host, text);
       setTurnRunning(false);
     }
   }
