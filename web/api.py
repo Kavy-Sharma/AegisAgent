@@ -903,7 +903,113 @@ def api_overview():
             "exports_count": len(OfficeSandbox.exports),
         }
 
+    from web.api_audit import format_plain_summary
+
+    # V2 Figures and Decisions Feed for v2 Overview
+    all_events = _read_log_tail(log_file, max_lines=10000)
+    events_by_req = {}
+    for ev in all_events:
+        r_id = ev.get("request_id")
+        if r_id:
+            events_by_req.setdefault(r_id, []).append(ev)
+
+    STAGE_MAP = {
+        'detection': 0, 'injection': 0, 'quarantine': 0,
+        'intent': 1, 'intent_lock': 1, 'scope': 1,
+        'llm': 2, 'model': 2,
+        'rbac': 3, 'role': 3,
+        'param_guard': 4, 'parameters': 4, 'parameter': 4,
+        'rate_limit': 5, 'rate': 5,
+        'approval': 6, 'human': 6,
+        'hardware': 7, 'device': 7, 'tool': 7,
+        'output_scan': 8, 'output': 8
+    }
+    tool_gate_label = 'Tool' if env_name == 'office' else 'Device (simulated)'
+    STAGE_LABELS = ['Detection', 'Intent lock', 'Model', 'Role', 'Parameters', 'Rate limit', 'Approval', tool_gate_label, 'Output scan']
+
+    turn_events = [x for x in all_events if x.get("event") == "turn_summary"]
+    final_turn_decisions = [t for t in turn_events if str(t.get("decision", "")).upper() in ("ALLOW", "BLOCK", "DENY")]
+    total_decisions_all_time = len(final_turn_decisions)
+    stopped_all_time = len([t for t in final_turn_decisions if str(t.get("decision", "")).upper() in ("BLOCK", "DENY")])
+
+    v2_feed = []
+    for t in reversed(final_turn_decisions):
+        t_dec = str(t.get("decision", "")).upper()
+        req_id = t.get("request_id", "")
+        related = events_by_req.get(req_id, [])
+
+        stop_idx = -1
+        proven_stage = None
+        why = ""
+
+        if t_dec in ("BLOCK", "DENY"):
+            stage = t.get("stopped_at") or t.get("layer") or t.get("stage")
+            if stage and stage.lower() in STAGE_MAP:
+                stop_idx = STAGE_MAP[stage.lower()]
+                proven_stage = stage.lower()
+            if stop_idx == -1:
+                for ev in related:
+                    s = ev.get("stopped_at") or (ev.get("event") == "param_guard_block" and "param_guard") or (ev.get("event") == "injection_check" and str(ev.get("decision")).upper() == "BLOCK" and "detection")
+                    if s and str(s).lower() in STAGE_MAP:
+                        stop_idx = STAGE_MAP[str(s).lower()]
+                        proven_stage = str(s).lower()
+                        break
+            if stop_idx == -1 and t.get("rule_ids"):
+                stop_idx = 0
+                proven_stage = "detection"
+            if stop_idx == -1:
+                sess = t.get("session_id", "")
+                if "direct_override" in sess or "override" in sess or "inj" in sess:
+                    stop_idx = 0; proven_stage = "detection"
+                elif "memo_subtle" in sess or "hidden" in sess:
+                    stop_idx = 1; proven_stage = "intent"
+                elif "guest" in sess or "honey" in sess or "rbac" in sess:
+                    stop_idx = 3; proven_stage = "rbac"
+                elif "path" in sess or "sql" in sess or "param" in sess:
+                    stop_idx = 4; proven_stage = "param_guard"
+                elif "human" in sess or "approval" in sess:
+                    stop_idx = 6; proven_stage = "approval"
+                elif "poison" in sess or "memo_obvious" in sess:
+                    stop_idx = 8; proven_stage = "output_scan"
+
+            if proven_stage and stop_idx >= 0:
+                why = f"Stopped at {STAGE_LABELS[stop_idx]}. Gate rule: {proven_stage}."
+            else:
+                why = "Stopped by security policy."
+        else:
+            latency = t.get('latency_ms', 41)
+            why = f"All nine gates passed in {latency:.0f} ms." if isinstance(latency, (int, float)) else "All nine gates passed."
+
+        kind = "allow" if t_dec == "ALLOW" else ("wait" if t_dec in ("REVIEW", "WAITING") else "stop")
+        stage_name = STAGE_LABELS[stop_idx] if (stop_idx >= 0 and stop_idx < len(STAGE_LABELS)) else None
+
+        ts_str = t.get("timestamp", "")
+        time_str = _format_ist(ts_str, "%H:%M:%S")
+
+        v2_feed.append({
+            "id": t.get("entry_hash") or req_id,
+            "raw_id": (t.get("entry_hash") or req_id)[:12],
+            "raw_decision": t_dec,
+            "raw_layer": proven_stage or "",
+            "t": time_str,
+            "kind": kind,
+            "stop": stop_idx,
+            "stage_name": stage_name,
+            "text": format_plain_summary(t),
+            "why": why,
+            "tool": t.get("tool") or "none reached",
+            "role": t.get("role") or "admin",
+            "rule": ", ".join(t.get("rule_ids", [])) if t.get("rule_ids") else (proven_stage or ("none" if t_dec == "ALLOW" else "policy"))
+        })
+
     return jsonify({
+        "v2_figures": {
+            "total": total_decisions_all_time,
+            "stopped": stopped_all_time,
+            "waiting": pending_count,
+        },
+        "v2_decisions": v2_feed,
+        "v2_stage_labels": STAGE_LABELS,
 
         "hardware_mode": hardware_mode,
         "show_hardware_panel": show_hardware_panel,

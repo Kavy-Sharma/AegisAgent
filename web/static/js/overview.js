@@ -1,388 +1,288 @@
 /**
- * AegisAgent Overview Page Controller
- * Polls /api/overview every 2 seconds, updates KPI metrics, pure SVG charts,
- * recent alerts list, and drawer inspection.
+ * AegisAgent Overview Controller (v2)
+ * Pure DOM via window.AegisGateLine (h, clear, sleep, svgIcon).
+ * Zero innerHTML, zero inline styles.
  */
-
 (function () {
   "use strict";
 
-  let pollTimer = null;
-  let lastData = null;
-  let currentHardwareMode = "mqtt";
+  var GL = window.AegisGateLine || {};
+  var h = GL.h;
+  var clear = GL.clear;
+  var svgIcon = GL.svgIcon;
+
+  var reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  var ICON_REPLAY = ["M3 12a9 9 0 1 0 3-6.7", "M3 4v5h5"];
+
+  var rail = null;
+  var allDecisions = [];
+  var currentFilter = "all";
+  var lastTouch = 0;
+  var timer = null;
+  var stageLabels = ["Detection", "Intent lock", "Model", "Role", "Parameters", "Rate limit", "Approval", "Device (simulated)", "Output scan"];
+
+  function touch() {
+    lastTouch = Date.now();
+  }
+
+  function countUp(el, to) {
+    if (!el) return;
+    if (reduce) {
+      el.textContent = Number(to).toLocaleString();
+      return;
+    }
+    var t0 = performance.now();
+    var dur = 900;
+    (function tick(t) {
+      var p = Math.min(1, (t - t0) / dur);
+      var e = 1 - Math.pow(1 - p, 3);
+      el.textContent = Math.round(to * e).toLocaleString();
+      if (p < 1) requestAnimationFrame(tick);
+    })(t0);
+  }
+
+  function outcomeNode(d) {
+    var cls = d.kind === "allow" ? "ok" : d.kind;
+    var text;
+    if (d.kind === "allow") {
+      text = "Allowed";
+    } else if (d.kind === "wait") {
+      text = "Waiting · Approval";
+    } else {
+      text = d.stage_name ? "Stopped · " + d.stage_name : "Stopped";
+    }
+    return h("span", { class: "out " + cls }, h("i"), text);
+  }
+
+  function getFilteredList() {
+    return allDecisions.filter(function (d) {
+      if (currentFilter === "all") return true;
+      return d.kind === currentFilter;
+    });
+  }
+
+  function renderFeed() {
+    var feedEl = document.getElementById("decisions-feed");
+    if (!feedEl) return;
+    clear(feedEl);
+
+    var filtered = getFilteredList();
+    if (!filtered.length) {
+      var emptyLi = h("li", null, h("p", { class: "empty", text: "No decisions yet. Send a request in the Console or run an attack in the Attack Lab." }));
+      feedEl.append(emptyLi);
+      return;
+    }
+
+    filtered.forEach(function (d, i) {
+      var li = h("li", null);
+      var row = h("button", {
+        class: "row",
+        type: "button",
+        "aria-expanded": "false",
+        onclick: function () {
+          touch();
+          toggleDetail(i, li, d);
+        }
+      },
+        h("span", { class: "t mono", text: d.t || "--" }),
+        outcomeNode(d),
+        h("span", { class: "txt", text: d.text || "" }),
+        h("span", { class: "tool mono", text: d.tool || "none" })
+      );
+      li.append(row);
+      feedEl.append(li);
+    });
+  }
+
+  function toggleDetail(i, li, d) {
+    var feedEl = document.getElementById("decisions-feed");
+    var row = li.querySelector(".row");
+    if (!row) return;
+
+    var open = row.getAttribute("aria-expanded") === "true";
+    if (feedEl) {
+      feedEl.querySelectorAll(".detail").forEach(function (x) { x.remove(); });
+      feedEl.querySelectorAll(".row").forEach(function (r) { r.setAttribute("aria-expanded", "false"); });
+    }
+
+    if (!open) {
+      row.setAttribute("aria-expanded", "true");
+      var detailEl = h("div", { class: "detail" },
+        h("dl", null,
+          h("div", null, h("dt", { text: "Reason" }), h("dd", { text: d.why || "Security check" })),
+          h("div", null, h("dt", { text: "Role" }), h("dd", { text: d.role || "admin" })),
+          h("div", null, h("dt", { text: "Tool" }), h("dd", { class: "mono", text: d.tool || "none" })),
+          h("div", null, h("dt", { text: "Rule" }), h("dd", { class: "mono", text: d.rule || "none" }))
+        ),
+        h("div", null,
+          h("button", {
+            class: "btn",
+            type: "button",
+            onclick: function () {
+              if (rail) {
+                rail.play(d);
+                var host = document.getElementById("rail-host");
+                if (host && host.scrollIntoView) {
+                  host.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "center" });
+                }
+              }
+            }
+          },
+            svgIcon(ICON_REPLAY),
+            "Replay on the gate line"
+          )
+        )
+      );
+      li.append(detailEl);
+      if (rail) {
+        rail.play(d);
+        markLive(i);
+      }
+    }
+  }
+
+  function playIndex(i) {
+    var filtered = getFilteredList();
+    var d = filtered[i];
+    if (d && rail) {
+      rail.play(d);
+      markLive(i);
+    }
+  }
+
+  function markLive(i) {
+    var feedEl = document.getElementById("decisions-feed");
+    var rows = feedEl ? feedEl.querySelectorAll(".row") : [];
+    rows.forEach(function (r) { r.classList.remove("is-live"); });
+    if (rows[i]) {
+      void rows[i].offsetWidth;
+      rows[i].classList.add("is-live");
+    }
+  }
+
+  function startCycle() {
+    var idx = 0;
+    clearInterval(timer);
+    timer = setInterval(function () {
+      if (document.hidden || reduce) return;
+      if (Date.now() - lastTouch < 25000) return;
+      var filtered = getFilteredList();
+      if (!filtered.length) return;
+      idx = (idx + 1) % filtered.length;
+      playIndex(idx);
+    }, 7000);
+  }
+
+  function initFilterChips() {
+    var chipsContainer = document.getElementById("filter-chips");
+    if (!chipsContainer) return;
+
+    chipsContainer.querySelectorAll(".chip").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var filter = btn.getAttribute("data-filter") || "all";
+        currentFilter = filter;
+        chipsContainer.querySelectorAll(".chip").forEach(function (b) {
+          b.setAttribute("aria-pressed", String(b.getAttribute("data-filter") === filter));
+        });
+        renderFeed();
+        playIndex(0);
+      });
+    });
+  }
+
+  function initSandboxControls() {
+    var doorBtn = document.getElementById("toggle-door-btn");
+    if (doorBtn) {
+      doorBtn.addEventListener("click", function () {
+        if (typeof api !== "undefined" && api.post) {
+          api.post("/api/hardware/actuate", { command: "TOGGLE_DOOR" })
+            .then(function () { if (typeof showToast === "function") showToast("Door Action", "Front door command dispatched.", "info"); })
+            .catch(function () {});
+        }
+      });
+    }
+
+    var alarmBtn = document.getElementById("toggle-alarm-btn");
+    if (alarmBtn) {
+      alarmBtn.addEventListener("click", function () {
+        if (typeof api !== "undefined" && api.post) {
+          api.post("/api/hardware/actuate", { command: "TOGGLE_ALARM" })
+            .then(function () { if (typeof showToast === "function") showToast("Alarm Action", "Security alarm command dispatched.", "warn"); })
+            .catch(function () {});
+        }
+      });
+    }
+
+    var resetBtn = document.getElementById("reset-sandbox-btn");
+    if (resetBtn) {
+      resetBtn.addEventListener("click", function () {
+        if (typeof api !== "undefined" && api.post) {
+          api.post("/api/console/new_session", {})
+            .then(function () { if (typeof showToast === "function") showToast("Sandbox", "Sandbox state reset.", "info"); })
+            .catch(function () {});
+        }
+      });
+    }
+  }
+
+  function loadData() {
+    if (typeof api === "undefined" || !api.get) return;
+
+    api.get("/api/overview")
+      .then(function (data) {
+        if (!data) return;
+
+        // Stage labels from environment
+        if (data.v2_stage_labels && rail) {
+          stageLabels = data.v2_stage_labels;
+          rail.setLabels(stageLabels);
+        }
+
+        // Figures
+        var figs = data.v2_figures || {};
+        countUp(document.getElementById("f-total"), figs.total || 0);
+        countUp(document.getElementById("f-stop"), figs.stopped || 0);
+        var waitEl = document.getElementById("f-wait");
+        if (waitEl) waitEl.textContent = String(figs.waiting || 0);
+
+        // Decisions
+        allDecisions = data.v2_decisions || [];
+        renderFeed();
+
+        // Play the latest real decision on load
+        if (allDecisions.length > 0 && rail) {
+          setTimeout(function () {
+            playIndex(0);
+          }, 300);
+        } else if (rail) {
+          rail.idle();
+        }
+
+        startCycle();
+      })
+      .catch(function (err) {
+        var feedEl = document.getElementById("decisions-feed");
+        if (feedEl) {
+          clear(feedEl);
+          feedEl.append(h("li", null, h("p", { class: "empty", text: "Failed to load decisions telemetry." })));
+        }
+      });
+  }
 
   function init() {
-    initDrawer();
-    initHardwareControls();
-    pollOverview();
-    pollTimer = setInterval(pollOverview, 2000);
+    var host = document.getElementById("rail-host");
+    if (host && GL.createRail) {
+      rail = GL.createRail(host, { idle: "Loading the latest decision…" });
+    }
 
-    // Re-render charts on theme change
-    window.addEventListener("aegis:themechange", () => {
-      if (lastData) {
-        renderCharts(lastData);
-      }
-    });
-
-    // Re-poll immediately when returning to tab
-    document.addEventListener("visibilitychange", () => {
-      if (!document.hidden) {
-        pollOverview();
-      }
-    });
+    initFilterChips();
+    initSandboxControls();
+    loadData();
   }
 
-  async function pollOverview() {
-    if (document.hidden) return;
-    try {
-      const data = await AegisAPI.getOverview();
-      if (!data) return;
-      lastData = data;
-      if (data.hardware_mode) {
-        currentHardwareMode = data.hardware_mode;
-      } else if (data.kpis && data.kpis.device_status && data.kpis.device_status.hardware_mode) {
-        currentHardwareMode = data.kpis.device_status.hardware_mode;
-      }
-      updateKpis(data.kpis);
-      updateOfficeSandbox(data.office_sandbox, data.show_hardware_panel);
-      renderCharts(data);
-      updateAlerts(data.recent_alerts);
-      updateLastRequest(data.last_request);
-    } catch (err) {
-      console.warn("Overview polling error:", err);
-    }
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", init);
+  } else {
+    init();
   }
-
-  function updateKpis(kpis) {
-    if (!kpis) return;
-
-    // Requests
-    if (kpis.requests_last_hour) {
-      updateNumberWithFade("kpi-reqs-val", kpis.requests_last_hour.value);
-      setText("kpi-reqs-delta", kpis.requests_last_hour.delta || "0 vs prev hr");
-      const sparkSvg = document.getElementById("sparkline-reqs");
-      if (sparkSvg && kpis.requests_last_hour.sparkline && window.charts) {
-        window.charts.renderSparkline(sparkSvg, kpis.requests_last_hour.sparkline, "var(--accent)");
-      }
-    }
-
-    // Blocks
-    if (kpis.blocked_attacks) {
-      updateNumberWithFade("kpi-blocks-val", kpis.blocked_attacks.value);
-      setText("kpi-blocks-delta", kpis.blocked_attacks.delta || "0 vs prev hr");
-      const sparkSvg = document.getElementById("sparkline-blocks");
-      if (sparkSvg && kpis.blocked_attacks.sparkline && window.charts) {
-        window.charts.renderSparkline(sparkSvg, kpis.blocked_attacks.sparkline, "var(--danger)");
-      }
-    }
-
-    // Pending Approvals
-    if (kpis.pending_approvals) {
-      var pVal = kpis.pending_approvals.value || 0;
-      updateNumberWithFade("kpi-pending-val", pVal);
-      setText("kpi-pending-delta", kpis.pending_approvals.delta || "Real-time queue");
-
-      var banner = document.getElementById("overview-pending-alert-banner");
-      var countText = document.getElementById("overview-pending-count-text");
-      if (banner) {
-        if (pVal > 0) {
-          banner.style.display = "flex";
-          if (countText) {
-            countText.textContent = pVal + " high-risk action" + (pVal > 1 ? "s" : "");
-          }
-        } else {
-          banner.style.display = "none";
-        }
-      }
-    }
-
-    // Device Status
-    if (kpis.device_status) {
-      const dot = document.getElementById("kpi-device-dot");
-      const val = document.getElementById("kpi-device-val");
-      const hint = document.getElementById("kpi-device-hint");
-      const kpiTitle = document.getElementById("kpi-device-title");
-      const hwTitle = document.getElementById("hw-card-title");
-      const hwSubtitle = document.getElementById("hw-card-subtitle");
-      const hwTransportName = document.getElementById("hw-transport-name");
-      const mode = kpis.device_status.hardware_mode || currentHardwareMode;
-
-      if (mode === "virtual") {
-        if (kpiTitle) kpiTitle.textContent = "Virtual Home (simulation)";
-        if (dot) dot.className = "pulse-dot live";
-        if (val) val.textContent = "Simulated";
-        if (hint) hint.textContent = "Virtual Home (simulation)";
-
-        if (hwTitle) hwTitle.textContent = "Virtual Home (simulation)";
-        if (hwSubtitle) hwSubtitle.textContent = "No physical device is connected. Actions change a simulated home; nothing physical moves.";
-        if (hwTransportName) hwTransportName.textContent = "Virtual Simulation";
-      } else {
-        const st = kpis.device_status.status;
-        if (kpiTitle) kpiTitle.textContent = "ESP32 Hardware";
-        if (dot) dot.className = `pulse-dot ${st === "online" ? "live" : (st === "offline" ? "offline" : "unknown")}`;
-        if (val) val.textContent = st === "online" ? "Online" : (st === "offline" ? "Offline" : "Unknown");
-        if (hint) hint.textContent = kpis.device_status.hint || "Hardware Link";
-
-        if (hwTitle) hwTitle.textContent = "IoT Hardware Controller (ESP32)";
-        if (hwSubtitle) hwSubtitle.textContent = "Direct hardware manual override • Real-time actuation link";
-        if (hwTransportName) hwTransportName.textContent = kpis.device_status.hint || "USB Serial (COM11)";
-      }
-    }
-  }
-
-  function updateOfficeSandbox(sandbox, showHw) {
-    const hwCard = document.getElementById("overview-hardware-card");
-    const kpiDevice = document.getElementById("kpi-device-card");
-    const sandboxCard = document.getElementById("overview-office-sandbox-card");
-    const kpiSandbox = document.getElementById("kpi-sandbox-card");
-
-    if (showHw === false) {
-      if (hwCard) hwCard.hidden = true;
-      if (kpiDevice) kpiDevice.hidden = true;
-      if (sandboxCard) sandboxCard.hidden = false;
-      if (kpiSandbox) kpiSandbox.hidden = false;
-    } else if (showHw === true) {
-      if (hwCard) hwCard.hidden = false;
-      if (kpiDevice) kpiDevice.hidden = false;
-      if (sandboxCard) sandboxCard.hidden = true;
-      if (kpiSandbox) kpiSandbox.hidden = true;
-    }
-
-    if (sandbox) {
-      const outboxEl = document.getElementById("sandbox-metric-outbox");
-      const filesEl = document.getElementById("sandbox-metric-files");
-      const sqlEl = document.getElementById("sandbox-metric-sql");
-      if (outboxEl && sandbox.outbox_count !== undefined) {
-        outboxEl.textContent = String(sandbox.outbox_count);
-      }
-      if (filesEl && sandbox.files_count !== undefined) {
-        filesEl.textContent = String(sandbox.files_count);
-      }
-      if (sqlEl && sandbox.sql_rows_count !== undefined) {
-        sqlEl.textContent = String(sandbox.sql_rows_count);
-      }
-    }
-  }
-
-  function updateNumberWithFade(elemId, newVal) {
-    const el = document.getElementById(elemId);
-    if (!el) return;
-    if (el.textContent !== String(newVal)) {
-      el.classList.add("fade-out");
-      setTimeout(() => {
-        el.textContent = newVal;
-        el.classList.remove("fade-out");
-      }, 150);
-    }
-  }
-
-  function setText(elemId, text) {
-    const el = document.getElementById(elemId);
-    if (el) el.textContent = text;
-  }
-
-  function renderCharts(data) {
-    if (!window.charts) return;
-
-    if (data.timeline) {
-      window.charts.renderDecisionTimeline("timeline-chart-container", data.timeline);
-    }
-
-    if (data.top_rules) {
-      window.charts.renderTopRules("top-rules-container", data.top_rules);
-    }
-  }
-
-  function updateAlerts(alerts) {
-    const container = document.getElementById("recent-alerts-list");
-    if (!container) return;
-
-    if (!alerts || alerts.length === 0) {
-      container.innerHTML = "";
-      const empty = document.createElement("div");
-      empty.className = "empty-state";
-      const t1 = document.createElement("div");
-      t1.className = "empty-title";
-      t1.textContent = "Clean Inspection State";
-      const t2 = document.createElement("div");
-      t2.className = "empty-hint";
-      t2.textContent = "No recent security alerts recorded. Operating in clean state.";
-      empty.appendChild(t1);
-      empty.appendChild(t2);
-      container.appendChild(empty);
-      return;
-    }
-
-    container.innerHTML = "";
-    alerts.forEach((alert) => {
-      const row = document.createElement("div");
-      row.className = "alert-row flex items-center justify-between";
-      row.addEventListener("click", () => openDrawer(alert.event));
-
-      const left = document.createElement("div");
-      left.className = "flex items-center gap-sm";
-
-      const pill = document.createElement("span");
-      const dec = (alert.decision || "BLOCK").toUpperCase();
-      pill.className = dec === "BLOCK" ? "pill pill-danger text-xs" : "pill pill-warn text-xs";
-      pill.textContent = dec;
-      left.appendChild(pill);
-
-      const rule = document.createElement("span");
-      rule.className = "font-mono text-xs font-semibold";
-      rule.textContent = alert.rule_id || "--";
-      left.appendChild(rule);
-
-      const reason = document.createElement("span");
-      reason.className = "alert-reason text-xs text-muted";
-      reason.textContent = alert.reason || "Rule triggered";
-      left.appendChild(reason);
-
-      row.appendChild(left);
-
-      const timeSpan = document.createElement("span");
-      timeSpan.className = "font-mono text-xs text-muted";
-      timeSpan.textContent = alert.time_ist || "--";
-      row.appendChild(timeSpan);
-
-      container.appendChild(row);
-    });
-  }
-
-  function updateLastRequest(req) {
-    const idEl = document.getElementById("last-req-id");
-    const stEl = document.getElementById("last-req-status");
-    const promptEl = document.getElementById("last-req-prompt");
-    const userEl = document.getElementById("last-req-user");
-    const timeEl = document.getElementById("last-req-time");
-
-    if (!req) {
-      if (idEl) idEl.textContent = "No requests yet";
-      if (stEl) {
-        stEl.textContent = "Idle";
-        stEl.className = "pill pill-muted text-xs";
-      }
-      if (promptEl) promptEl.textContent = "System standing by for instructions.";
-      if (userEl) userEl.textContent = "Role: --";
-      if (timeEl) timeEl.textContent = "--:--:-- IST";
-      return;
-    }
-
-    if (idEl) idEl.textContent = `Req: ${(req.id || "").slice(0, 16)} (${req.tool || "action"})`;
-    if (stEl) {
-      const dec = (req.decision || "").toUpperCase();
-      stEl.textContent = req.decision || "--";
-      if (dec === "ALLOW") {
-        stEl.className = "pill pill-ok text-xs font-bold";
-      } else if (dec === "BLOCK") {
-        stEl.className = "pill pill-danger text-xs font-bold";
-      } else if (dec === "WAITING") {
-        stEl.className = "pill pill-warn text-xs font-bold";
-      } else {
-        stEl.className = "pill pill-muted text-xs font-bold";
-      }
-    }
-    if (promptEl) {
-      promptEl.textContent = req.prompt ? `"${req.prompt}"` : (req.reason || `Tool: ${req.tool}`);
-    }
-    if (userEl) {
-      userEl.textContent = `Role: ${req.role || "--"} • Tool: ${req.tool || "chat"}`;
-    }
-    if (timeEl) {
-      timeEl.textContent = req.time_ist || "--:--:-- IST";
-    }
-
-    // Dynamic stepper stage visualization
-    const stages = ["detect", "intent", "llm", "rbac", "rate", "hw"];
-    const stoppedAt = (req.stopped_at || "").toLowerCase();
-    let blockedFound = false;
-
-    stages.forEach(function (stage) {
-      const stepEl = document.getElementById("step-" + stage);
-      if (!stepEl) return;
-      stepEl.className = "mini-step";
-
-      if (req.decision === "BLOCK") {
-        if (!blockedFound && (stoppedAt.indexOf(stage) !== -1 || (stage === "detect" && stoppedAt.indexOf("detector") !== -1))) {
-          stepEl.classList.add("step-block");
-          blockedFound = true;
-        } else if (!blockedFound) {
-          stepEl.classList.add("step-pass");
-        } else {
-          stepEl.classList.add("step-skip");
-        }
-      } else {
-        stepEl.classList.add("step-pass");
-      }
-    });
-  }
-
-  function initDrawer() {
-    const backdrop = document.getElementById("alert-drawer-backdrop");
-    const closeBtn = document.getElementById("drawer-close-btn");
-
-    if (closeBtn) {
-      closeBtn.addEventListener("click", closeDrawer);
-    }
-    if (backdrop) {
-      backdrop.addEventListener("click", (e) => {
-        if (e.target === backdrop) closeDrawer();
-      });
-    }
-  }
-
-  function openDrawer(eventObj) {
-    const backdrop = document.getElementById("alert-drawer-backdrop");
-    const pre = document.getElementById("drawer-json-pre");
-    if (!backdrop || !pre) return;
-
-    pre.textContent = JSON.stringify(eventObj || {}, null, 2);
-    backdrop.classList.add("is-open");
-  }
-
-  function closeDrawer() {
-    const backdrop = document.getElementById("alert-drawer-backdrop");
-    if (backdrop) backdrop.classList.remove("is-open");
-  }
-
-  function initHardwareControls() {
-    const buttons = document.querySelectorAll(".hw-actuate-btn");
-    buttons.forEach((btn) => {
-      btn.addEventListener("click", async () => {
-        const cmd = btn.dataset.cmd;
-        if (!cmd) return;
-        btn.disabled = true;
-        const liveMsg = document.getElementById("hw-live-msg");
-        const latTag = document.getElementById("hw-latency-tag");
-        if (liveMsg) liveMsg.textContent = `Dispatching command "${cmd}" to hardware...`;
-
-        try {
-          const res = await AegisAPI.actuateHardware(cmd);
-          if (res && res.ok) {
-            const targetName = (currentHardwareMode === "virtual") ? "Virtual Home" : "ESP32";
-            if (liveMsg) liveMsg.textContent = `[SUCCESS] Command "${cmd}" actuated in ${targetName} in ${res.latency_ms}ms.`;
-            if (latTag) latTag.textContent = `${res.latency_ms}ms latency`;
-            if (window.AegisApp && window.AegisApp.showToast) {
-              window.AegisApp.showToast("Hardware Actuation", `Command '${cmd}' executed in ${targetName} (${res.latency_ms}ms)`, "ok");
-            }
-          } else {
-            const err = (res && res.error) || "Command rejected";
-            if (liveMsg) liveMsg.textContent = `[ERROR] ${err}`;
-            if (window.AegisApp && window.AegisApp.showToast) {
-              window.AegisApp.showToast("Hardware Error", err, "danger");
-            }
-          }
-        } catch (err) {
-          if (liveMsg) liveMsg.textContent = `[ERROR] ${err.message}`;
-          if (window.AegisApp && window.AegisApp.showToast) {
-            window.AegisApp.showToast("Hardware Error", err.message, "danger");
-          }
-        } finally {
-          btn.disabled = false;
-        }
-      });
-    });
-  }
-
-  document.addEventListener("DOMContentLoaded", init);
 })();

@@ -1,0 +1,41 @@
+<meta charset="utf-8">
+<title>AegisAgent Interface</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Hanken+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="aegis-ui.css">
+
+<header class="top">
+  <div class="wrap">
+    <a class="brand" href="#overview" aria-label="AegisAgent home">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2l8 3v6c0 5-3.4 9.4-8 11-4.6-1.6-8-6-8-11V5l8-3z"/><path d="M8.5 12l2.5 2.5L16 9"/></svg>
+      Aegis<b>Agent</b>
+    </a>
+    <nav class="tabs" role="tablist" aria-label="Pages">
+      <button class="tab" role="tab" type="button" data-view="overview" aria-selected="true">Overview</button>
+      <button class="tab" role="tab" type="button" data-view="console" aria-selected="false">Console</button>
+      <button class="tab" role="tab" type="button" data-view="attack-lab" aria-selected="false">Attack Lab</button>
+      <button class="tab" role="tab" type="button" data-view="audit" aria-selected="false">Audit Log</button>
+    </nav>
+    <div class="top-r">
+      <span class="sim-chip"><i></i><span id="sim">Virtual Home (simulation)</span></span>
+      <div class="seg" id="envseg" role="group" aria-label="Environment">
+        <button type="button" data-env="home" aria-pressed="true">Smart Home</button>
+        <button type="button" data-env="office" aria-pressed="false">Office</button>
+      </div>
+      <button class="icon-btn" id="theme" type="button" aria-label="Switch light or dark theme">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+      </button>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+  <section class="view" id="view-overview" role="tabpanel"></section>
+  <section class="view" id="view-console" role="tabpanel" hidden></section>
+  <section class="view" id="view-attack-lab" role="tabpanel" hidden></section>
+  <section class="view" id="view-audit" role="tabpanel" hidden></section>
+</main>
+
+<script src="proto.js"></script>

@@ -61,6 +61,27 @@ def format_plain_summary(entry: dict[str, Any]) -> str:
     args = entry.get("args") or {}
     role = entry.get("role", entry.get("decided_by", "system"))
 
+    # 0. Turn summary decisions (agent requests)
+    if event == "turn_summary":
+        rule_ids = entry.get("rule_ids") or []
+        if decision in ("BLOCK", "DENY"):
+            if rule_ids:
+                return f"Blocked: Prompt injection caught by detection rules ({', '.join(rule_ids)})."
+            if tool:
+                tool_clean = tool.replace("_", " ")
+                return f"Blocked: Attempted '{tool_clean}' was denied by security policy."
+            return f"Blocked: Request was stopped by security policy."
+        elif decision == "ALLOW":
+            if tool:
+                tool_clean = tool.replace("_", " ")
+                return f"Allowed: Executed '{tool_clean}'."
+            return "Allowed: Request completed successfully."
+        elif decision in ("REVIEW", "WAITING"):
+            if tool:
+                tool_clean = tool.replace("_", " ")
+                return f"Waiting: Operation '{tool_clean}' held for human supervisor approval."
+            return "Waiting: Request held for human supervisor approval."
+
     # 1. Direct tool decisions
     if tool:
         tool_clean = tool.replace("_", " ")

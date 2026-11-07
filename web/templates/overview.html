@@ -1,363 +1,73 @@
 {% extends "base.html" %}
 
-{% block title %}System Overview — AegisAgent{% endblock %}
-{% block breadcrumb %}Overview{% endblock %}
+{% block title %}Overview — AegisAgent{% endblock %}
 
 {% block content %}
-<div class="overview-page">
-  <!-- Page Header -->
-  <div class="page-header">
+<div class="view" id="view-overview">
+  <div class="hero">
+    <h1>Every action an AI takes passes nine gates.</h1>
+    <p>Aegis sits between the agent and its tools. Watch the latest decision travel through the guard, or click any row below to replay it.</p>
+  </div>
+
+  <div class="panel panel-pad" id="rail-host"></div>
+
+  <div class="figures">
+    <div class="fig">
+      <b id="f-total">0</b>
+      <span>decisions logged, all time</span>
+    </div>
+    <div class="fig stop">
+      <b id="f-stop">0</b>
+      <span>stopped before any tool ran</span>
+    </div>
+    <div class="fig wait">
+      <b id="f-wait">0</b>
+      <span>waiting for a human OK</span>
+    </div>
+  </div>
+
+  <div class="section-head">
     <div>
-      <h1 class="page-title">System Overview</h1>
-      <p class="page-subtitle">Real-time gateway telemetry, threat mitigation metrics, and authorization queue status.</p>
+      <h2>Latest decisions</h2>
+      <p>Plain words first. Open a row for the reason and the rule.</p>
     </div>
-    <div class="header-actions">
-      <span class="text-xs text-muted font-mono flex items-center gap-xs">
-        <svg class="icon"><use href="/static/icons.svg#icon-refresh-cw"></use></svg>
-        <span>Live 2s Stream</span>
-      </span>
-    </div>
-  </div>
-
-  <!-- Dynamic Authorization Banner for Operator Alerts -->
-  <div class="card p-md mb-lg border border-warn bg-warn-subtle flex items-center justify-between overview-pending-banner" id="overview-pending-alert-banner">
-    <div class="flex items-center gap-sm">
-      <div class="p-xs rounded bg-warn text-surface flex items-center justify-center">
-        <svg class="icon icon-sm text-warn"><use href="/static/icons.svg#icon-alert-triangle"></use></svg>
-      </div>
-      <div>
-        <strong class="text-sm font-semibold text-warn">Human Authorization Required</strong>
-        <p class="text-xs text-muted mb-0"><span id="overview-pending-count-text">1 high-risk action</span> waiting in authorization queue.</p>
-      </div>
-    </div>
-    <div class="flex items-center gap-xs">
-      <a href="/approvals?return_to=/" class="btn btn-primary btn-xs flex items-center gap-xs">
-        <svg class="icon icon-xs"><use href="/static/icons.svg#icon-shield"></use></svg>
-        <span>Review & Authorize (Returns to Overview) &rarr;</span>
-      </a>
+    <div class="chips" role="group" aria-label="Filter decisions" id="filter-chips">
+      <button class="chip" type="button" data-filter="all" aria-pressed="true">All</button>
+      <button class="chip" type="button" data-filter="stop" aria-pressed="false">Stopped</button>
+      <button class="chip" type="button" data-filter="allow" aria-pressed="false">Allowed</button>
+      <button class="chip" type="button" data-filter="wait" aria-pressed="false">Waiting</button>
     </div>
   </div>
 
-  <!-- Row 1: 4 KPI Cards with Sparklines & Deltas -->
-  <div class="kpi-grid">
-    <!-- KPI 1: Requests (Past Hour) -->
-    <div class="card kpi-card">
-      <div class="kpi-header">
-        <span class="kpi-title">Requests (Past Hour)</span>
-        <svg class="icon kpi-icon"><use href="/static/icons.svg#icon-activity"></use></svg>
-      </div>
-      <div class="kpi-body">
-        <div class="kpi-value-wrap">
-          <span class="kpi-value tabular-nums font-mono" id="kpi-reqs-val">0</span>
-          <span class="kpi-delta" id="kpi-reqs-delta">0 vs prev hr</span>
-        </div>
-        <svg class="sparkline-svg" id="sparkline-reqs"></svg>
-      </div>
-    </div>
+  <ul class="feed" id="decisions-feed">
+    <li><p class="empty">Loading decisions...</p></li>
+  </ul>
 
-    <!-- KPI 2: Blocked Attacks -->
-    <div class="card kpi-card">
-      <div class="kpi-header">
-        <span class="kpi-title">Blocked Attacks</span>
-        <svg class="icon kpi-icon text-danger"><use href="/static/icons.svg#icon-block"></use></svg>
+  <!-- Sandbox testing controls in closed details (no GPIO text) -->
+  <details class="panel panel-pad sandbox-details" id="sandbox-details">
+    <summary>{% if active_env == 'office' %}Office sandbox controls (testing){% else %}Virtual Home controls (testing){% endif %}</summary>
+    <div class="sandbox-controls-grid">
+      {% if active_env == 'office' %}
+      <div class="sandbox-control-card">
+        <span>Office Sandbox State</span>
+        <button type="button" class="btn btn-sm" id="reset-sandbox-btn">Reset Sandbox</button>
       </div>
-      <div class="kpi-body">
-        <div class="kpi-value-wrap">
-          <span class="kpi-value tabular-nums font-mono" id="kpi-blocks-val">0</span>
-          <span class="kpi-delta text-danger" id="kpi-blocks-delta">0 vs prev hr</span>
-        </div>
-        <svg class="sparkline-svg" id="sparkline-blocks"></svg>
+      {% else %}
+      <div class="sandbox-control-card">
+        <span>Front Door</span>
+        <button type="button" class="btn btn-sm" id="toggle-door-btn">Toggle Door</button>
       </div>
+      <div class="sandbox-control-card">
+        <span>Security Alarm</span>
+        <button type="button" class="btn btn-sm" id="toggle-alarm-btn">Toggle Alarm</button>
+      </div>
+      {% endif %}
     </div>
-
-    <!-- KPI 3: Pending Approvals -->
-    <div class="card kpi-card">
-      <div class="kpi-header">
-        <span class="kpi-title">Pending Approvals</span>
-        <svg class="icon kpi-icon text-warn"><use href="/static/icons.svg#icon-clock"></use></svg>
-      </div>
-      <div class="kpi-body">
-        <div class="kpi-value-wrap">
-          <span class="kpi-value tabular-nums font-mono" id="kpi-pending-val">0</span>
-          <span class="kpi-delta text-warn" id="kpi-pending-delta">Real-time queue</span>
-        </div>
-        <a href="/approvals?return_to=/" class="btn btn-ghost btn-xs">View Queue &rarr;</a>
-      </div>
-    </div>
-
-    <!-- KPI 4: ESP32 Hardware Status OR Office Sandbox Status -->
-    {% if active_env == 'office' %}
-    <div class="card kpi-card" id="kpi-sandbox-card">
-      <div class="kpi-header">
-        <span class="kpi-title" id="kpi-sandbox-title">Office Sandbox</span>
-        <svg class="icon kpi-icon"><use href="/static/icons.svg#icon-box"></use></svg>
-      </div>
-      <div class="kpi-body">
-        <div class="kpi-value-wrap">
-          <div class="flex items-center gap-xs">
-            <span class="pulse-dot live" id="kpi-sandbox-dot"></span>
-            <span class="kpi-value font-mono text-lg" id="kpi-sandbox-val">Simulated</span>
-          </div>
-          <span class="kpi-delta" id="kpi-sandbox-hint">Safe In-Memory Mock</span>
-        </div>
-      </div>
-    </div>
-    {% else %}
-    <!-- KPI 4: ESP32 Hardware Status -->
-    <div class="card kpi-card" id="kpi-device-card">
-      <div class="kpi-header">
-        <span class="kpi-title" id="kpi-device-title">{% if hardware_mode == 'virtual' %}Virtual Home (simulation){% else %}ESP32 Hardware{% endif %}</span>
-        <svg class="icon kpi-icon"><use href="/static/icons.svg#icon-memory"></use></svg>
-      </div>
-      <div class="kpi-body">
-        <div class="kpi-value-wrap">
-          <div class="flex items-center gap-xs">
-            <span class="pulse-dot {% if hardware_mode == 'virtual' %}live{% else %}offline{% endif %}" id="kpi-device-dot"></span>
-            <span class="kpi-value font-mono text-lg" id="kpi-device-val">{% if hardware_mode == 'virtual' %}Simulated{% else %}Checking...{% endif %}</span>
-          </div>
-          <span class="kpi-delta" id="kpi-device-hint">{% if hardware_mode == 'virtual' %}Virtual Home (simulation){% else %}MQTT Link{% endif %}</span>
-        </div>
-      </div>
-    </div>
-    {% endif %}
-  </div>
-
-  <!-- Row 2: Charts Grid (Decisions Stacked Bar & Top Triggered Rules) -->
-  <div class="charts-grid">
-    <!-- Decisions Timeline (30 min stacked bar) -->
-    <div class="card chart-card">
-      <div class="card-header flex items-center justify-between">
-        <div>
-          <h2 class="card-title">Decisions Over Time</h2>
-          <p class="card-subtitle">30-minute rolling breakdown per minute (IST)</p>
-        </div>
-        <div class="chart-legend flex items-center gap-sm">
-          <span class="legend-item flex items-center gap-xs text-xs">
-            <span class="legend-dot bg-ok"></span> ALLOW
-          </span>
-          <span class="legend-item flex items-center gap-xs text-xs">
-            <span class="legend-dot bg-warn"></span> REVIEW
-          </span>
-          <span class="legend-item flex items-center gap-xs text-xs">
-            <span class="legend-dot bg-danger"></span> BLOCK
-          </span>
-        </div>
-      </div>
-      <div class="chart-container" id="timeline-chart-container">
-        <!-- SVG stacked bar injected here -->
-      </div>
-    </div>
-
-    <!-- Top Triggered Rules -->
-    <div class="card chart-card">
-      <div class="card-header">
-        <h2 class="card-title">Top Triggered Rules</h2>
-        <p class="card-subtitle">Prompt injection detection pattern frequency</p>
-      </div>
-      <div class="chart-container" id="top-rules-container">
-        <!-- Horizontal bars injected here -->
-      </div>
-    </div>
-  </div>
-
-  <!-- Row 2.5: Physical IoT Hardware Controller OR Office Sandbox Panel -->
-  {% if active_env == 'office' %}
-  <div class="card sandbox-card mb-lg" id="overview-office-sandbox-card">
-    <div class="card-header flex items-center justify-between">
-      <div class="flex items-center gap-sm">
-        <svg class="icon text-accent icon-22"><use href="/static/icons.svg#icon-box"></use></svg>
-        <div>
-          <h2 class="card-title" id="sandbox-card-title">Office Sandbox</h2>
-          <p class="card-subtitle" id="sandbox-card-subtitle">In-memory simulated tools and storage &bull; No external network or filesystem access</p>
-        </div>
-      </div>
-      <div class="flex items-center gap-xs">
-        <span class="pill pill-ok text-xs" id="sandbox-status-pill">
-          <span class="pulse-dot ok"></span>
-          <span>Simulation Active</span>
-        </span>
-      </div>
-    </div>
-    <div class="card-body">
-      <div class="sandbox-counts-grid flex gap-md">
-        <div class="sandbox-count-box p-sm bg-subtle rounded border flex-1">
-          <span class="text-xs text-muted block mb-xs font-semibold">Emails in Outbox</span>
-          <span class="font-mono text-xl font-bold text-accent" id="sandbox-metric-outbox">0</span>
-          <span class="text-xs text-muted block mt-xs">Simulated mail dispatcher</span>
-        </div>
-        <div class="sandbox-count-box p-sm bg-subtle rounded border flex-1">
-          <span class="text-xs text-muted block mb-xs font-semibold">Files in Storage</span>
-          <span class="font-mono text-xl font-bold text-accent" id="sandbox-metric-files">3</span>
-          <span class="text-xs text-muted block mt-xs">In-memory documents</span>
-        </div>
-        <div class="sandbox-count-box p-sm bg-subtle rounded border flex-1">
-          <span class="text-xs text-muted block mb-xs font-semibold">SQL Database Rows</span>
-          <span class="font-mono text-xl font-bold text-accent" id="sandbox-metric-sql">3</span>
-          <span class="text-xs text-muted block mt-xs">Simulated customer/staff DB</span>
-        </div>
-      </div>
-    </div>
-  </div>
-  {% else %}
-  <div class="card hardware-card mb-lg" id="overview-hardware-card">
-    <div class="card-header flex items-center justify-between">
-      <div class="flex items-center gap-sm">
-        <svg class="icon text-accent icon-22"><use href="/static/icons.svg#icon-memory"></use></svg>
-        <div>
-          <h2 class="card-title" id="hw-card-title">{% if hardware_mode == 'virtual' %}Virtual Home (simulation){% else %}IoT Hardware Controller (ESP32){% endif %}</h2>
-          <p class="card-subtitle" id="hw-card-subtitle">{% if hardware_mode == 'virtual' %}No physical device is connected. Actions change a simulated home; nothing physical moves.{% else %}Direct hardware manual override {% if session.get('role') != 'admin' %}&bull; <span class="text-warn font-semibold">Admin role required for direct actuation</span>{% else %}&bull; Real-time actuation link{% endif %}{% endif %}</p>
-        </div>
-      </div>
-      <div class="flex items-center gap-xs">
-        <span class="pill pill-ok text-xs" id="hw-transport-pill">
-          <span class="pulse-dot ok" id="hw-dot"></span>
-          <span id="hw-transport-name">{% if hardware_mode == 'virtual' %}Virtual Simulation{% else %}USB Serial (COM11){% endif %}</span>
-        </span>
-      </div>
-    </div>
-    <div class="card-body">
-      <div class="hw-controls-grid">
-        <!-- Control 1: Green LED (Light) -->
-        <div class="hw-control-box">
-          <div class="hw-box-header flex items-center justify-between mb-xs">
-            <span class="font-semibold text-sm">Light Actuator</span>
-          </div>
-          <p class="hw-box-desc text-xs text-muted mb-sm">Toggle physical Green LED indicator</p>
-          <div class="hw-btn-group flex gap-xs">
-            <button type="button" class="btn btn-secondary btn-xs hw-actuate-btn" data-cmd="light_on">
-              <svg class="icon text-ok icon-14"><use href="/static/icons.svg#icon-sun"></use></svg>
-              <span>Turn ON</span>
-            </button>
-            <button type="button" class="btn btn-ghost btn-xs hw-actuate-btn" data-cmd="light_off">
-              <span>Turn OFF</span>
-            </button>
-          </div>
-        </div>
-
-        <!-- Control 2: Door Lock (Solenoid) -->
-        <div class="hw-control-box">
-          <div class="hw-box-header flex items-center justify-between mb-xs">
-            <span class="font-semibold text-sm">Door Lock Solenoid</span>
-            <span class="badge badge-warn text-xs font-mono">HIGH RISK</span>
-          </div>
-          <p class="hw-box-desc text-xs text-muted mb-sm">Triggers 3-second temporary pulse with auto-relock</p>
-          <div class="hw-btn-group flex gap-xs">
-            <button type="button" class="btn btn-secondary btn-xs hw-actuate-btn" data-cmd="unlock_door">
-              <svg class="icon text-warn icon-14"><use href="/static/icons.svg#icon-lock"></use></svg>
-              <span>Unlock (3s)</span>
-            </button>
-          </div>
-        </div>
-
-        <!-- Control 3: Siren Alarm (Buzzer) -->
-        <div class="hw-control-box">
-          <div class="hw-box-header flex items-center justify-between mb-xs">
-            <span class="font-semibold text-sm">Siren / Alarm</span>
-          </div>
-          <p class="hw-box-desc text-xs text-muted mb-sm">Audible piezo buzzer and yellow LED strobe</p>
-          <div class="hw-btn-group flex gap-xs">
-            <button type="button" class="btn btn-secondary btn-xs hw-actuate-btn" data-cmd="alarm_on">
-              <svg class="icon text-danger icon-14"><use href="/static/icons.svg#icon-alert-triangle"></use></svg>
-              <span>Sound Alarm</span>
-            </button>
-          </div>
-        </div>
-
-        <!-- Control 4: Security Attack LED (Red LED) -->
-        <div class="hw-control-box">
-          <div class="hw-box-header flex items-center justify-between mb-xs">
-            <span class="font-semibold text-sm">Security Block LED</span>
-          </div>
-          <p class="hw-box-desc text-xs text-muted mb-sm">Physical alert indicator triggered by blocked injection attacks</p>
-          <div class="hw-btn-group flex gap-xs">
-            <button type="button" class="btn btn-secondary btn-xs hw-actuate-btn" data-cmd="alert_blocked">
-              <svg class="icon text-danger icon-14"><use href="/static/icons.svg#icon-shield"></use></svg>
-              <span>Test Alert LED</span>
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <!-- Live Hardware Feedback Bar -->
-      <div class="hw-live-log mt-md flex items-center justify-between p-xs bg-subtle rounded border" id="hw-live-log">
-        <span class="text-xs font-mono text-muted" id="hw-live-msg">{% if hardware_mode == 'virtual' %}Virtual Home simulation active. Ready for direct or AI agent commands.{% else %}Hardware link active on COM11. Ready for direct or AI agent commands.{% endif %}</span>
-        <span class="text-xs font-mono text-muted" id="hw-latency-tag">&lt;5ms latency</span>
-      </div>
-    </div>
-  </div>
-  {% endif %}
-
-  <!-- Row 3: Alerts Stream & Last Request Mini Pipeline -->
-  <div class="bottom-grid">
-    <!-- Recent Security Alerts (Last 8 BLOCK / REVIEW) -->
-    <div class="card alerts-card">
-      <div class="card-header flex items-center justify-between">
-        <div>
-          <h2 class="card-title">Recent Security Alerts</h2>
-          <p class="card-subtitle">Last 8 review or rejection events from tamper-evident audit log</p>
-        </div>
-      </div>
-      <div class="alerts-list" id="recent-alerts-list">
-        <div class="empty-state">
-          <div class="empty-title">Clean Inspection State</div>
-          <div class="empty-hint">No recent BLOCK or REVIEW alerts recorded.</div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Last Request Mini Pipeline -->
-    <div class="card mini-pipeline-card">
-      <div class="card-header">
-        <h2 class="card-title">Last Inspected Request</h2>
-        <p class="card-subtitle">Pipeline progression of most recent gateway execution</p>
-      </div>
-      <div class="mini-pipeline-body" id="last-request-body">
-        <div class="last-req-meta flex items-center justify-between">
-          <span class="text-xs font-mono text-muted" id="last-req-id">No requests yet</span>
-          <span class="pill pill-muted text-xs" id="last-req-status">Idle</span>
-        </div>
-        <div class="mini-stepper" id="mini-stepper-stages">
-          <div class="mini-step step-pass" id="step-detect" title="Prompt Injection Detectors">Detect</div>
-          <div class="mini-connector"></div>
-          <div class="mini-step step-pass" id="step-intent" title="Intent Lock Guard">Intent</div>
-          <div class="mini-connector"></div>
-          <div class="mini-step step-pass" id="step-llm" title="Ollama Model Inference">LLM</div>
-          <div class="mini-connector"></div>
-          <div class="mini-step step-pass" id="step-rbac" title="Role-Based Access Control">RBAC</div>
-          <div class="mini-connector"></div>
-          <div class="mini-step step-pass" id="step-rate" title="Sliding Window Rate Limiter">Rate</div>
-          <div class="mini-connector"></div>
-          <div class="mini-step step-pass" id="step-hw" title="IoT Hardware Actuation">HW</div>
-        </div>
-        <div class="last-req-detail mt-xs p-xs rounded bg-surface-2 text-xs border border-subtle" id="last-req-detail-box">
-          <div class="flex justify-between text-muted mb-xs">
-            <span id="last-req-user">Role: --</span>
-            <span id="last-req-time">--:--:-- IST</span>
-          </div>
-          <div class="font-mono text-ellipsis overflow-hidden whitespace-nowrap text-xs" id="last-req-prompt">System standing by for instructions.</div>
-        </div>
-      </div>
-    </div>
-  </div>
-</div>
-
-<!-- Alert Details Side Drawer (Opens when clicking an alert) -->
-<div class="drawer-backdrop" id="alert-drawer-backdrop">
-  <div class="alert-drawer" id="alert-drawer">
-    <div class="drawer-header flex items-center justify-between">
-      <h3 class="font-bold text-base">Security Event Inspection</h3>
-      <button type="button" class="btn-icon drawer-close-btn" id="drawer-close-btn">
-        <svg class="icon"><use href="/static/icons.svg#icon-x"></use></svg>
-      </button>
-    </div>
-    <div class="drawer-content" id="drawer-event-content">
-      <pre class="code-block font-mono text-xs" id="drawer-json-pre"></pre>
-    </div>
-  </div>
+  </details>
 </div>
 {% endblock %}
 
 {% block extra_js %}
-<script src="/static/js/charts.js"></script>
+<script src="/static/js/gateline.js"></script>
 <script src="/static/js/overview.js"></script>
 {% endblock %}
