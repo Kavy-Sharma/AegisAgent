@@ -1119,21 +1119,45 @@
       argsList.className = "text-xs font-mono";
       for (var k in toolArgs) {
         var row = document.createElement("div");
-        row.style.cssText = "padding: 2px 0;";
+        row.className = "approval-arg-row";
         row.textContent = k + ": " + toolArgs[k];
         argsList.appendChild(row);
       }
       infoBox.appendChild(argsList);
     } else {
       var desc = document.createElement("div");
-      desc.className = "text-xs";
-      desc.style.cssText = "font-size: 12px; line-height: 1.5; color: #cbd5e1;";
+      desc.className = "text-xs approval-action-desc";
+
+      var actionStrong = document.createElement("strong");
+      var actionText = document.createTextNode("");
+      var lineBreak = document.createElement("br");
+      var policySpan = document.createElement("span");
+      policySpan.className = "action-policy-note";
+
       if (toolName.indexOf("door") !== -1) {
-        desc.innerHTML = "<strong style='color: #38bdf8;'>Physical Action:</strong> Door lock solenoid will pulse for 3 seconds to unlatch the front door, then auto-relock.<br><span style='color: #94a3b8; font-size: 11px;'>??? Aegis security policy requires administrator approval before actuating physical security locks.</span>";
+        actionStrong.className = "action-label-primary";
+        actionStrong.textContent = "Physical Action: ";
+        actionText.textContent = "Door lock solenoid will pulse for 3 seconds to unlatch the front door, then auto-relock.";
+        policySpan.textContent = "⚠️ Aegis security policy requires administrator approval before actuating physical security locks.";
+        desc.appendChild(actionStrong);
+        desc.appendChild(actionText);
+        desc.appendChild(lineBreak);
+        desc.appendChild(policySpan);
       } else if (toolName.indexOf("alarm") !== -1) {
-        desc.innerHTML = "<strong style='color: #f59e0b;'>Physical Action:</strong> Audible piezo buzzer siren and yellow strobe LED will activate on hardware.<br><span style='color: #94a3b8; font-size: 11px;'>??? High-risk audible siren requires operator verification.</span>";
+        actionStrong.className = "action-label-warn";
+        actionStrong.textContent = "Physical Action: ";
+        actionText.textContent = "Audible piezo buzzer siren and yellow strobe LED will activate on hardware.";
+        policySpan.textContent = "⚠️ High-risk audible siren requires operator verification.";
+        desc.appendChild(actionStrong);
+        desc.appendChild(actionText);
+        desc.appendChild(lineBreak);
+        desc.appendChild(policySpan);
       } else {
-        desc.innerHTML = "<strong style='color: #38bdf8;'>Standard Action:</strong> Direct physical hardware actuation requested. Awaiting administrator signature.";
+        actionStrong.className = "action-label-primary";
+        actionStrong.textContent = "Standard Action: ";
+        actionText.textContent = "Direct physical hardware actuation requested. Awaiting administrator signature.";
+        desc.appendChild(actionStrong);
+        desc.appendChild(actionText);
       }
       infoBox.appendChild(desc);
     }
@@ -1271,7 +1295,7 @@
 
             }
 
-            app.showToast("Action Authorized", "Cryptographic HMAC generated. Executing command...", "ok", 4000);
+            app.showToast("Action Authorized", "Approval confirmed. Executing command...", "ok", 4000);
 
             if (card.parentNode) card.parentNode.removeChild(card);
 

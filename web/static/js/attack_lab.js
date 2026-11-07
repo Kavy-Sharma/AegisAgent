@@ -117,7 +117,7 @@
       t0_prot: "Admin badge initiates high-risk front entrance unlock command.",
       t1_unprot: "No human approval required: AI immediately unlocks the door.",
       t1_prot: "Aegis flags high-risk physical action: biometric verification required.",
-      t2_unprot: "Entrance unlocked autonomously with zero supervisor oversight.",
+      t2_unprot: "Entrance unlocked directly with zero supervisor oversight.",
       t2_prot: "Human check station pauses command: APPROVE or REJECT pending.",
       t3_unprot: "Security risk: Door swung wide open with no person confirming!",
       t3_prot: "Door stays locked; waiting for human supervisor confirmation.",

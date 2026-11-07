@@ -19,7 +19,7 @@
         <p class="hero-subline">A tamper-evident record of everything the agent did. Change one line and the chain breaks.</p>
       </div>
       <div class="hero-actions-group">
-        <button type="button" class="btn btn-hero-primary" id="btn-verify-chain" title="Verify cryptographic integrity of every line in sequence">
+        <button type="button" class="btn btn-hero-primary" id="btn-verify-chain" title="Verify hash-chain integrity of every line in sequence">
           <svg class="icon"><use href="/static/icons.svg#icon-shield-check"></use></svg>
           <span id="btn-verify-label">Verify chain</span>
         </button>
@@ -47,7 +47,7 @@
       <div class="hero-stat-card">
         <div class="hero-stat-label">Total Logged Entries</div>
         <div class="hero-stat-value tabular-nums" id="hero-stat-total">0</div>
-        <div class="hero-stat-sub">Cryptographic chain lines</div>
+        <div class="hero-stat-sub">Hash chain entries</div>
       </div>
       <div class="hero-stat-card">
         <div class="hero-stat-label">Chain State</div>
@@ -251,7 +251,7 @@
           <option value="">All Actors</option>
           <option value="admin">Admin</option>
           <option value="guest">Guest</option>
-          <option value="agent">Agent (Autonomous)</option>
+          <option value="agent">Agent</option>
           <option value="supervisor">Human Supervisor</option>
           <option value="system">System / Kernel</option>
         </select>
@@ -309,7 +309,7 @@
 
     <!-- Table Container -->
     <div class="table-responsive-wrapper">
-      <table class="audit-table" id="audit-table" aria-label="Cryptographic Audit Entries">
+      <table class="audit-table" id="audit-table" aria-label="Audit Log Entries">
         <thead>
           <tr>
             <th scope="col" class="th-time">Time (IST)</th>
@@ -338,7 +338,7 @@
       <!-- Loading State -->
       <div class="audit-loading-state" id="audit-loading-state" hidden>
         <div class="spinner-ring"></div>
-        <span class="loading-label">Streaming cryptographic entries backwards...</span>
+        <span class="loading-label">Streaming audit entries backwards...</span>
       </div>
     </div>
 

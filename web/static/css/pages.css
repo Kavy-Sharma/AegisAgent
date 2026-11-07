@@ -4879,3 +4879,34 @@ html[data-theme="dark"] .node-event {
   padding: 16px 20px;
 }
 
+/* Approval modal action details in Console (CSP clean) */
+.approval-arg-row {
+  padding: 2px 0;
+}
+
+.approval-action-desc {
+  font-size: 12px;
+  line-height: 1.5;
+  color: #cbd5e1;
+}
+
+.action-label-primary {
+  color: #38bdf8;
+}
+
+.action-label-warn {
+  color: #f59e0b;
+}
+
+.action-policy-note {
+  display: block;
+  color: #94a3b8;
+  font-size: 11px;
+}
+
+.overview-pending-banner {
+  display: none;
+  border-left: 4px solid var(--warn);
+}
+
+

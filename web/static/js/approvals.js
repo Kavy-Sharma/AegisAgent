@@ -126,7 +126,7 @@
 
       const hint = document.createElement("div");
       hint.className = "empty-hint";
-      hint.textContent = "No actions currently require cryptographic authorization. All systems operating normally.";
+      hint.textContent = "No actions currently require approval. All systems operating normally.";
       emptyDiv.appendChild(hint);
 
       container.appendChild(emptyDiv);

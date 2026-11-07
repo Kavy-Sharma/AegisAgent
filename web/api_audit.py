@@ -131,7 +131,7 @@ def format_plain_summary(entry: dict[str, Any]) -> str:
 
     # 7. Fallback
     base_text = event or "System Event"
-    detail_text = reason or decision or "Logged to cryptographic chain"
+    detail_text = reason or decision or "Logged to hash chain"
     return f"{base_text.replace('_', ' ').title()}: {detail_text}."
 
 

@@ -873,7 +873,7 @@ var app = (function () {
 
         if (res && res.intact) {
 
-          if (statusText) statusText.textContent = "INTEGRITY VERIFIED: " + (res.message || "All blocks match cryptographic chain.");
+          if (statusText) statusText.textContent = "INTEGRITY VERIFIED: " + (res.message || "All blocks match hash chain.");
 
           if (bannerDot) bannerDot.className = "pulse-dot ok";
 

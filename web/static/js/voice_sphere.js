@@ -736,7 +736,7 @@
           approvalCountdownTimer = null;
         }
         if (approvalAlert) approvalAlert.style.display = "none";
-        if (window.showToast) window.showToast("Action Authorized", "Cryptographic HMAC generated. Executing command...", "ok", 4000);
+        if (window.showToast) window.showToast("Action Authorized", "Approval confirmed. Executing command...", "ok", 4000);
         speakText("Action approved by operator. Executing command now...");
         if (agentTextEl) agentTextEl.textContent = "Authorized by administrator. Executing command...";
         inlineApproveBtn.disabled = false;
