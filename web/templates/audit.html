@@ -1,388 +1,102 @@
 {% extends "base.html" %}
 
-{% block head_extra %}
-  <link rel="stylesheet" href="/static/css/tokens.css">
-  <link rel="stylesheet" href="/static/css/base.css">
-  <link rel="stylesheet" href="/static/css/components.css">
-  <link rel="stylesheet" href="/static/css/pages.css">
-{% endblock %}
-
-
 {% block title %}Audit Log — AegisAgent{% endblock %}
-{% block breadcrumb %}Audit Log{% endblock %}
 
 {% block content %}
-<div class="audit-page">
-  <!-- Hero Control Room Strip (FIRST on Page) -->
-  <header class="audit-hero-control-strip">
-    <div class="hero-top-row">
-      <div class="hero-text-block">
-        <div class="hero-pill-badge">
-          <span class="hero-dot-pulse"></span>
-          <span>TAMPER-EVIDENT CONTROL LEDGER</span>
-          <span class="hero-pill-sep">&bull;</span>
-          <span id="hero-chain-meta">SHA-256 HASH CHAIN</span>
-        </div>
-        <h1 class="hero-heading">Audit Log</h1>
-        <p class="hero-subline">A tamper-evident record of everything the agent did. Change one line and the chain breaks.</p>
-      </div>
-      <div class="hero-actions-group">
-        <button type="button" class="btn btn-hero-primary" id="btn-verify-chain" title="Verify hash-chain integrity of every line in sequence">
-          <svg class="icon"><use href="/static/icons.svg#icon-shield-check"></use></svg>
-          <span id="btn-verify-label">Verify chain</span>
-        </button>
-        <button type="button" class="btn btn-hero-secondary" id="btn-export-csv" title="Download filtered audit entries as an injection-safe CSV spreadsheet">
-          <svg class="icon"><use href="/static/icons.svg#icon-arrow-down-right"></use></svg>
-          <span>Export CSV</span>
-        </button>
-        <button type="button" class="btn btn-hero-secondary" id="btn-export-anchor" title="Download external custody anchor containing head hash and count">
-          <svg class="icon"><use href="/static/icons.svg#icon-lock"></use></svg>
-          <span>Export anchor</span>
-        </button>
-        <button type="button" class="btn btn-hero-secondary" id="btn-toggle-anchor-modal" title="Compare log against an external anchor record">
-          <svg class="icon"><use href="/static/icons.svg#icon-search"></use></svg>
-          <span>Check anchor</span>
-        </button>
-        <button type="button" class="btn btn-hero-outline" id="btn-toggle-tamper-lab" title="Launch the isolated copy-only tamper demonstration">
-          <svg class="icon"><use href="/static/icons.svg#icon-terminal"></use></svg>
-          <span id="tamper-lab-toggle-text">Tamper demo</span>
-        </button>
-      </div>
-    </div>
+<div class="view" id="view-audit">
+  <div class="hero">
+    <h1>Audit Log</h1>
+    <p>Every decision is written to a log where each entry contains the hash of the one before it. Change an old entry and the chain stops matching. This demo runs on a copy in your browser and uses real SHA-256.</p>
+  </div>
 
-    <!-- 3 Live Metrics Cards in Hero -->
-    <div class="hero-metrics-grid">
-      <div class="hero-stat-card">
-        <div class="hero-stat-label">Total Logged Entries</div>
-        <div class="hero-stat-value tabular-nums" id="hero-stat-total">0</div>
-        <div class="hero-stat-sub">Hash chain entries</div>
-      </div>
-      <div class="hero-stat-card">
-        <div class="hero-stat-label">Chain State</div>
-        <div class="hero-stat-value hero-stat-status" id="hero-stat-status">
-          <span class="status-indicator-dot dot-live" id="hero-status-dot"></span>
-          <span id="hero-stat-status-text">Intact</span>
-        </div>
-        <div class="hero-stat-sub" id="hero-stat-status-sub">SHA-256 sequential links</div>
-      </div>
-      <div class="hero-stat-card">
-        <div class="hero-stat-label">Blocked actions (all time)</div>
-        <div class="hero-stat-value tabular-nums" id="hero-stat-blocked">0</div>
-        <div class="hero-stat-sub">Security policy intercepts</div>
-      </div>
-    </div>
-  </header>
+  <div class="btnrow">
+    <button class="btn primary" type="button" id="btn-verify-chain">Verify chain</button>
+    <button class="btn" type="button" id="btn-check-anchor">Check anchor</button>
+    <a class="btn" href="/api/audit/anchor/export" id="btn-export-anchor" download>Export anchor</a>
+    <a class="btn" href="/api/audit/export/csv" id="btn-export-csv" download>Export CSV</a>
+  </div>
 
-  <!-- Top Trust & Integrity Banner -->
-  <div class="audit-trust-banner" role="status">
-    <div class="audit-trust-icon">
-      <svg class="icon"><use href="/static/icons.svg#icon-shield-check"></use></svg>
+  <div class="verdicts" id="verdicts" aria-live="polite">
+    <div class="verdict" id="verdict-chain-box">
+      <span>Chain check</span>
+      <b id="verdict-chain-text">Not run</b>
     </div>
-    <div class="audit-trust-text">
-      Every event is chained to the one before; edits to old entries are detected; deleting the newest entries needs an external anchor to detect.
+    <div class="verdict" id="verdict-anchor-box">
+      <span>Anchor check (copy kept off this computer)</span>
+      <b id="verdict-anchor-text">Not run</b>
     </div>
   </div>
 
-  <!-- Live Verification Result Banner (Dynamic) -->
-  <section class="audit-verify-result-card" id="audit-verify-card" hidden aria-live="polite">
-    <div class="verify-card-inner" id="verify-card-inner">
-      <div class="verify-icon-box" id="verify-icon-box">
-        <svg class="icon" id="verify-status-svg"><use href="/static/icons.svg#icon-check-circle"></use></svg>
-      </div>
-      <div class="verify-details">
-        <h2 class="verify-headline" id="verify-headline">Log intact: 0 entries</h2>
-        <p class="verify-subline" id="verify-subline">All SHA-256 hashes match from genesis to head. Tamper-evident ledger integrity confirmed.</p>
-        <div class="verify-meta" id="verify-meta"></div>
-      </div>
-      <button type="button" class="btn-close-verify" id="btn-close-verify" aria-label="Dismiss verification status">
-        <svg class="icon"><use href="/static/icons.svg#icon-x"></use></svg>
-      </button>
+  <div class="chain" id="audit-chain" tabindex="0" aria-label="Audit chain blocks">
+    <!-- Blocks rendered dynamically via safe DOM APIs -->
+  </div>
+
+  <div class="section-head">
+    <div>
+      <h2>Try to tamper</h2>
+      <p>Pick one, then verify.</p>
     </div>
-  </section>
+  </div>
 
-  <!-- Tamper Demo Panel (Copy-only Sandbox) -->
-  <section class="tamper-demo-panel" id="tamper-demo-panel" hidden aria-label="Tamper Demonstration Sandbox">
-    <div class="tamper-header">
-      <div class="tamper-title-group">
-        <div class="tamper-badge">Sandbox Demo</div>
-        <h2 class="tamper-title">Interactive Tamper Demonstration</h2>
-        <p class="tamper-subtitle">
-          Test what happens when an attacker modifies, deletes, or truncates entries.
-          <strong>Operates strictly on a temporary copy in memory. The real audit log is never touched.</strong>
-        </p>
-      </div>
-      <div class="tamper-actions-bar">
-        <button type="button" class="btn btn-sm btn-tamper-danger" id="btn-tamper-edit" title="Simulate altering a line's payload without updating hash">
-          <svg class="icon"><use href="/static/icons.svg#icon-alert-triangle"></use></svg>
-          <span>Edit a line</span>
-        </button>
-        <button type="button" class="btn btn-sm btn-tamper-danger" id="btn-tamper-delete" title="Simulate dropping an entry from the ledger">
-          <svg class="icon"><use href="/static/icons.svg#icon-x-circle"></use></svg>
-          <span>Delete a line</span>
-        </button>
-        <button type="button" class="btn btn-sm btn-tamper-warn" id="btn-tamper-truncate" title="Simulate removing the most recent line">
-          <svg class="icon"><use href="/static/icons.svg#icon-block"></use></svg>
-          <span>Truncate end</span>
-        </button>
-        <button type="button" class="btn btn-sm btn-tamper-warn" id="btn-tamper-rewrite" title="Simulate an attacker who alters a line and recomputes all downstream hashes">
-          <svg class="icon"><use href="/static/icons.svg#icon-refresh-cw"></use></svg>
-          <span>Rewrite & recompute</span>
-        </button>
-        <button type="button" class="btn btn-sm btn-tamper-neutral" id="btn-tamper-reset" title="Reset demonstration to intact copy">
-          <svg class="icon"><use href="/static/icons.svg#icon-refresh"></use></svg>
-          <span>Reset demo</span>
-        </button>
-      </div>
+  <div class="btnrow">
+    <button class="btn danger" type="button" id="btn-tamper-edit">Edit block 3</button>
+    <button class="btn danger" type="button" id="btn-tamper-rehash">Edit and re-hash block 3</button>
+    <button class="btn danger" type="button" id="btn-tamper-rewrite">Rewrite blocks 3 to 6</button>
+    <button class="btn danger" type="button" id="btn-tamper-delete">Delete newest block</button>
+    <button class="btn" type="button" id="btn-tamper-reset">Reset</button>
+  </div>
+
+  <p class="explain" id="explain" aria-live="polite">The log is intact. Pick an attack, then press Verify chain to see what the check finds.</p>
+
+  <!-- External Anchor Verification Drawer -->
+  <details class="panel panel-pad mt-md" id="anchor-verify-drawer">
+    <summary>Verify against external custody anchor</summary>
+    <div class="form-group mt-sm">
+      <label for="anchor-paste-box" class="form-label">Paste external anchor JSON or text</label>
+      <textarea id="anchor-paste-box" class="form-input form-textarea" rows="3" placeholder='{"count": 42, "head_hash": "..."}'></textarea>
     </div>
-
-    <!-- Tamper Educational Notice -->
-    <div class="tamper-edu-callout" id="tamper-edu-callout">
-      <div class="edu-icon">
-        <svg class="icon"><use href="/static/icons.svg#icon-lightbulb"></use></svg>
-      </div>
-      <div class="edu-body">
-        <h4 class="edu-title" id="tamper-edu-title">Intact demo chain loaded</h4>
-        <p class="edu-text" id="tamper-edu-text">
-          All 6 blocks link correctly. Press an attack button to see what breaks.
-        </p>
-      </div>
+    <div class="btnrow mt-sm">
+      <button type="button" class="btn primary" id="btn-submit-anchor-check">Compare with active log</button>
     </div>
+    <p id="anchor-check-feedback" class="explain is-hidden mt-sm" aria-live="polite"></p>
+  </details>
 
-    <!-- Linked Chain Visualizer -->
-    <div class="tamper-visual-stage" id="tamper-visual-stage">
-      <div class="stage-header-group">
-        <div class="stage-label">Demonstration Chain (Copy of Recent Log Entries)</div>
-        <div class="stage-note">Demo chain is re-hashed from a copy of the last 6 entries, so its hashes differ from the real log.</div>
-      </div>
-      <div class="chain-nodes-container" id="chain-nodes-container">
-        <!-- Injected via JavaScript DOM APIs -->
-      </div>
+  <!-- Real Recorded Audit Entries -->
+  <div class="section-head">
+    <div>
+      <h2>Recorded entries</h2>
+      <p>Plain words first. Open a row for cryptographic hashes and details.</p>
     </div>
-
-    <!-- Dual Check Result: Chain Check + Anchor Check -->
-    <div class="tamper-checks-card" id="tamper-checks-card">
-      <div class="tamper-check-row">
-        <span class="check-row-label">Chain check:</span>
-        <span class="check-pill pill-ok" id="tamper-chain-pill">OK</span>
-      </div>
-      <div class="tamper-check-row">
-        <span class="check-row-label">Anchor check:</span>
-        <span class="check-pill pill-ok" id="tamper-anchor-pill">MATCH</span>
-      </div>
-      <div class="tamper-checks-sentence">
-        An anchor only catches deleted or rewritten newest entries; the chain check catches edits in the middle.
-      </div>
+    <div class="chips" role="group" aria-label="Filter audit records" id="audit-filter-chips">
+      <button class="chip" type="button" data-filter="" aria-pressed="true">All</button>
+      <button class="chip" type="button" data-filter="ALLOWED" aria-pressed="false">Allowed</button>
+      <button class="chip" type="button" data-filter="BLOCKED" aria-pressed="false">Blocked</button>
+      <button class="chip" type="button" data-filter="WAITING" aria-pressed="false">Waiting</button>
     </div>
-  </section>
+  </div>
 
-  <!-- Anchor Check Modal / Drawer -->
-  <section class="anchor-check-drawer" id="anchor-check-drawer" hidden aria-label="External Anchor Verification">
-    <div class="drawer-header">
-      <div class="drawer-title-group">
-        <h3 class="drawer-title">Check Log Against External Anchor</h3>
-        <p class="drawer-subtitle">
-          Compare the current log against an anchor saved previously off-site.
-        </p>
-      </div>
-      <button type="button" class="btn-close-drawer" id="btn-close-anchor-drawer" aria-label="Close anchor drawer">
-        <svg class="icon"><use href="/static/icons.svg#icon-x"></use></svg>
-      </button>
+  <div class="compose search-bar mb-sm" id="audit-search-bar">
+    <input type="search" id="audit-search-input" placeholder="Search tool, payload, reason, or hash..." autocomplete="off">
+  </div>
+
+  <ul class="feed" id="audit-feed">
+    <li><p class="empty">Loading audit records...</p></li>
+  </ul>
+
+  <div class="pagination-bar mt-sm" id="audit-pagination">
+    <span id="audit-page-info" class="muted mono">Page 1</span>
+    <div class="btnrow mb-0">
+      <button type="button" class="btn" id="btn-prev-page" disabled>Previous</button>
+      <button type="button" class="btn" id="btn-next-page" disabled>Next</button>
     </div>
+  </div>
 
-    <!-- Off-site Warning -->
-    <div class="offsite-custody-warning">
-      <div class="warning-icon">
-        <svg class="icon"><use href="/static/icons.svg#icon-alert-triangle"></use></svg>
-      </div>
-      <div class="warning-text">
-        <strong>Off-site Custody Principle:</strong> Store your exported anchor OFF this computer (print it, phone, GitHub, hardware ledger). An anchor stored next to the log proves nothing if the host machine is compromised.
-      </div>
-    </div>
-
-    <div class="anchor-input-grid">
-      <div class="anchor-input-column">
-        <label for="anchor-paste-box" class="form-label">Paste Anchor JSON or String</label>
-        <textarea id="anchor-paste-box" class="form-textarea" rows="4" placeholder='{"count": 4732, "head_hash": "a1b2c3d4..."}'></textarea>
-      </div>
-      <div class="anchor-upload-column">
-        <label class="form-label">Or Upload Anchor File (.json)</label>
-        <div class="file-drop-zone" id="anchor-drop-zone">
-          <input type="file" id="anchor-file-input" accept=".json,.txt" class="file-input-hidden">
-          <div class="drop-zone-content">
-            <svg class="icon drop-icon"><use href="/static/icons.svg#icon-arrow-up-right"></use></svg>
-            <span class="drop-text" id="anchor-file-name">Click or drop anchor JSON file here</span>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <div class="anchor-drawer-footer">
-      <button type="button" class="btn btn-primary" id="btn-submit-anchor-check">
-        <svg class="icon"><use href="/static/icons.svg#icon-shield-check"></use></svg>
-        <span>Compare with active log</span>
-      </button>
-      <div class="anchor-check-feedback" id="anchor-check-feedback" hidden></div>
-    </div>
-  </section>
-
-  <!-- Filter & Query Control Deck -->
-  <section class="audit-controls-card" aria-label="Audit filters and search">
-    <div class="filters-grid">
-      <!-- Search Input -->
-      <div class="filter-group filter-search-group">
-        <label for="audit-search-input" class="filter-label">Search Ledger</label>
-        <div class="search-input-wrapper">
-          <svg class="icon search-icon"><use href="/static/icons.svg#icon-search"></use></svg>
-          <input type="search" id="audit-search-input" class="filter-input search-field" placeholder="Search tool, payload, reason, hash..." autocomplete="off">
-          <button type="button" class="search-clear-btn" id="btn-clear-search" hidden aria-label="Clear search">
-            <svg class="icon"><use href="/static/icons.svg#icon-x"></use></svg>
-          </button>
-        </div>
-      </div>
-
-      <!-- Decision Filter -->
-      <div class="filter-group">
-        <label for="filter-decision" class="filter-label">Decision</label>
-        <select id="filter-decision" class="filter-select">
-          <option value="">All Decisions</option>
-          <option value="ALLOWED">Allowed</option>
-          <option value="BLOCKED">Blocked</option>
-          <option value="WAITING">Waiting (Supervisor)</option>
-          <option value="ERROR">Execution Error</option>
-        </select>
-      </div>
-
-      <!-- Actor / Role Filter -->
-      <div class="filter-group">
-        <label for="filter-role" class="filter-label">Actor / Role</label>
-        <select id="filter-role" class="filter-select">
-          <option value="">All Actors</option>
-          <option value="admin">Admin</option>
-          <option value="guest">Guest</option>
-          <option value="agent">Agent</option>
-          <option value="supervisor">Human Supervisor</option>
-          <option value="system">System / Kernel</option>
-        </select>
-      </div>
-
-      <!-- Source Filter -->
-      <div class="filter-group">
-        <label for="filter-source" class="filter-label">Event Source</label>
-        <select id="filter-source" class="filter-select">
-          <option value="">All Sources</option>
-          <option value="real">Real Execution</option>
-          <option value="attack_lab">Attack Lab Simulation</option>
-          <option value="virtual">Virtual / Tool Output</option>
-        </select>
-      </div>
-
-      <!-- Date Presets -->
-      <div class="filter-group">
-        <label for="filter-date-preset" class="filter-label">Time Window</label>
-        <select id="filter-date-preset" class="filter-select">
-          <option value="all">All Time</option>
-          <option value="today">Today (IST)</option>
-          <option value="7d">Last 7 Days</option>
-          <option value="30d">Last 30 Days</option>
-        </select>
-      </div>
-
-      <!-- Refresh / Reset -->
-      <div class="filter-group filter-actions-group">
-        <label class="filter-label">&nbsp;</label>
-        <button type="button" class="btn btn-secondary btn-filter-reset" id="btn-reset-filters" title="Reset all search filters">
-          <svg class="icon"><use href="/static/icons.svg#icon-refresh"></use></svg>
-          <span>Reset</span>
-        </button>
-      </div>
-    </div>
-  </section>
-
-  <!-- Ledger Table Section -->
-  <section class="audit-table-section" aria-label="Audit records table">
-    <!-- Table Header Info Bar -->
-    <div class="table-info-bar">
-      <div class="table-meta-summary">
-        <span class="meta-highlight" id="records-count-highlight">Showing entries...</span>
-        <span class="meta-subtext" id="records-order-subtext">Reverse chronological order (newest first)</span>
-      </div>
-      <div class="table-legend">
-        <span class="legend-item"><span class="legend-dot dot-allowed"></span> Allowed</span>
-        <span class="legend-item"><span class="legend-dot dot-blocked"></span> Blocked</span>
-        <span class="legend-item"><span class="legend-dot dot-waiting"></span> Waiting</span>
-        <span class="legend-item"><span class="legend-dot dot-error"></span> Error</span>
-        <span class="legend-item"><span class="legend-dot dot-info"></span> Info</span>
-      </div>
-    </div>
-
-    <!-- Table Container -->
-    <div class="table-responsive-wrapper">
-      <table class="audit-table" id="audit-table" aria-label="Audit Log Entries">
-        <thead>
-          <tr>
-            <th scope="col" class="th-time">Time (IST)</th>
-            <th scope="col" class="th-actor">Who</th>
-            <th scope="col" class="th-summary">What Happened (Plain Words)</th>
-            <th scope="col" class="th-decision">Decision</th>
-            <th scope="col" class="th-source">Source</th>
-            <th scope="col" class="th-actions">Inspect</th>
-          </tr>
-        </thead>
-        <tbody id="audit-table-body">
-          <!-- Rows injected dynamically via DOM APIs -->
-        </tbody>
-      </table>
-
-      <!-- Empty State -->
-      <div class="audit-empty-state" id="audit-empty-state" hidden>
-        <div class="empty-icon-box">
-          <svg class="icon"><use href="/static/icons.svg#icon-clipboard"></use></svg>
-        </div>
-        <h3 class="empty-title">No Audit Records Found</h3>
-        <p class="empty-text">No records match the current filters or the audit log is currently empty.</p>
-        <button type="button" class="btn btn-secondary btn-sm" id="btn-empty-reset">Clear Filters</button>
-      </div>
-
-      <!-- Loading State -->
-      <div class="audit-loading-state" id="audit-loading-state" hidden>
-        <div class="spinner-ring"></div>
-        <span class="loading-label">Streaming audit entries backwards...</span>
-      </div>
-    </div>
-
-    <!-- Pagination Controls -->
-    <div class="audit-pagination-bar" id="audit-pagination-bar">
-      <div class="pagination-info" id="pagination-info">
-        Page 1 of 1 (0 total entries)
-      </div>
-      <div class="pagination-controls">
-        <button type="button" class="btn btn-sm btn-secondary" id="btn-page-prev" disabled>
-          <svg class="icon"><use href="/static/icons.svg#icon-chevron-left"></use></svg>
-          <span>Previous</span>
-        </button>
-        <span class="current-page-badge" id="current-page-display">1</span>
-        <button type="button" class="btn btn-sm btn-secondary" id="btn-page-next" disabled>
-          <span>Next</span>
-          <svg class="icon"><use href="/static/icons.svg#icon-chevron-right"></use></svg>
-        </button>
-      </div>
-      <div class="pagination-size-select">
-        <label for="select-page-size" class="size-label">Rows per page:</label>
-        <select id="select-page-size" class="filter-select select-sm">
-          <option value="25">25</option>
-          <option value="50" selected>50</option>
-          <option value="100">100</option>
-        </select>
-      </div>
-    </div>
-  </section>
+  <p class="proto-foot">The log is tamper-evident. Deleting the newest entries is only caught by an anchor stored somewhere an attacker on this computer cannot reach.</p>
 </div>
 
-<!-- CSRF Token Meta for Javascript POST requests -->
 <input type="hidden" id="csrf-token-val" value="{{ session.get('csrf_token', '') }}">
 {% endblock %}
 
 {% block extra_js %}
 <script src="/static/js/audit.js"></script>
 {% endblock %}
-

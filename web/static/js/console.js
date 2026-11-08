@@ -54,13 +54,13 @@
       clear(card);
       card.append(h("p", { text: ok ? "Approved by supervisor. Action dispatched." : "Denied by supervisor. Nothing was executed." }));
 
-      if (typeof api !== "undefined" && api.post) {
+      if (typeof api !== "undefined" && api.post && reqId) {
         api.post("/api/approvals/decide", {
           request_id: reqId,
           request_hash: reqHash,
           approved: ok
         }).catch(function (err) {
-          console.warn("Approval submit error:", err);
+          console.log("Approval submit notice:", (err && err.message) || err);
         });
       }
 
@@ -189,7 +189,8 @@
           if (approvalStep && !approvalRendered && !final) {
             approvalRendered = true;
             var detail = approvalStep.detail || {};
-            renderApprovalCard(agentMsg, rail, reqId, detail.request_hash || "", detail.tool || "action");
+            var appId = detail.request_id || reqId;
+            renderApprovalCard(agentMsg, rail, appId, detail.request_hash || "", detail.tool || "action");
           }
 
           if (final) {
@@ -225,7 +226,8 @@
 
             if (isWait && !approvalRendered) {
               approvalRendered = true;
-              renderApprovalCard(agentMsg, rail, reqId, final.request_hash || "", final.tool_called || "action");
+              var appId = final.request_id || reqId;
+              renderApprovalCard(agentMsg, rail, appId, final.request_hash || "", final.tool_called || "action");
             }
           }
         } catch (pollErr) {

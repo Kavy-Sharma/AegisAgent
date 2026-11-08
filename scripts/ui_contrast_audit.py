@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 scripts/ui_contrast_audit.py - Automated WCAG Contrast Audit Gate.
-Tests 5 pages (overview, console, attack_lab, approvals, login) x 2 themes:
+Tests 7 pages (overview, console, attack_lab, approvals, login, audit, voice) x 2 themes:
 1) Theme toggle click (light / dark)
 2) prefers-color-scheme emulation without data-theme attribute
 Calculates relative luminance and WCAG ratio (>= 4.5 normal, >= 3.0 large/bold).
@@ -196,6 +196,8 @@ def run_contrast_audit():
         ("attack_lab", f"{base_url}/attack_lab"),
         ("approvals", f"{base_url}/approvals"),
         ("login", f"{base_url}/login"),
+        ("audit", f"{base_url}/audit"),
+        ("voice", f"{base_url}/voice"),
     ]
 
     total_checked = 0
@@ -301,7 +303,7 @@ def run_contrast_audit():
         print("=" * 80)
         sys.exit(1)
     else:
-        print("0 failures and 0 SKIPPED across all 5 pages x 2 themes! (PASSED)")
+        print("0 failures and 0 SKIPPED across all 7 pages x 2 themes! (PASSED)")
         print("=" * 80)
         sys.exit(0)
 
