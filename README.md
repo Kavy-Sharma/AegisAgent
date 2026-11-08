@@ -456,3 +456,4 @@ AegisAgent/
 14. **Attack Lab worker simulation scope**: The Attack Lab simulator temporarily patches the session quarantine and hardware bridge inside the single backend worker process to run side-by-side simulations; this isolation is safe only because the worker handles one request at a time.
 15. **Intent Lock keyword brittleness**: The Intent Lock is a keyword list; it blocks unknown phrasing (causing false positives on natural paraphrasing), and short words ("on", "off", "read") can match the wrong intent. Not tuned on this test set; planned improvement for the major project.
 16. **Virtual Home simulation vs. physical device**: In Virtual Home mode, 'door unlocked' means the simulation changed, not a physical device.
+17. **Weather service cloud call**: Weather answers call the Open-Meteo web service; the city name is sent to it. Everything else stays local.

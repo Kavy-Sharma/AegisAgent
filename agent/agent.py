@@ -336,6 +336,8 @@ def get_default_role() -> str:
 
 
 
+_CURRENT_USER_TEXT: str = ""
+
 def run_turn(
 
     text: str,
@@ -366,6 +368,9 @@ def run_turn(
     """
 
     start_turn_time = time.perf_counter()
+
+    global _CURRENT_USER_TEXT
+    _CURRENT_USER_TEXT = text
 
     if not request_id:
 
@@ -659,6 +664,20 @@ def run_turn(
     tool_calls = message.get("tool_calls")
 
 
+
+    if not tool_calls:
+        content = (message.get("content") or "").strip()
+        if content and ("read_temperature" in content or "turn_light" in content or "activate_alarm" in content or "unlock_door" in content or "read_note" in content):
+            m_json = re.search(r'\{[^{}]*"name"\s*:\s*"(\w+)"[^{}]*\}', content)
+            if m_json:
+                try:
+                    parsed_call = json.loads(m_json.group(0))
+                    fn = parsed_call.get("name")
+                    args = parsed_call.get("parameters") or parsed_call.get("arguments") or {}
+                    if fn in AVAILABLE_FUNCTIONS:
+                        tool_calls = [{"function": {"name": fn, "arguments": args}}]
+                except Exception:
+                    pass
 
     if not tool_calls:
 

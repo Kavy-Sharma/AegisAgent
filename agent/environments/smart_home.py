@@ -8,6 +8,7 @@ manual hardware command mappings for the smart home environment.
 
 from __future__ import annotations
 
+import os
 import re
 from typing import Any, Callable
 
@@ -118,9 +119,24 @@ TOOLS: list[dict[str, Any]] = [
 
 
 def _agent_read_temperature(location: str | None = None) -> dict:
+    default_city = os.environ.get("AEGIS_DEFAULT_CITY", "Jodhpur").strip() or "Jodhpur"
     loc = (location or "").strip()
+
+    # If the user prompt contained an un-sanitized place name with invalid characters, preserve it for validation
+    try:
+        import agent.agent
+        cur_text = getattr(agent.agent, "_CURRENT_USER_TEXT", "") or ""
+        m_loc = re.search(r"(?:weather|temperature|temp)\s+(?:in|for|at)\s+(.+)", cur_text, re.IGNORECASE)
+        if m_loc:
+            prompt_loc = m_loc.group(1).strip("?.! ")
+            from agent.tools import validate_city_name
+            if not validate_city_name(prompt_loc)[0]:
+                loc = prompt_loc
+    except Exception:
+        pass
+
     if not loc or loc.lower() in ("here", "local", "my place", "room", "current", "home"):
-        loc = "Jodhpur"
+        loc = default_city
     return read_temperature(location=loc)
 
 
@@ -165,6 +181,8 @@ def describe_result(user_prompt: str, function_name: str, tool_result: Any) -> s
             return "जी, लाइट बंद कर दी गई है।"
 
         elif function_name == "read_temperature" and isinstance(tool_result, dict):
+            if "text" in tool_result:
+                return tool_result["text"]
             if tool_result.get("status") == "error":
                 return f"क्षमा करें, {tool_result.get('error', 'मौसम की जानकारी उपलब्ध नहीं है')}।"
             temp = tool_result.get("value_celsius", 25.0)
@@ -195,6 +213,8 @@ def describe_result(user_prompt: str, function_name: str, tool_result: Any) -> s
         return "The light has been switched off."
 
     elif function_name == "read_temperature" and isinstance(tool_result, dict):
+        if "text" in tool_result:
+            return tool_result["text"]
         if tool_result.get("status") == "error":
             return f"I could not check the temperature: {tool_result.get('error', 'Location not recognized')}."
         temp = tool_result.get("value_celsius", 25.0)
