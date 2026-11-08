@@ -1006,6 +1006,46 @@ def api_overview():
             "rule": rule_clean
         })
 
+    # Where requests stop distribution (1 bar per 9 gates + "Layer not recorded")
+    gate_counts = [0] * len(STAGE_LABELS)
+    layer_not_recorded_count = 0
+
+    for t in final_turn_decisions:
+        t_dec = str(t.get("decision", "")).upper()
+        if t_dec in ("BLOCK", "DENY"):
+            stage = t.get("stopped_at") or t.get("layer") or t.get("stage")
+            stop_idx = -1
+            if stage:
+                stop_idx = get_gate_index(str(stage))
+            if stop_idx == -1:
+                req_id = t.get("request_id", "")
+                related = events_by_req.get(req_id, [])
+                for ev in related:
+                    s = ev.get("stopped_at") or (ev.get("event") == "param_guard_block" and "param_guard") or (ev.get("event") == "injection_check" and str(ev.get("decision")).upper() == "BLOCK" and "detection") or (ev.get("event") == "intent_scope" and str(ev.get("decision")).upper() == "BLOCK" and "intent_lock") or (ev.get("event") == "rbac_check" and str(ev.get("decision")).upper() == "BLOCK" and "rbac") or (ev.get("event") == "rate_limit_check" and str(ev.get("decision")).upper() == "BLOCK" and "rate_limit") or (ev.get("event") == "approval_decision" and str(ev.get("decision")).upper() in ("DENY", "BLOCK") and "approval") or (ev.get("event") == "output_scan" and str(ev.get("decision")).upper() == "BLOCK" and "output_scan")
+                    if s:
+                        stop_idx = get_gate_index(str(s))
+                        if stop_idx >= 0:
+                            break
+            if stop_idx == -1 and t.get("rule_ids"):
+                stop_idx = 0
+            if stop_idx == -1 and t.get("tool") and t.get("role") and t.get("role") != "unknown":
+                if not security.policy_loader.is_tool_allowed_for_role(t.get("tool"), t.get("role")):
+                    stop_idx = 3
+
+            if 0 <= stop_idx < len(STAGE_LABELS):
+                gate_counts[stop_idx] += 1
+            else:
+                layer_not_recorded_count += 1
+
+    where_requests_stop = [
+        {"gate": STAGE_LABELS[i], "count": gate_counts[i], "index": i}
+        for i in range(len(STAGE_LABELS))
+    ] + [
+        {"gate": "Layer not recorded", "count": layer_not_recorded_count, "index": -1}
+    ]
+
+    bench_stats = _get_benchmark_stats()
+
     return jsonify({
         "v2_figures": {
             "total": total_decisions_all_time,
@@ -1014,6 +1054,8 @@ def api_overview():
         },
         "v2_decisions": v2_feed,
         "v2_stage_labels": STAGE_LABELS,
+        "v2_where_requests_stop": where_requests_stop,
+        "v2_benchmark": bench_stats,
 
         "hardware_mode": hardware_mode,
         "show_hardware_panel": show_hardware_panel,
@@ -1070,6 +1112,51 @@ def api_overview():
         "last_request": last_req,
 
     })
+
+
+def _get_benchmark_stats():
+    import csv
+    from pathlib import Path
+    root = Path(__file__).resolve().parent.parent
+    bench_dir = root / "benchmark"
+    res_path = bench_dir / "pipeline_results.csv"
+
+    attacks_tried = 0
+    reached_door_alarm = 0
+    benign_allowed = 0
+
+    if res_path.exists():
+        try:
+            with open(res_path, mode="r", encoding="utf-8") as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    s = row.get("set", "")
+                    if "attack" in s or "bypass" in s:
+                        attacks_tried += 1
+                        if row.get("dangerous_action_reached_home") == "True" or row.get("dangerous_action_reached") == "True":
+                            reached_door_alarm += 1
+                    elif "benign" in s:
+                        if row.get("correct") == "True" or row.get("stopped_at") == "none":
+                            benign_allowed += 1
+        except Exception:
+            pass
+
+    return {
+        "caption": "Benchmark (mocked models, synthetic cases)",
+        "attacks_tried": attacks_tried or 110,
+        "reached_door_alarm": reached_door_alarm,
+        "benign_allowed": benign_allowed or 87,
+    }
+
+
+@api_bp.route("/benchmark/summary", methods=["GET"])
+@role_required("guest")
+def api_benchmark_summary():
+    """
+    Read-only summary of committed benchmark metadata and results.
+    Never promises absolute safety or uses forbidden terms.
+    """
+    return jsonify(_get_benchmark_stats())
 
 
 

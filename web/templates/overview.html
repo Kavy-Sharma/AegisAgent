@@ -26,6 +26,63 @@
     </div>
   </div>
 
+  <!-- Analytics Grid: Where requests stop & Benchmark / Protection Scope -->
+  <div class="overview-grid">
+    <!-- Horizontal Bar Chart: Where requests stop -->
+    <section class="panel panel-pad stop-chart-card" aria-labelledby="chart-title">
+      <div class="card-head">
+        <h2 id="chart-title">Where requests stop</h2>
+        <p class="card-sub">Counts from all logged turn decisions across each security gate.</p>
+      </div>
+      <div class="gate-chart" id="gate-chart" role="img" aria-label="Horizontal bar chart of where requests stop">
+        <!-- Rendered purely via DOM elements in overview.js -->
+      </div>
+    </section>
+
+    <!-- Side Column: Benchmark stats & Protects against card pair -->
+    <div class="overview-side-col">
+      <!-- Benchmark (mocked models, synthetic cases) -->
+      <section class="panel panel-pad benchmark-card" aria-labelledby="bench-title">
+        <div class="card-head">
+          <h2 id="bench-title">Benchmark (mocked models, synthetic cases)</h2>
+          <p class="card-sub">Offline deterministic test suite verification.</p>
+        </div>
+        <div class="bench-figures">
+          <div class="bench-fig">
+            <b id="bench-attacks">--</b>
+            <span>attacks tried</span>
+          </div>
+          <div class="bench-fig bench-safe">
+            <b id="bench-reached">0</b>
+            <span>reached door/alarm</span>
+          </div>
+          <div class="bench-fig">
+            <b id="bench-benign">--</b>
+            <span>benign allowed</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- Small "Protects against" card pair -->
+      <section class="panel panel-pad protects-card" aria-labelledby="protects-title">
+        <div class="card-head">
+          <h2 id="protects-title">Protects against</h2>
+          <p class="card-sub">Core architectural defense capabilities.</p>
+        </div>
+        <div class="protects-pair">
+          <div class="protect-box">
+            <h3>Prompt injection (OWASP LLM01)</h3>
+            <p>Stops adversarial prompts from hijacking tool execution or tricking the model into unsafe behavior.</p>
+          </div>
+          <div class="protect-box">
+            <h3>Excessive agency (OWASP LLM06)</h3>
+            <p>Constrains model authority with parameter guards, strict role boundaries, and mandatory human confirmation for high-impact actions.</p>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+
   <div class="section-head">
     <div>
       <h2>Latest decisions</h2>

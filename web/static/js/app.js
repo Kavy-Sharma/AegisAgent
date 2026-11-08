@@ -1141,52 +1141,9 @@ var app = (function () {
 
 
 
-  // 7. Aegis Cyber-Sentinel Interactive Energy Ripple
-
+  // 7. Aegis Cyber-Sentinel Interactive Energy Ripple (Removed: buttons only change colour or move 1px)
   function initCyberRipple() {
-
-    document.addEventListener("click", function (e) {
-
-      var target = e.target.closest("button, .btn, .sidebar-nav-item, .suggested-chip, .auth-btn, .topbar-right button");
-
-      if (!target) return;
-
-      var rect = target.getBoundingClientRect();
-
-      var circle = document.createElement("span");
-
-      var diameter = Math.max(rect.width, rect.height, 40);
-
-      var radius = diameter / 2;
-
-      circle.style.width = circle.style.height = diameter + "px";
-
-      circle.style.left = (e.clientX - rect.left - radius) + "px";
-
-      circle.style.top = (e.clientY - rect.top - radius) + "px";
-
-      circle.className = "aegis-shield-ripple";
-
-      var existingPos = window.getComputedStyle(target).position;
-
-      if (existingPos === "static") {
-
-        target.style.position = "relative";
-
-      }
-
-      target.style.overflow = "hidden";
-
-      target.appendChild(circle);
-
-      setTimeout(function () {
-
-        if (circle.parentNode) circle.parentNode.removeChild(circle);
-
-      }, 500);
-
-    });
-
+    // Disabled to prevent button size explosion
   }
 
 

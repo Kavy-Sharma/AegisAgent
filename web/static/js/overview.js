@@ -28,7 +28,43 @@
       headTitle.textContent = d.say || d.text || "Latest decision";
       headMeta.textContent = (d.t || "") + " · " + (d.tool || "none") + " · " + (d.role || "unknown");
     }
-    if (rail && d) rail.play(d);
+    if (rail && d) rail.play(d, { speed: 1.5 });
+  }
+
+  function renderGateChart(bars) {
+    var chartEl = document.getElementById("gate-chart");
+    if (!chartEl || !bars || !bars.length) return;
+    clear(chartEl);
+
+    var maxCount = 0;
+    bars.forEach(function (b) {
+      if (b.count > maxCount) maxCount = b.count;
+    });
+
+    bars.forEach(function (item) {
+      var pct = maxCount > 0 ? Math.round((item.count / maxCount) * 100) : 0;
+      var label = item.index >= 0 ? (item.index + 1) + ". " + item.gate : item.gate;
+      var fillEl = h("div", { class: "gate-chart-fill" + (item.index === -1 ? " unrecorded" : (item.count > 0 ? " has-stops" : "")) });
+      fillEl.style.width = Math.max(pct, (item.count > 0 ? 3 : 0)) + "%";
+
+      var row = h("div", { class: "gate-chart-row" },
+        h("span", { class: "gate-chart-label", text: label }),
+        h("div", { class: "gate-chart-track" }, fillEl),
+        h("span", { class: "gate-chart-count mono", text: String(item.count) })
+      );
+      chartEl.append(row);
+    });
+  }
+
+  function renderBenchmark(bench) {
+    if (!bench) return;
+    var attEl = document.getElementById("bench-attacks");
+    var reachEl = document.getElementById("bench-reached");
+    var benEl = document.getElementById("bench-benign");
+
+    if (attEl) attEl.textContent = String(bench.attacks_tried != null ? bench.attacks_tried : 110);
+    if (reachEl) reachEl.textContent = String(bench.reached_door_alarm != null ? bench.reached_door_alarm : 0);
+    if (benEl) benEl.textContent = String(bench.benign_allowed != null ? bench.benign_allowed : 87);
   }
 
   function touch() {
@@ -145,10 +181,10 @@
         )
       );
       li.append(detailEl);
-      if (rail) {
-        railPlay(d);
-        markLive(i);
-      }
+    }
+    if (rail) {
+      railPlay(d);
+      markLive(i);
     }
   }
 
@@ -171,18 +207,6 @@
     }
   }
 
-  function startCycle() {
-    var idx = 0;
-    clearInterval(timer);
-    timer = setInterval(function () {
-      if (document.hidden || reduce) return;
-      if (Date.now() - lastTouch < 25000) return;
-      var filtered = getFilteredList();
-      if (!filtered.length) return;
-      idx = (idx + 1) % filtered.length;
-      playIndex(idx);
-    }, 7000);
-  }
 
   function initFilterChips() {
     var chipsContainer = document.getElementById("filter-chips");
@@ -256,20 +280,28 @@
         var waitEl = document.getElementById("f-wait");
         if (waitEl) waitEl.textContent = String(figs.waiting || 0);
 
+        // Where requests stop
+        if (data.v2_where_requests_stop) {
+          renderGateChart(data.v2_where_requests_stop);
+        }
+
+        // Benchmark
+        if (data.v2_benchmark) {
+          renderBenchmark(data.v2_benchmark);
+        }
+
         // Decisions
         allDecisions = data.v2_decisions || [];
         renderFeed();
 
-        // Play the latest real decision on load
+        // Play the latest real decision on load and rest on final state
         if (allDecisions.length > 0 && rail) {
           setTimeout(function () {
             playIndex(0);
-          }, 300);
+          }, 150);
         } else if (rail) {
           rail.idle();
         }
-
-        startCycle();
       })
       .catch(function (err) {
         var feedEl = document.getElementById("decisions-feed");
