@@ -236,6 +236,8 @@ def run_contrast_audit():
                     time.sleep(0.3)
 
                     res = page.evaluate(AUDIT_JS)
+                    print(f"Auditing page: {page_name} ({target_theme})")
+                    print(f"  Checked {res['checkedCount']} elements.")
                     total_checked += res["checkedCount"]
                     for f in res["failures"]:
                         all_failures.append({

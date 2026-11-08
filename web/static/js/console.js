@@ -52,6 +52,7 @@
       if (currentApprovalCountdown) clearInterval(currentApprovalCountdown);
 
       clear(card);
+      card.className = "approve " + (ok ? "ok" : "stop");
       card.append(h("p", { text: ok ? "Approved by supervisor. Action dispatched." : "Denied by supervisor. Nothing was executed." }));
 
       if (typeof api !== "undefined" && api.post && reqId) {
@@ -64,12 +65,21 @@
         });
       }
 
-      rail.play({
-        kind: ok ? "allow" : "stop",
-        stop: ok ? -1 : 6,
-        say: ok ? "Approved by supervisor." : "Denied by supervisor. Nothing was executed.",
-        why: ok ? "Human operator confirmed the request." : "Supervisor declined authorization."
-      });
+      if (ok) {
+        rail.show({
+          kind: "allow",
+          stop: -1,
+          say: "Approved by supervisor. Action dispatched.",
+          why: "Human operator confirmed the request."
+        });
+      } else {
+        rail.show({
+          kind: "stop",
+          stop: 6,
+          say: "Denied by supervisor. Nothing was executed.",
+          why: "Supervisor declined authorization."
+        });
+      }
     }
 
     var btns = h("div", { class: "btns" },
@@ -98,8 +108,10 @@
         clearInterval(currentApprovalCountdown);
         if (!done) {
           done = true;
-          clear(card).append(h("p", { text: "Timed out. Nothing was executed." }));
-          rail.play({
+          clear(card);
+          card.className = "approve stop";
+          card.append(h("p", { text: "Timed out. Nothing was executed." }));
+          rail.show({
             kind: "stop",
             stop: 6,
             say: "Timed out. Nobody answered in 60 s, so the request failed closed.",
@@ -190,6 +202,12 @@
             approvalRendered = true;
             var detail = approvalStep.detail || {};
             var appId = detail.request_id || reqId;
+            rail.show({
+              kind: "wait",
+              stop: 6,
+              say: "Waiting for human supervisor approval.",
+              why: "High-risk tool call requires authorization."
+            });
             renderApprovalCard(agentMsg, rail, appId, detail.request_hash || "", detail.tool || "action");
           }
 
@@ -217,16 +235,24 @@
             var say = final.reply || final.error || (isAllow ? "Allowed." : "Request stopped by security policy.");
             var why = final.error || (isAllow ? "All nine gates passed." : "Stopped by security policy.");
 
-            await rail.play({
-              kind: isAllow ? "allow" : (isWait ? "wait" : "stop"),
-              stop: stopIdx,
-              say: say,
-              why: why
-            });
+            if (!approvalRendered) {
+              await rail.play({
+                kind: isAllow ? "allow" : (isWait ? "wait" : "stop"),
+                stop: stopIdx,
+                say: say,
+                why: why
+              });
+            }
 
             if (isWait && !approvalRendered) {
               approvalRendered = true;
               var appId = final.request_id || reqId;
+              rail.show({
+                kind: "wait",
+                stop: 6,
+                say: "Waiting for human supervisor approval.",
+                why: "High-risk tool call requires authorization."
+              });
               renderApprovalCard(agentMsg, rail, appId, final.request_hash || "", final.tool_called || "action");
             }
           }
