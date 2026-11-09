@@ -68,6 +68,23 @@
     return el;
   }
 
+  function svgIcon(d) {
+    var svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("viewBox", "0 0 24 24");
+    svg.setAttribute("fill", "none");
+    svg.setAttribute("stroke", "currentColor");
+    svg.setAttribute("stroke-width", "2");
+    svg.setAttribute("stroke-linecap", "round");
+    svg.setAttribute("stroke-linejoin", "round");
+    var paths = Array.isArray(d) ? d : [d];
+    paths.forEach(function (pathData) {
+      var p = document.createElementNS("http://www.w3.org/2000/svg", "path");
+      p.setAttribute("d", pathData);
+      svg.appendChild(p);
+    });
+    return svg;
+  }
+
   async function sha(s) {
     try {
       var buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s));
@@ -132,7 +149,10 @@
         h("div", { class: "hs mono" },
           h("span", null, "hash ", h("b", { text: shortHash(b.hash) })),
           h("span", null, "prev ", h("b", { text: shortHash(b.prev) }))
-        )
+        ),
+        (i < chain.length - 1 ? h("div", { class: "chain-arrow-badge", "aria-hidden": "true" },
+          svgIcon(["M5 12h14", "M12 5l7 7-7 7"])
+        ) : null)
       );
       blocksEl.append(blockNode);
     });

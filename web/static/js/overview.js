@@ -19,6 +19,8 @@
   var headMeta = null;
   var allDecisions = [];
   var currentFilter = "all";
+  var visibleCount = 8;
+  var pageSize = 8;
   var lastTouch = 0;
   var timer = null;
   var stageLabels = (window.AegisDecisionMap && window.AegisDecisionMap.getGateLabels(false)) || ["Detection", "Intent lock", "Model", "Role", "Parameters", "Rate limit", "Approval", "Device (simulated)", "Output scan"];
@@ -29,6 +31,76 @@
       headMeta.textContent = (d.t || "") + " · " + (d.tool || "none") + " · " + (d.role || "unknown");
     }
     if (rail && d) rail.play(d, { speed: 1.5 });
+  }
+
+  function findLatestDecision(kind, stopGate) {
+    for (var i = 0; i < allDecisions.length; i++) {
+      var d = allDecisions[i];
+      if (kind === "allow" && d.kind === "allow") return d;
+      if (kind === "wait" && (d.kind === "wait" || d.stop === 6)) return d;
+      if (kind === "stop" && d.kind === "stop") {
+        if (stopGate === undefined || stopGate === null || d.stop === stopGate) return d;
+      }
+    }
+    return null;
+  }
+
+  function updateReplayChips() {
+    var container = document.getElementById("rail-replay-chips");
+    if (!container) return;
+
+    var mappings = {
+      "allow": function () { return findLatestDecision("allow"); },
+      "detection": function () { return findLatestDecision("stop", 0); },
+      "role": function () { return findLatestDecision("stop", 3); },
+      "approval": function () { return findLatestDecision("wait"); },
+      "output_scan": function () { return findLatestDecision("stop", 8); }
+    };
+
+    container.querySelectorAll(".chip").forEach(function (btn) {
+      var type = btn.getAttribute("data-replay");
+      var fn = mappings[type];
+      var hasMatch = fn && fn() !== null;
+      btn.disabled = !hasMatch;
+      if (!hasMatch) {
+        btn.classList.add("disabled");
+        btn.setAttribute("aria-disabled", "true");
+      } else {
+        btn.classList.remove("disabled");
+        btn.removeAttribute("aria-disabled");
+      }
+    });
+  }
+
+  function initReplayChips() {
+    var container = document.getElementById("rail-replay-chips");
+    if (!container) return;
+
+    var mappings = {
+      "allow": function () { return findLatestDecision("allow"); },
+      "detection": function () { return findLatestDecision("stop", 0); },
+      "role": function () { return findLatestDecision("stop", 3); },
+      "approval": function () { return findLatestDecision("wait"); },
+      "output_scan": function () { return findLatestDecision("stop", 8); }
+    };
+
+    container.querySelectorAll(".chip").forEach(function (btn) {
+      var type = btn.getAttribute("data-replay");
+      var fn = mappings[type];
+      btn.addEventListener("click", function () {
+        if (fn) {
+          var target = fn();
+          if (target && rail) {
+            touch();
+            railPlay(target);
+            var host = document.getElementById("rail-host");
+            if (host && host.scrollIntoView) {
+              host.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "center" });
+            }
+          }
+        }
+      });
+    });
   }
 
   function renderGateChart(bars) {
@@ -62,9 +134,15 @@
     var reachEl = document.getElementById("bench-reached");
     var benEl = document.getElementById("bench-benign");
 
-    if (attEl) attEl.textContent = String(bench.attacks_tried != null ? bench.attacks_tried : 110);
-    if (reachEl) reachEl.textContent = String(bench.reached_door_alarm != null ? bench.reached_door_alarm : 0);
-    if (benEl) benEl.textContent = String(bench.benign_allowed != null ? bench.benign_allowed : 87);
+    var attTried = bench.attacks_tried != null ? bench.attacks_tried : 110;
+    var attTotal = bench.attacks_total != null ? bench.attacks_total : attTried;
+    var reachCount = bench.reached_door_alarm != null ? bench.reached_door_alarm : 0;
+    var benAllowed = bench.benign_allowed != null ? bench.benign_allowed : 87;
+    var benTotal = bench.benign_total != null ? bench.benign_total : 116;
+
+    if (attEl) attEl.textContent = attTried + " of " + attTotal;
+    if (reachEl) reachEl.textContent = reachCount + " of " + attTotal;
+    if (benEl) benEl.textContent = benAllowed + " of " + benTotal;
   }
 
   function touch() {
@@ -110,6 +188,7 @@
 
   function renderFeed() {
     var feedEl = document.getElementById("decisions-feed");
+    var moreWrap = document.getElementById("feed-more-wrap");
     if (!feedEl) return;
     clear(feedEl);
 
@@ -117,10 +196,12 @@
     if (!filtered.length) {
       var emptyLi = h("li", null, h("p", { class: "empty", text: "No decisions yet. Send a request in the Console or run an attack in the Attack Lab." }));
       feedEl.append(emptyLi);
+      if (moreWrap) moreWrap.setAttribute("hidden", "");
       return;
     }
 
-    filtered.forEach(function (d, i) {
+    var visible = filtered.slice(0, visibleCount);
+    visible.forEach(function (d, i) {
       var li = h("li", null);
       var row = h("button", {
         class: "row",
@@ -139,6 +220,14 @@
       li.append(row);
       feedEl.append(li);
     });
+
+    if (moreWrap) {
+      if (filtered.length > visibleCount) {
+        moreWrap.removeAttribute("hidden");
+      } else {
+        moreWrap.setAttribute("hidden", "");
+      }
+    }
   }
 
   function toggleDetail(i, li, d) {
@@ -216,6 +305,7 @@
       btn.addEventListener("click", function () {
         var filter = btn.getAttribute("data-filter") || "all";
         currentFilter = filter;
+        visibleCount = 8;
         chipsContainer.querySelectorAll(".chip").forEach(function (b) {
           b.setAttribute("aria-pressed", String(b.getAttribute("data-filter") === filter));
         });
@@ -223,6 +313,16 @@
         playIndex(0);
       });
     });
+  }
+
+  function initPagination() {
+    var moreBtn = document.getElementById("btn-show-more");
+    if (moreBtn) {
+      moreBtn.addEventListener("click", function () {
+        visibleCount += 8;
+        renderFeed();
+      });
+    }
   }
 
   function initSandboxControls() {
@@ -292,6 +392,7 @@
 
         // Decisions
         allDecisions = data.v2_decisions || [];
+        updateReplayChips();
         renderFeed();
 
         // Play the latest real decision on load and rest on final state
@@ -323,6 +424,8 @@
     }
 
     initFilterChips();
+    initPagination();
+    initReplayChips();
     initSandboxControls();
     loadData();
   }

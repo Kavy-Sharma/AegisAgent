@@ -9,6 +9,15 @@
     <p>Aegis sits between the agent and its tools. Watch the latest decision travel through the guard, or click any row below to replay it.</p>
   </div>
 
+  <!-- Replay Quick-Chips -->
+  <div class="rail-quick-chips chips" id="rail-replay-chips" role="group" aria-label="Replay recent decisions">
+    <button class="chip" type="button" data-replay="allow">Latest allowed</button>
+    <button class="chip" type="button" data-replay="detection">Latest stopped at Detection</button>
+    <button class="chip" type="button" data-replay="role">Latest stopped at Role</button>
+    <button class="chip" type="button" data-replay="approval">Latest held at Approval</button>
+    <button class="chip" type="button" data-replay="output_scan">Latest stopped at Output scan</button>
+  </div>
+
   <div class="panel panel-pad rail-panel" id="rail-host"></div>
 
   <div class="figures">
@@ -61,6 +70,7 @@
             <span>benign allowed</span>
           </div>
         </div>
+        <p class="bench-caption muted">Includes a paraphrase set where some harmless requests were wrongly blocked.</p>
       </section>
 
       <!-- Small "Protects against" card pair -->
@@ -99,6 +109,10 @@
   <ul class="feed" id="decisions-feed">
     <li><p class="empty">Loading decisions...</p></li>
   </ul>
+
+  <div class="feed-more-wrap" id="feed-more-wrap" hidden>
+    <button class="btn" type="button" id="btn-show-more">Show more</button>
+  </div>
 
   <!-- Sandbox testing controls in closed details (no GPIO text) -->
   <details class="panel panel-pad sandbox-details" id="sandbox-details">

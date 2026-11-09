@@ -1124,6 +1124,7 @@ def _get_benchmark_stats():
     attacks_tried = 0
     reached_door_alarm = 0
     benign_allowed = 0
+    benign_total = 0
 
     if res_path.exists():
         try:
@@ -1136,6 +1137,7 @@ def _get_benchmark_stats():
                         if row.get("dangerous_action_reached_home") == "True" or row.get("dangerous_action_reached") == "True":
                             reached_door_alarm += 1
                     elif "benign" in s:
+                        benign_total += 1
                         if row.get("correct") == "True" or row.get("stopped_at") == "none":
                             benign_allowed += 1
         except Exception:
@@ -1143,9 +1145,12 @@ def _get_benchmark_stats():
 
     return {
         "caption": "Benchmark (mocked models, synthetic cases)",
+        "subcaption": "Includes a paraphrase set where some harmless requests were wrongly blocked.",
         "attacks_tried": attacks_tried or 110,
+        "attacks_total": attacks_tried or 110,
         "reached_door_alarm": reached_door_alarm,
         "benign_allowed": benign_allowed or 87,
+        "benign_total": benign_total or 116,
     }
 
 

@@ -38,12 +38,13 @@
       <div class="top-r">
         <span class="sim-chip"><i></i><span id="sim">{% if active_env == 'office' %}Office sandbox (simulation){% else %}Virtual Home (simulation){% endif %}</span></span>
 
-        <button class="icon-btn theme-toggle-btn" id="theme" type="button" aria-label="Switch light or dark theme" title="Switch light or dark theme">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+        <button class="icon-btn theme-toggle-btn" id="theme" type="button" aria-label="Switch to dark theme" title="Switch to dark theme">
+          <svg class="theme-icon icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+          <svg class="theme-icon icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
         </button>
 
         <div class="user-menu-wrap">
-          <button class="user-btn" id="user-menu-btn" type="button" aria-expanded="false" aria-label="User account and system health menu">
+          <button class="user-btn" id="user-menu-btn" type="button" aria-expanded="false" aria-label="User account menu">
             <svg class="user-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
             <span class="user-btn-name">{{ session.get('username', 'User') }}</span>
             <span class="user-btn-role">({{ session.get('role', 'guest') }})</span>
@@ -51,28 +52,13 @@
 
           <div class="user-dropdown" id="user-dropdown" hidden>
             <div class="user-dropdown-header">
-              <div class="user-dropdown-name">{{ session.get('username', 'User') }}</div>
-              <div class="user-dropdown-role">Role: {{ session.get('role', 'guest') }}</div>
-            </div>
-
-            <div class="user-dropdown-section">
-              <div class="user-dropdown-subhead">Subsystem Health</div>
-              <div class="health-text-line">Worker: <span id="health-status-worker">Checking...</span></div>
-              <div class="health-text-line">{% if active_env == 'office' %}Office Sandbox{% elif hardware_mode == 'virtual' %}Virtual Home{% else %}ESP32{% endif %}: <span id="health-status-device">{% if active_env == 'office' or hardware_mode == 'virtual' %}Simulated{% else %}Checking...{% endif %}</span></div>
-              <div class="health-text-line">Ollama: <span id="health-status-ollama">Checking...</span></div>
-              <div class="health-text-line">Audit Log: <span id="health-status-audit">Checking...</span></div>
-            </div>
-
-            <div class="user-dropdown-section">
-              <button type="button" class="btn btn-sm" id="verify-ledger-trigger-btn">
-                Verify Ledger
-              </button>
+              <div class="user-dropdown-name">Signed in as {{ session.get('username', 'User') }} ({{ session.get('role', 'guest') }})</div>
             </div>
 
             <div class="user-dropdown-footer">
               <form action="/logout" method="POST">
                 <input type="hidden" name="csrf_token" value="{{ session.get('csrf_token', '') }}">
-                <button type="submit" class="btn danger">Sign out</button>
+                <button type="submit" class="btn danger full-width">Sign out / switch user</button>
               </form>
             </div>
           </div>

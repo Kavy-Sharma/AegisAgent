@@ -174,7 +174,11 @@ var app = (function () {
 
     } catch (e) {}
 
-
+    var themeLabel = resolvedTheme === "dark" ? "Switch to light theme" : "Switch to dark theme";
+    document.querySelectorAll(".theme-toggle-btn, #theme, #theme-toggle-btn").forEach(function (btn) {
+      btn.setAttribute("aria-label", themeLabel);
+      btn.setAttribute("title", themeLabel);
+    });
 
     // Dispatch custom event for charts to restyle
 

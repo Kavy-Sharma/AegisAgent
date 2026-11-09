@@ -29,13 +29,17 @@
     if (askInput) askInput.disabled = running;
   }
 
+  function scrollThreadToBottom() {
+    var thread = document.getElementById("chat-thread");
+    if (!thread) return;
+    thread.scrollTop = thread.scrollHeight;
+  }
+
   function addMessage(node) {
     var thread = document.getElementById("chat-thread");
     if (!thread) return;
     thread.append(node);
-    if (node.scrollIntoView) {
-      node.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "nearest" });
-    }
+    scrollThreadToBottom();
   }
 
   function renderApprovalCard(container, rail, reqId, reqHash, toolName) {
@@ -242,6 +246,7 @@
                 say: say,
                 why: why
               });
+              scrollThreadToBottom();
             }
 
             if (isWait && !approvalRendered) {

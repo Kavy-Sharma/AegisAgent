@@ -122,7 +122,7 @@
     });
   }
 
-  function selectScenario(idx) {
+  function selectScenario(idx, userSelected) {
     selectedIndex = idx;
     var list = document.getElementById("scenario-list");
     if (list) {
@@ -138,6 +138,38 @@
     var promptEl = document.getElementById("attack-prompt");
     if (titleEl) titleEl.textContent = s.title;
     if (promptEl) promptEl.textContent = s.prompt;
+
+    var mediaBox = document.getElementById("lab-media");
+    var videoEl = document.getElementById("lab-video");
+
+    var videoMap = {
+      "direct_override": "/static/videos/attack_lab/unprotected_direct_override.mp4",
+      "memo_subtle": "/static/videos/attack_lab/unprotected_memo_subtle.mp4",
+      "memo_obvious": "/static/videos/attack_lab/unprotected_memo_obvious.mp4",
+      "guest_alarm": "/static/videos/attack_lab/unprotected_guest_alarm.mp4",
+      "admin_unlock": "/static/videos/attack_lab/unprotected_admin_unlock.mp4"
+    };
+
+    var videoSrc = videoMap[s.id];
+    if (mediaBox && videoEl) {
+      if (videoSrc) {
+        mediaBox.removeAttribute("hidden");
+        if (videoEl.getAttribute("data-current-src") !== videoSrc) {
+          videoEl.setAttribute("data-current-src", videoSrc);
+          videoEl.src = videoSrc;
+          videoEl.load();
+        }
+        var prefersReduced = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+        if (userSelected && !prefersReduced) {
+          videoEl.play().catch(function () {});
+        } else {
+          videoEl.pause();
+        }
+      } else {
+        mediaBox.setAttribute("hidden", "");
+        videoEl.pause();
+      }
+    }
 
     if (railA) railA.idle();
     if (railB) railB.idle();
@@ -162,7 +194,7 @@
         type: "button",
         "aria-pressed": String(i === selectedIndex),
         onclick: function () {
-          if (!isRunning) selectScenario(i);
+          if (!isRunning) selectScenario(i, true);
         }
       },
         h("small", { text: cat }),
@@ -172,7 +204,7 @@
       list.append(h("li", null, btn));
     });
 
-    selectScenario(selectedIndex);
+    selectScenario(selectedIndex, false);
   }
 
   async function runSingleAttack(s) {
@@ -269,13 +301,23 @@
     renderHistory();
   }
 
+  function scrollToElement(sel, block) {
+    var el = document.querySelector(sel);
+    if (el && el.scrollIntoView) {
+      var reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      el.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: block || "start" });
+    }
+  }
+
   async function handleRunOne() {
     if (isRunning || !scenarios.length) return;
     isRunning = true;
     setButtonsDisabled(true);
+    scrollToElement(".lanes", "start");
 
     try {
       await runSingleAttack(scenarios[selectedIndex]);
+      scrollToElement(".score", "nearest");
     } finally {
       isRunning = false;
       setButtonsDisabled(false);
@@ -286,13 +328,15 @@
     if (isRunning || !scenarios.length) return;
     isRunning = true;
     setButtonsDisabled(true);
+    scrollToElement(".lanes", "start");
 
     try {
       for (var i = 0; i < scenarios.length; i++) {
-        selectScenario(i);
+        selectScenario(i, true);
         await runSingleAttack(scenarios[i]);
         await sleep(1000 / speed);
       }
+      scrollToElement(".score", "nearest");
     } finally {
       isRunning = false;
       setButtonsDisabled(false);

@@ -44,9 +44,20 @@
     });
   }
 
+  function updateThemeLabels() {
+    var btn = document.getElementById("theme");
+    if (!btn) return;
+    var current = document.documentElement.getAttribute("data-theme") || "light";
+    var label = current === "dark" ? "Switch to light theme" : "Switch to dark theme";
+    btn.setAttribute("aria-label", label);
+    btn.setAttribute("title", label);
+  }
+
   function initThemeButton() {
     var btn = document.getElementById("theme");
     if (!btn) return;
+
+    updateThemeLabels();
 
     btn.addEventListener("click", function () {
       var current = document.documentElement.getAttribute("data-theme") || "light";
@@ -58,6 +69,7 @@
       try {
         localStorage.setItem("aegis_theme", next);
       } catch (e) {}
+      updateThemeLabels();
     });
   }
 

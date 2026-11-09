@@ -104,12 +104,29 @@ def main():
     print("All services initialized. Press Ctrl+C to terminate all services.")
     print("-" * 65)
 
-    # Open browser
-    time.sleep(1.5)
-    try:
-        webbrowser.open(web_url)
-    except Exception:
-        pass
+    # Open browser once server answers (poll every 0.3s up to 30s)
+    import urllib.request
+    import urllib.error
+
+    server_ready = False
+    poll_start = time.time()
+    while time.time() - poll_start < 30.0:
+        try:
+            with urllib.request.urlopen(f"{web_url}/", timeout=1.0) as resp:
+                if resp.status in (200, 302):
+                    server_ready = True
+                    break
+        except (urllib.error.URLError, OSError):
+            pass
+        time.sleep(0.3)
+
+    if server_ready:
+        try:
+            webbrowser.open(web_url)
+        except Exception:
+            pass
+    else:
+        print(f"[ERROR] Flask Web Server did not respond at {web_url} within 30 seconds. Browser will not be opened.")
 
     try:
         while True:
