@@ -11,18 +11,18 @@
 
   <div class="lab">
     <!-- Left Column: Scenario List -->
-    <div>
+    <aside class="lab-sidebar">
       <ul class="scenarios" id="scenario-list">
         <!-- Rendered dynamically -->
       </ul>
       <p class="note">
         <b>Known weakness. </b>The rule detector alone caught 0 of 18 Hindi and Hinglish attacks in our test. The other gates are what stop them.
       </p>
-    </div>
+    </aside>
 
-    <!-- Right Column: Dual Lanes & Telemetry -->
-    <div>
-      <div class="lab-head">
+    <!-- Right Column: Prompt, Dual Lanes & Scoreboard -->
+    <div class="lab-stage" id="lab-stage">
+      <div class="lab-head" id="lab-head">
         <h2 id="current-scenario-title">Loading scenario…</h2>
         <div class="chips">
           <div class="seg" id="speed-seg" role="group" aria-label="Speed">
@@ -41,18 +41,24 @@
 
       <p class="attack-text" id="attack-prompt"></p>
 
-      <!-- Simulation Video Illustration -->
-      <div class="lab-media" id="lab-media" hidden>
-        <div class="video-crop-wrap">
-          <video id="lab-video" class="lab-clip" muted loop playsinline preload="metadata"></video>
-        </div>
-        <p class="lab-video-caption">AI-generated illustration, not real footage.</p>
-      </div>
-
-      <div class="lanes">
+      <div class="lanes" id="lab-lanes">
         <!-- Lane 1: Without Aegis -->
         <section class="panel lane without">
           <h3>Without Aegis <span class="tag">no guard</span></h3>
+          <div class="lane-media" id="media-without" hidden>
+            <div class="video-crop-wrap">
+              <video id="video-without" class="lab-clip" muted playsinline preload="auto"></video>
+              <div class="video-controls">
+                <button type="button" class="video-ctl-btn" id="btn-play-without" aria-label="Play Without Aegis clip" title="Play">
+                  <svg class="icon-play" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="6 4 20 12 6 20 6 4"></polygon></svg>
+                  <svg class="icon-pause" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>
+                </button>
+                <button type="button" class="video-ctl-btn" id="btn-replay-without" aria-label="Replay Without Aegis clip" title="Replay">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="1 4 1 10 7 10"></polyline><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path></svg>
+                </button>
+              </div>
+            </div>
+          </div>
           <div id="rail-without"></div>
           <div class="sandbox" id="sandbox-without"></div>
         </section>
@@ -60,24 +66,35 @@
         <!-- Lane 2: With Aegis -->
         <section class="panel lane with">
           <h3>With Aegis <span class="tag">9 gates</span></h3>
+          <div class="lane-media" id="media-with" hidden>
+            <div class="video-crop-wrap">
+              <video id="video-with" class="lab-clip" muted playsinline preload="auto"></video>
+              <div class="video-controls">
+                <button type="button" class="video-ctl-btn" id="btn-play-with" aria-label="Play With Aegis clip" title="Play">
+                  <svg class="icon-play" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="6 4 20 12 6 20 6 4"></polygon></svg>
+                  <svg class="icon-pause" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>
+                </button>
+                <button type="button" class="video-ctl-btn" id="btn-replay-with" aria-label="Replay With Aegis clip" title="Replay">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="1 4 1 10 7 10"></polyline><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path></svg>
+                </button>
+              </div>
+            </div>
+          </div>
           <div id="rail-with"></div>
           <div class="sandbox" id="sandbox-with"></div>
         </section>
       </div>
 
-      <!-- Scoreboard -->
-      <div class="score" aria-live="polite">
-        <div class="bad">
-          <b id="s-open">No runs yet</b>
-          <span>attacks succeeded without Aegis</span>
-        </div>
-        <div class="good">
-          <b id="s-held">No runs yet</b>
-          <span>attacks got through Aegis</span>
-        </div>
+      <p class="lab-video-note muted" id="lab-video-note" hidden>AI-generated simulation clips (not real camera footage); device tiles reflect simulated sandbox state.</p>
+
+      <!-- Slim Scoreboard Bar -->
+      <div class="score score-bar" id="lab-score" aria-live="polite">
+        <span class="score-stat bad"><b id="s-open">0</b> of <span id="s-total-open">0</span> attacks succeeded without Aegis</span>
+        <span class="score-sep" aria-hidden="true">|</span>
+        <span class="score-stat good"><b id="s-held">0</b> of <span id="s-total-held">0</span> got through Aegis</span>
       </div>
 
-      <!-- History -->
+      <!-- History (last 5 runs) -->
       <ul class="history" id="hist">
         <li class="empty">Run history appears here. Pick an attack and press Run attack.</li>
       </ul>

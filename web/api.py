@@ -2007,6 +2007,65 @@ def api_attack_lab_result(req_id: str):
         return jsonify({"error": "Error reading attack lab result", "error_id": err_id}), 500
 
     if final_entry:
+        prot = final_entry.get("protected")
+        if isinstance(prot, dict) and not prot.get("plain_reason"):
+            from web.api_audit import format_plain_summary
+            fin = prot.get("final") or {}
+            steps = prot.get("steps") or []
+            sc = final_entry.get("scenario") or {}
+            dec = str(fin.get("decision") or "BLOCK").upper()
+            reply = str(fin.get("reply") or "").strip()
+            stopped_layer = prot.get("stopped_layer") or prot.get("stopped_at") or final_entry.get("stopped_layer")
+            step_reason = ""
+            rule_ids = []
+            for st in steps:
+                if not isinstance(st, dict):
+                    continue
+                if st.get("stage") == stopped_layer or st.get("status") in ("block", "deny", "error"):
+                    det = st.get("detail") if isinstance(st.get("detail"), dict) else {}
+                    if det.get("reason") and not step_reason:
+                        step_reason = str(det.get("reason"))
+                    if isinstance(det.get("rule_ids"), list):
+                        rule_ids.extend(det.get("rule_ids"))
+            if dec in ("BLOCK", "DENY", "ERROR") and not rule_ids:
+                rule_ids = re.findall(r"\bINJ-\d+\b", f"{reply} {step_reason}")
+            rule_ids = list(dict.fromkeys(str(r) for r in rule_ids if r))
+            if dec in ("ALLOW", "DIRECT_ALLOW"):
+                prot["plain_reason"] = reply or format_plain_summary(
+                    {"event": "turn_summary", "decision": "ALLOW", "tool": fin.get("tool_called")},
+                    is_admin=True,
+                )
+            elif reply == "[tool output withheld by AegisAgent]":
+                prot["plain_reason"] = (
+                    f"{step_reason}; suspicious output withheld by AegisAgent."
+                    if step_reason
+                    else "Tool output blocked by policy and withheld by AegisAgent."
+                )
+            elif rule_ids and stopped_layer == "detection":
+                prot["plain_reason"] = format_plain_summary(
+                    {
+                        "event": "turn_summary",
+                        "decision": dec,
+                        "tool": fin.get("tool_called"),
+                        "rule_ids": rule_ids,
+                        "reason": step_reason,
+                    },
+                    is_admin=True,
+                )
+            elif reply:
+                prot["plain_reason"] = reply
+            else:
+                prot["plain_reason"] = format_plain_summary(
+                    {
+                        "event": "turn_summary",
+                        "decision": dec,
+                        "tool": fin.get("tool_called"),
+                        "role": sc.get("role", "guest"),
+                        "reason": step_reason,
+                        "rule_ids": rule_ids,
+                    },
+                    is_admin=True,
+                )
         return jsonify({"status": "completed", "result": final_entry})
     return jsonify({"status": "running", "result": None})
 

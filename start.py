@@ -121,6 +121,22 @@ def main():
         time.sleep(0.3)
 
     if server_ready:
+        def _warm_ollama():
+            try:
+                import ollama
+                from agent.agent import MODEL
+                ollama.chat(
+                    model=MODEL,
+                    messages=[{"role": "user", "content": "hi"}],
+                    options={"num_predict": 8},
+                    keep_alive="30m",
+                )
+            except Exception:
+                pass
+
+        import threading
+        threading.Thread(target=_warm_ollama, daemon=True, name="ollama-warmup").start()
+
         try:
             webbrowser.open(web_url)
         except Exception:
