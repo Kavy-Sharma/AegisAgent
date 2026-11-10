@@ -404,7 +404,7 @@ def test_extract_raw_city_override_and_concurrent_threads(monkeypatch):
 
     set_weather_fetcher(ok_fetcher)
 
-    def fake_chat(model=None, messages=None, tools=None, keep_alive=None):
+    def fake_chat(model=None, messages=None, tools=None, keep_alive=None, options=None):
         user_msg = messages[-1]["content"]
         # Simulate Ollama sanitizing "Mumbai; --" down to "Mumbai" while passing "Pune" for Pune
         arg_city = "Mumbai" if "Mumbai" in user_msg else "Pune"

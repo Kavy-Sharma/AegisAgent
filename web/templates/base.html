@@ -36,7 +36,26 @@
       </nav>
 
       <div class="top-r">
+        {% if session.get('role') == 'admin' %}
+        <div class="env-menu-wrap" id="env-menu-wrap">
+          <button type="button" id="sim-chip" class="sim-chip env-chip-btn{% if active_env != 'office' and hardware_status == 'connected' %} is-connected{% elif active_env != 'office' and hardware_status == 'unreachable' %} is-unreachable{% endif %}" aria-haspopup="true" aria-expanded="false" aria-controls="env-dropdown">
+            <i></i>
+            <span id="sim">{% if active_env == 'office' %}Office sandbox (simulation){% elif hardware_status == 'connected' %}Hardware connected{% elif hardware_status == 'unreachable' %}Hardware unreachable{% else %}Virtual Home (simulation){% endif %}</span>
+            <svg class="env-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+          </button>
+          <div class="env-dropdown" id="env-dropdown" role="menu" hidden>
+            <div class="env-dropdown-header">
+              <div class="user-dropdown-subhead">Environment</div>
+              <div class="env-dropdown-current" id="env-current-label">{% if active_env == 'office' %}Office sandbox (office){% else %}Virtual Home (smart_home){% endif %}</div>
+            </div>
+            <button type="button" class="btn full-width" id="btn-env-switch" role="menuitem" data-target-env="{% if active_env == 'office' %}smart_home{% else %}office{% endif %}">
+              {% if active_env == 'office' %}Switch to Smart Home{% else %}Switch to Office{% endif %}
+            </button>
+          </div>
+        </div>
+        {% else %}
         <span id="sim-chip" class="sim-chip{% if active_env != 'office' and hardware_status == 'connected' %} is-connected{% elif active_env != 'office' and hardware_status == 'unreachable' %} is-unreachable{% endif %}"><i></i><span id="sim">{% if active_env == 'office' %}Office sandbox (simulation){% elif hardware_status == 'connected' %}Hardware connected{% elif hardware_status == 'unreachable' %}Hardware unreachable{% else %}Virtual Home (simulation){% endif %}</span></span>
+        {% endif %}
 
         <button class="icon-btn theme-toggle-btn" id="theme" type="button" aria-label="Switch to dark theme" title="Switch to dark theme">
           <svg class="theme-icon icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
@@ -200,6 +219,34 @@
       </div>
     </div>
   </div>
+
+  {% if session.get('role') == 'admin' %}
+  <!-- Environment Switch Confirmation Modal -->
+  <div class="aegis-modal-backdrop" id="env-confirm-modal" role="dialog" aria-modal="true" aria-labelledby="env-confirm-title" hidden>
+    <div class="panel aegis-modal-card">
+      <h3 id="env-confirm-title">Switch environment?</h3>
+      <p id="env-confirm-desc">Switching restarts the guard, clears pending requests, and may require signing in again. Continue?</p>
+      <div class="aegis-modal-actions">
+        <button type="button" class="btn" id="env-confirm-cancel">Cancel</button>
+        <button type="button" class="btn primary" id="env-confirm-proceed">Continue &amp; restart</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Environment Restarting Overlay -->
+  <div class="aegis-modal-backdrop" id="env-restarting-modal" role="alertdialog" aria-modal="true" aria-labelledby="env-restart-title" hidden>
+    <div class="panel aegis-modal-card">
+      <div class="env-restart-head">
+        <span class="pulse-dot live" id="env-restart-dot"></span>
+        <h3 id="env-restart-title">Restarting...</h3>
+      </div>
+      <p id="env-restart-desc">Restarting the guard and worker for the new environment...</p>
+      <div class="aegis-modal-actions" id="env-restart-actions" hidden>
+        <button type="button" class="btn" id="env-restart-close-btn">Close</button>
+      </div>
+    </div>
+  </div>
+  {% endif %}
 
   <!-- Global Toast Notification Container -->
   <div class="toast-container" id="toast-container" aria-live="polite"></div>

@@ -3144,6 +3144,158 @@ def api_switch_role():
     })
 
 
+_env_restart_handler = None
+
+
+def set_env_restart_handler(handler) -> None:
+    """Overrides the environment switch restart callback (used in tests)."""
+    global _env_restart_handler
+    _env_restart_handler = handler
+
+
+def _has_pending_approvals(data_dir: Path) -> bool:
+    pending_dir = data_dir / "approvals" / "pending"
+    if not pending_dir.exists():
+        return False
+    now_utc = datetime.now(timezone.utc)
+    for p_file in pending_dir.glob("*.json"):
+        try:
+            raw = p_file.read_text(encoding="utf-8").strip()
+            if not raw:
+                continue
+            req = json.loads(raw)
+            expires_at_str = req.get("expires_at")
+            if expires_at_str:
+                try:
+                    exp_dt = datetime.fromisoformat(expires_at_str)
+                    if exp_dt.tzinfo is None:
+                        exp_dt = exp_dt.replace(tzinfo=timezone.utc)
+                    if exp_dt < now_utc:
+                        continue
+                except Exception:
+                    pass
+            return True
+        except Exception:
+            return True
+    return False
+
+
+def _has_running_requests(data_dir: Path) -> bool:
+    try:
+        health = security.health.get_system_health()
+        if health.get("worker", {}).get("busy"):
+            return True
+    except Exception:
+        pass
+
+    inbox_dir = data_dir / "chat" / "inbox"
+    outbox_dir = data_dir / "chat" / "outbox"
+    if not inbox_dir.exists():
+        return False
+
+    now_ts = time.time()
+    for in_file in inbox_dir.glob("*.json"):
+        try:
+            if (now_ts - in_file.stat().st_mtime) > 120.0:
+                continue
+        except Exception:
+            pass
+        out_file = outbox_dir / f"{in_file.stem}.jsonl"
+        if not out_file.exists():
+            return True
+        try:
+            lines = out_file.read_text(encoding="utf-8").splitlines()
+            has_final = any(
+                (json.loads(line).get("final") is True)
+                for line in lines
+                if line.strip()
+            )
+            if not has_final:
+                return True
+        except Exception:
+            return True
+    return False
+
+
+def _default_env_restart_handler(target_env: str, from_env: str, who: str) -> None:
+    """Signals start.py supervisor to restart server + worker with target_env."""
+    data_dir = _get_data_dir()
+    data_dir.mkdir(parents=True, exist_ok=True)
+    switch_file = data_dir / "env_switch.json"
+    tmp_file = data_dir / f"env_switch.{secrets.token_hex(4)}.tmp"
+    payload = {
+        "target_env": target_env,
+        "from_env": from_env,
+        "who": who,
+        "timestamp": time.time(),
+    }
+    tmp_file.write_text(json.dumps(payload), encoding="utf-8")
+    os.replace(tmp_file, switch_file)
+
+
+@api_bp.route("/environment/switch", methods=["POST"])
+@role_required("admin")
+def api_environment_switch():
+    """
+    Requests an environment switch (admin only, CSRF-protected).
+    Validates target against registry environments, blocks when approvals/turns
+    are active, logs audit 'env_switch', and notifies supervisor to restart.
+    """
+    if session.get("real_role", session.get("role")) != "admin":
+        return jsonify({"error": "Forbidden: Only real administrators can switch environments"}), 403
+
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "Request body must be a valid JSON object"}), 400
+
+    target_env = data.get("env")
+    known_envs = list(security.registry.list_environments())
+    if not isinstance(target_env, str) or target_env not in known_envs:
+        return jsonify({
+            "error": f"Unknown environment '{target_env}'. Must be one of {known_envs}."
+        }), 400
+
+    data_dir = _get_data_dir()
+    if _has_pending_approvals(data_dir):
+        return jsonify({
+            "error": "Cannot switch environment while an operator approval is pending."
+        }), 409
+
+    if _has_running_requests(data_dir):
+        return jsonify({
+            "error": "Cannot switch environment while a request is currently running."
+        }), 409
+
+    import agent.agent
+    from_env = getattr(agent.agent, "_ACTIVE_ENV", "smart_home")
+    if target_env == from_env:
+        return jsonify({
+            "status": "noop",
+            "restarting": False,
+            "environment": target_env,
+            "message": f"Already running in '{target_env}' environment.",
+        })
+
+    who = session.get("username", "admin")
+    security.logger.log_event("env_switch", {
+        "who": who,
+        "from": from_env,
+        "to": target_env,
+        "decision": "ALLOW",
+    })
+
+    handler = current_app.config.get("ENV_RESTART_HANDLER") or _env_restart_handler or _default_env_restart_handler
+    handler(target_env, from_env, who)
+
+    return jsonify({
+        "status": "restarting",
+        "restarting": True,
+        "from": from_env,
+        "environment": target_env,
+        "message": f"Restarting guard in '{target_env}' mode...",
+    })
+
+
 @api_bp.route("/environment", methods=["GET"])
 @role_required("guest")
 def get_environment_info():

@@ -24,8 +24,6 @@ import argparse
 
 from dataclasses import dataclass
 
-import inspect
-
 import json
 
 import re
@@ -699,40 +697,15 @@ def run_turn(
 
 
 
-    chat_kwargs = {
-        "model": MODEL,
-        "messages": messages,
-        "tools": TOOLS,
-        "keep_alive": "30m",
-    }
-    _chat_target = getattr(ollama.chat, "side_effect", None)
-    _inspect_fn = _chat_target if callable(_chat_target) and not isinstance(_chat_target, type) else ollama.chat
-    try:
-        sig = inspect.signature(_inspect_fn)
-        if "options" in sig.parameters or any(
-            p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values()
-        ):
-            chat_kwargs["options"] = {"num_predict": 256}
-    except Exception:
-        chat_kwargs["options"] = {"num_predict": 256}
-
     try:
 
-        try:
-
-            response = ollama.chat(**chat_kwargs)
-
-        except TypeError as type_err:
-
-            if "options" in chat_kwargs and "options" in str(type_err):
-
-                chat_kwargs.pop("options", None)
-
-                response = ollama.chat(**chat_kwargs)
-
-            else:
-
-                raise
+        response = ollama.chat(
+            model=MODEL,
+            messages=messages,
+            tools=TOOLS,
+            keep_alive="30m",
+            options={"num_predict": 256},
+        )
 
     except Exception as e:
 

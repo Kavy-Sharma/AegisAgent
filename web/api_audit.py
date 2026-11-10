@@ -154,6 +154,8 @@ def format_plain_summary(entry: dict[str, Any], is_admin: bool = True) -> str:
         return f"Auth: User '{entry.get('username', role)}' logged out."
     if event == "role_change":
         return f"Policy: Role switched from '{entry.get('old_role')}' to '{entry.get('new_role')}'."
+    if event == "env_switch":
+        return f"System: Environment switched by '{entry.get('who', role)}' from '{entry.get('from')}' to '{entry.get('to')}'."
 
     # 6. Attack Lab Simulations
     if event == "attack_lab_run":

@@ -137,7 +137,7 @@ A dedicated declarative parameter validation stage (`param_guard`) executes afte
   - URL allowlist performs string host pattern matching only; it does not perform dynamic DNS resolution, IP pinning, or redirect tracking (requests target simulated in-memory storage).
 
 ### Environment Switching
-Switching between `smart_home` and `office` environments requires an application restart (selected at startup via `--env` or `AEGIS_ENV`). Dynamic mid-session environment hot-swapping is not permitted so policy invariants remain deterministic.
+Switching environment restarts the guard (a few seconds). Administrators can switch between `smart_home` and `office` directly from the top bar menu (or select at startup via `--env` or `AEGIS_ENV`). Dynamic mid-session hot-swapping without restarting processes is not permitted so policy invariants remain deterministic.
 
 ---
 

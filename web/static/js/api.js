@@ -108,6 +108,12 @@ var api = (function () {
         body: { role: role },
       });
     },
+    switchEnvironment: function (env) {
+      return request("/api/environment/switch", {
+        method: "POST",
+        body: { env: env },
+      });
+    },
   };
 })();
 

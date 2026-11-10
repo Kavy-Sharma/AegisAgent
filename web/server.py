@@ -699,12 +699,13 @@ def create_app() -> Flask:
 if __name__ == "__main__":
 
     app = create_app()
+    port = int(os.environ.get("AEGIS_PORT", "8501"))
 
     print("=" * 60)
 
     print(" AegisAgent Web Security Gateway ".center(60, "="))
 
-    print(" Local address: http://127.0.0.1:8501")
+    print(f" Local address: http://127.0.0.1:{port}")
 
     print(" Host protection: Enforcing 127.0.0.1 / localhost")
 
@@ -714,5 +715,5 @@ if __name__ == "__main__":
 
     print("=" * 60)
 
-    app.run(host="127.0.0.1", port=8501, debug=False)
+    app.run(host="127.0.0.1", port=port, debug=False)
 

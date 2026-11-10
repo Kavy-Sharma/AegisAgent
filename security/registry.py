@@ -23,6 +23,12 @@ import yaml
 POLICY_PATH = Path(os.environ.get("AEGIS_POLICY_PATH") or (Path(__file__).resolve().parent.parent / "policy.yaml"))
 
 VALID_RISKS = frozenset({"LOW", "HIGH", "HONEYPOT"})
+KNOWN_ENVIRONMENTS: tuple[str, ...] = ("smart_home", "office")
+
+
+def list_environments() -> tuple[str, ...]:
+    """Returns the canonical registered runtime environment names."""
+    return KNOWN_ENVIRONMENTS
 
 
 def _resolve_policy_path(env: str | None = None) -> Path:
