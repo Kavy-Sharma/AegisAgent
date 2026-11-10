@@ -341,19 +341,40 @@ def _read_log_tail(log_file: Path, max_lines: int = 500) -> list[dict]:
 
 
 
-def _derive_hardware_mode(device_dict: dict | None = None) -> str:
-    """Derives hardware mode ('virtual' | 'usb' | 'mqtt') from device telemetry,
-    falling back to active bridge inspection and policy configuration if device_status.json
-    does not exist or has not recorded transport yet.
+def _derive_hardware_state(device_dict: dict | None = None) -> tuple[str, str]:
+    """Derives (hardware_mode, hardware_status) from active bridge, device_status.json, and policy.
+    hardware_mode: 'virtual' | 'usb' | 'mqtt'
+    hardware_status: 'virtual' | 'connected' | 'unreachable'
     """
+    bridge = getattr(security.hardware, "_bridge_instance", None)
+
+    if bridge is not None and type(bridge) is not security.hardware.FakeBridge:
+        t = str(getattr(bridge, "transport", "") or "").lower()
+        if t == "virtual" or (
+            hasattr(security, "virtual_home")
+            and isinstance(bridge, security.virtual_home.VirtualBridge)
+        ):
+            return ("virtual", "virtual")
+        try:
+            online = bool(bridge.is_device_online())
+        except Exception:
+            online = False
+        if t in ("serial", "usb", "usb_serial") or isinstance(bridge, security.hardware.SerialHardwareBridge):
+            return ("usb", "connected" if online else "unreachable")
+        return ("mqtt", "connected" if online else "unreachable")
+
     status_file = _get_data_dir() / "device_status.json"
+    d_data: dict = {}
     status_transport = None
 
     if status_file.exists():
         try:
-            d_data = json.loads(status_file.read_text(encoding="utf-8"))
-            status_transport = d_data.get("transport")
+            parsed = json.loads(status_file.read_text(encoding="utf-8"))
+            if isinstance(parsed, dict):
+                d_data = parsed
+                status_transport = d_data.get("transport")
         except Exception:
+            d_data = {}
             status_transport = None
 
     if not status_transport and device_dict:
@@ -363,34 +384,44 @@ def _derive_hardware_mode(device_dict: dict | None = None) -> str:
     if status_transport:
         st = str(status_transport).lower()
         if st == "virtual":
-            return "virtual"
+            return ("virtual", "virtual")
+        raw_online = d_data.get("online", d_data.get("device_online"))
+        if raw_online is None and device_dict:
+            online = (device_dict.get("status") == "online")
+        else:
+            online = bool(raw_online)
         if st in ("serial", "usb", "usb_serial"):
-            return "usb"
+            return ("usb", "connected" if online else "unreachable")
         if st == "mqtt":
-            return "mqtt"
-
-    # Status file has no transport yet (cold start / missing file):
-    # Derive from active bridge and policy hardware.mode
-    try:
-        bridge = security.hardware.get_bridge()
-        t = getattr(bridge, "transport", None)
-        if t == "virtual" or (hasattr(security, "virtual_home") and isinstance(bridge, security.virtual_home.VirtualBridge)):
-            return "virtual"
-        if t in ("usb_serial", "serial", "usb") or isinstance(bridge, security.hardware.SerialHardwareBridge):
-            return "usb"
-        if t == "mqtt":
-            return "mqtt"
-    except Exception:
-        pass
+            broker_conn = bool(d_data.get("broker_connected", online))
+            return ("mqtt", "connected" if (online and broker_conn) else "unreachable")
+        if st == "fake":
+            try:
+                fake_online = bool(bridge.is_device_online()) if bridge is not None else online
+            except Exception:
+                fake_online = False
+            return ("mqtt", "connected" if fake_online else "unreachable")
 
     try:
         mode = security.policy_loader.POLICY.get("hardware", {}).get("mode", "auto")
-        if mode == "auto":
-            return "virtual"
+        if mode in ("auto", "virtual"):
+            return ("virtual", "virtual")
+        if mode == "serial":
+            online = bool(device_dict and device_dict.get("status") == "online")
+            return ("usb", "connected" if online else "unreachable")
     except Exception:
         pass
 
-    return "mqtt"
+    online = bool(device_dict and device_dict.get("status") == "online")
+    return ("mqtt", "connected" if online else "unreachable")
+
+
+def _derive_hardware_mode(device_dict: dict | None = None) -> str:
+    """Derives hardware mode ('virtual' | 'usb' | 'mqtt') from device telemetry,
+    falling back to active bridge inspection and policy configuration if device_status.json
+    does not exist or has not recorded transport yet.
+    """
+    return _derive_hardware_state(device_dict)[0]
 
 
 # 1. System Health Telemetry
@@ -411,7 +442,9 @@ def api_health():
 
     health["quarantined"] = security.quarantine.is_quarantined(session.get("username", "guest"))
 
-    health["hardware_mode"] = _derive_hardware_mode(health.get("device", {}))
+    hw_mode, hw_status = _derive_hardware_state(health.get("device", {}))
+    health["hardware_mode"] = hw_mode
+    health["hardware_status"] = hw_status
 
     import agent.agent
     health["environment"] = getattr(agent.agent, "_ACTIVE_ENV", "smart_home")
@@ -678,19 +711,17 @@ def api_overview():
     fallback_port = configured_serial if (configured_serial and configured_serial != "auto") else "USB Serial"
     dev_port = dev.get("port") or fallback_port
 
-    hardware_mode = _derive_hardware_mode(dev)
+    hardware_mode, hardware_status = _derive_hardware_state(dev)
 
-    if hardware_mode == "virtual":
+    if hardware_status == "virtual":
         dev_status = "online"
         dev_hint = "Virtual Home (simulation)"
-    elif dev_status == "online":
-        dev_hint = f"Connected on {dev_port}" if dev.get("transport") == "usb_serial" else f"Active (seen {dev_seen})"
-    elif not worker_alive:
-        dev_hint = "Worker service offline"
-    elif dev_status == "offline":
-        dev_hint = f"Disconnected from {dev_port}" if dev.get("port") else "Hardware offline - no board detected"
+    elif hardware_status == "connected":
+        dev_status = "online"
+        dev_hint = "Hardware connected"
     else:
-        dev_hint = "Checking hardware link..."
+        dev_status = "offline" if dev_status == "offline" else "unreachable"
+        dev_hint = "Hardware unreachable"
 
 
 
@@ -919,7 +950,7 @@ def api_overview():
         if e_hash:
             events_by_hash[e_hash] = ev
 
-    STAGE_LABELS = get_stage_labels(env_name)
+    STAGE_LABELS = get_stage_labels(env_name, hardware_status=hardware_status)
 
     turn_events = [x for x in all_events if x.get("event") == "turn_summary"]
     final_turn_decisions = [t for t in turn_events if str(t.get("decision", "")).upper() in ("ALLOW", "BLOCK", "DENY")]
@@ -1058,6 +1089,7 @@ def api_overview():
         "v2_benchmark": bench_stats,
 
         "hardware_mode": hardware_mode,
+        "hardware_status": hardware_status,
         "show_hardware_panel": show_hardware_panel,
         "office_sandbox": office_sandbox,
 
@@ -1098,6 +1130,8 @@ def api_overview():
                 "hint": dev_hint,
 
                 "hardware_mode": hardware_mode,
+
+                "hardware_status": hardware_status,
 
             },
 
@@ -1494,7 +1528,16 @@ def api_console_poll(req_id: str):
 
     if not outbox_file.exists():
 
-        return jsonify({"steps": [], "final": None, "status": "queued"})
+        return jsonify({
+            "steps": [],
+            "final": None,
+            "status": "queued",
+            "completed_gates": [],
+            "active_stage": None,
+            "active_gate": -1,
+            "stopped_stage": None,
+            "stopped_gate": -1,
+        })
 
 
 
@@ -1551,25 +1594,66 @@ def api_console_poll(req_id: str):
 
 
 
+    completed_set: set[int] = set()
+    active_stage = None
+    active_gate = -1
     stopped_stage = None
-    if steps:
-        for s in steps:
-            if s.get("status") in ("block", "deny", "error"):
-                stopped_stage = s.get("stage")
-                break
-            elif s.get("status") == "review":
-                stopped_stage = "approval"
-    if not stopped_stage and final_entry:
-        if final_entry.get("decision") in ("BLOCK", "DENY"):
-            stopped_stage = final_entry.get("stopped_at") or final_entry.get("stage") or "detection"
-        elif final_entry.get("decision") in ("REVIEW", "WAITING"):
+    stopped_gate = -1
+
+    for s in steps:
+        st_name = s.get("stage")
+        st_status = str(s.get("status") or "").lower()
+        g_idx = get_gate_index(st_name)
+
+        if st_status in ("block", "deny", "error"):
+            stopped_stage = st_name
+            stopped_gate = g_idx
+            active_stage = None
+            active_gate = -1
+            if g_idx >= 0:
+                completed_set.discard(g_idx)
+            break
+        elif st_status == "review":
             stopped_stage = "approval"
+            stopped_gate = get_gate_index("approval")
+            active_stage = "approval"
+            active_gate = stopped_gate
+            if stopped_gate >= 0:
+                completed_set.discard(stopped_gate)
+            break
+        elif st_status in ("pass", "ok", "allow"):
+            if g_idx >= 0:
+                completed_set.add(g_idx)
+            if active_stage == st_name:
+                active_stage = None
+                active_gate = -1
+        elif st_status == "running":
+            active_stage = st_name
+            active_gate = g_idx
+
+    if final_entry:
+        active_stage = None
+        active_gate = -1
+        dec = str(final_entry.get("decision") or "").upper()
+        if not stopped_stage:
+            if dec in ("BLOCK", "DENY", "ERROR"):
+                stopped_stage = final_entry.get("stopped_at") or final_entry.get("stage") or "detection"
+                stopped_gate = get_gate_index(stopped_stage)
+            elif dec in ("REVIEW", "WAITING"):
+                stopped_stage = "approval"
+                stopped_gate = get_gate_index("approval")
+        if stopped_gate >= 0:
+            completed_set.discard(stopped_gate)
 
     return jsonify({
         "steps": steps,
         "final": final_entry,
         "status": "completed" if final_entry else "running",
+        "completed_gates": sorted(completed_set),
+        "active_stage": active_stage,
+        "active_gate": active_gate,
         "stopped_stage": stopped_stage,
+        "stopped_gate": stopped_gate,
     })
 
 
@@ -1748,8 +1832,11 @@ def api_attack_lab_scenarios():
     scenarios = security.attack_lab.list_scenarios()
     import agent.agent
     env_name = getattr(agent.agent, "_ACTIVE_ENV", "smart_home")
+    hw_mode, hw_status = _derive_hardware_state()
     return jsonify({
         "environment": env_name,
+        "hardware_mode": hw_mode,
+        "hardware_status": hw_status,
         "scenarios": scenarios
     })
 

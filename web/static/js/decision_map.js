@@ -49,8 +49,15 @@
     output: 8
   };
 
-  function getGateLabels(isOffice) {
-    var toolLabel = isOffice ? "Tool" : "Device (simulated)";
+  function getGateLabels(isOffice, hardwareStatus) {
+    var toolLabel;
+    if (isOffice) {
+      toolLabel = "Tool";
+    } else if (hardwareStatus && hardwareStatus !== "virtual") {
+      toolLabel = "Device";
+    } else {
+      toolLabel = "Device (simulated)";
+    }
     return [
       "Detection",
       "Intent lock",
@@ -74,8 +81,8 @@
     return -1;
   }
 
-  function gateIndexToName(idx, isOffice) {
-    var labels = getGateLabels(isOffice);
+  function gateIndexToName(idx, isOffice, hardwareStatus) {
+    var labels = getGateLabels(isOffice, hardwareStatus);
     if (idx >= 0 && idx < labels.length) return labels[idx];
     return null;
   }

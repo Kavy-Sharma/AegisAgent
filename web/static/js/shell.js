@@ -79,34 +79,69 @@
       api.get("/api/health")
         .then(function (health) {
           if (!health) return;
+          var envName = health.environment || "smart_home";
+          var isOffice = (envName === "office");
+          var hwStatus = health.hardware_status || (
+            (health.hardware_mode === "virtual" || (health.device && health.device.transport === "virtual"))
+              ? "virtual"
+              : (health.device && (health.device.status === "online" || health.device.connected) ? "connected" : "unreachable")
+          );
+
+          if (document.body && document.body.dataset) {
+            document.body.dataset.env = envName;
+            document.body.dataset.hwStatus = hwStatus;
+          }
+
           var workerEl = document.getElementById("health-status-worker");
           if (workerEl) {
             workerEl.textContent = health.worker && health.worker.alive ? (health.worker.busy ? "Busy" : "Online") : "Offline";
           }
           var deviceEl = document.getElementById("health-status-device");
           if (deviceEl) {
-            if (health.environment === "office" || health.hardware_mode === "virtual" || (health.device && health.device.transport === "virtual")) {
+            if (isOffice || hwStatus === "virtual") {
               deviceEl.textContent = "Simulated";
+            } else if (hwStatus === "connected") {
+              deviceEl.textContent = "Connected";
             } else {
-              deviceEl.textContent = health.device && health.device.connected ? "Connected" : "Offline";
+              deviceEl.textContent = "Unreachable";
             }
           }
           var ollamaEl = document.getElementById("health-status-ollama");
           if (ollamaEl) {
-            ollamaEl.textContent = health.ollama && health.ollama.available ? "Online" : "Offline";
+            ollamaEl.textContent = health.ollama && (health.ollama.ok || health.ollama.available) ? "Online" : "Offline";
           }
           var auditEl = document.getElementById("health-status-audit");
           if (auditEl) {
-            auditEl.textContent = health.audit && health.audit.valid ? "Verified" : "Tampered";
+            auditEl.textContent = health.audit_chain && health.audit_chain.intact ? "Verified" : (health.audit && health.audit.valid ? "Verified" : "Tampered");
+          }
+
+          var chipText;
+          if (isOffice) {
+            chipText = "Office sandbox (simulation)";
+          } else if (hwStatus === "connected") {
+            chipText = "Hardware connected";
+          } else if (hwStatus === "unreachable") {
+            chipText = "Hardware unreachable";
+          } else {
+            chipText = "Virtual Home (simulation)";
           }
           var simEl = document.getElementById("sim");
           if (simEl) {
-            if (health.environment === "office") {
-              simEl.textContent = "Office sandbox (simulation)";
-            } else {
-              simEl.textContent = "Virtual Home (simulation)";
-            }
+            simEl.textContent = chipText;
           }
+          var simChip = document.getElementById("sim-chip") || (simEl ? simEl.closest(".sim-chip") : null);
+          if (simChip) {
+            simChip.classList.toggle("is-connected", !isOffice && hwStatus === "connected");
+            simChip.classList.toggle("is-unreachable", !isOffice && hwStatus === "unreachable");
+          }
+          var consoleHwEl = document.getElementById("console-hw-label");
+          if (consoleHwEl) {
+            consoleHwEl.textContent = chipText;
+          }
+
+          try {
+            window.dispatchEvent(new CustomEvent("aegis:health", { detail: health }));
+          } catch (_evErr) {}
         })
         .catch(function () {});
     }

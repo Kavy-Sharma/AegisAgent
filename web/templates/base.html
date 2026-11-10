@@ -16,7 +16,7 @@
   {% block head_extra %}{% endblock %}
   {% block extra_css %}{% endblock %}
 </head>
-<body data-role="{{ session.get('role', 'guest') }}" data-username="{{ session.get('username', '') }}">
+<body data-role="{{ session.get('role', 'guest') }}" data-username="{{ session.get('username', '') }}" data-env="{{ active_env or 'smart_home' }}" data-hw-status="{{ hardware_status or 'virtual' }}">
 
   <!-- Top Navigation Bar -->
   <header class="top">
@@ -36,7 +36,7 @@
       </nav>
 
       <div class="top-r">
-        <span class="sim-chip"><i></i><span id="sim">{% if active_env == 'office' %}Office sandbox (simulation){% else %}Virtual Home (simulation){% endif %}</span></span>
+        <span id="sim-chip" class="sim-chip{% if active_env != 'office' and hardware_status == 'connected' %} is-connected{% elif active_env != 'office' and hardware_status == 'unreachable' %} is-unreachable{% endif %}"><i></i><span id="sim">{% if active_env == 'office' %}Office sandbox (simulation){% elif hardware_status == 'connected' %}Hardware connected{% elif hardware_status == 'unreachable' %}Hardware unreachable{% else %}Virtual Home (simulation){% endif %}</span></span>
 
         <button class="icon-btn theme-toggle-btn" id="theme" type="button" aria-label="Switch to dark theme" title="Switch to dark theme">
           <svg class="theme-icon icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>

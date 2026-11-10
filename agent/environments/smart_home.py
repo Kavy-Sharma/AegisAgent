@@ -122,19 +122,6 @@ def _agent_read_temperature(location: str | None = None) -> dict:
     default_city = os.environ.get("AEGIS_DEFAULT_CITY", "Jodhpur").strip() or "Jodhpur"
     loc = (location or "").strip()
 
-    # If the user prompt contained an un-sanitized place name with invalid characters, preserve it for validation
-    try:
-        import agent.agent
-        cur_text = getattr(agent.agent, "_CURRENT_USER_TEXT", "") or ""
-        m_loc = re.search(r"(?:weather|temperature|temp)\s+(?:in|for|at)\s+(.+)", cur_text, re.IGNORECASE)
-        if m_loc:
-            prompt_loc = m_loc.group(1).strip("?.! ")
-            from agent.tools import validate_city_name
-            if not validate_city_name(prompt_loc)[0]:
-                loc = prompt_loc
-    except Exception:
-        pass
-
     if not loc or loc.lower() in ("here", "local", "my place", "room", "current", "home"):
         loc = default_city
     return read_temperature(location=loc)

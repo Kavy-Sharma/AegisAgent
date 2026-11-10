@@ -231,12 +231,8 @@ def create_app() -> Flask:
 
         return apply_security_headers(response)
 
-    _hw_mode_cache: tuple[str, float] | None = None
-
     @app.context_processor
     def inject_hardware_mode():
-        nonlocal _hw_mode_cache
-        now = time.time()
         import agent.agent
         import security.registry
         curr_env = getattr(agent.agent, "_ACTIVE_ENV", "smart_home")
@@ -246,26 +242,23 @@ def create_app() -> Flask:
             high_tools = []
         high_risk_tools_str = ", ".join(high_tools)
 
-        if _hw_mode_cache is not None and (now - _hw_mode_cache[1]) < 2.0:
-            mode = _hw_mode_cache[0]
-        else:
-            try:
-                from web.api import _derive_hardware_mode
-                h = security.health.get_system_health()
-                mode = _derive_hardware_mode(h.get("device", {}))
-            except Exception:
-                mode = "virtual"
-            _hw_mode_cache = (mode, now)
+        try:
+            from web.api import _derive_hardware_state
+            h = security.health.get_system_health()
+            mode, hw_status = _derive_hardware_state(h.get("device", {}))
+        except Exception:
+            mode, hw_status = "virtual", "virtual"
 
         if curr_env == "office":
-            stage_8_label = "Tool execution"
-        elif mode == "virtual":
+            stage_8_label = "Tool"
+        elif hw_status == "virtual":
             stage_8_label = "Device (simulated)"
         else:
-            stage_8_label = "Hardware Execution"
+            stage_8_label = "Device"
 
         return {
             "hardware_mode": mode,
+            "hardware_status": hw_status,
             "active_env": curr_env,
             "stage_8_label": stage_8_label,
             "high_risk_tools_str": high_risk_tools_str,

@@ -116,7 +116,7 @@
 
   <!-- Sandbox testing controls in closed details (no GPIO text) -->
   <details class="panel panel-pad sandbox-details" id="sandbox-details">
-    <summary>{% if active_env == 'office' %}Office sandbox controls (testing){% else %}Virtual Home controls (testing){% endif %}</summary>
+    <summary id="sandbox-details-summary">{% if active_env == 'office' %}Office sandbox controls (testing){% elif hardware_status != 'virtual' %}Hardware controls (testing){% else %}Virtual Home controls (testing){% endif %}</summary>
     <div class="sandbox-controls-grid">
       {% if active_env == 'office' %}
       <div class="sandbox-control-card">

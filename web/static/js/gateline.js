@@ -70,7 +70,7 @@
     }
     function resetVisual() {
       gates.forEach(function (g) { g.className = "gate"; });
-      el.classList.remove("is-stopped", "is-waiting");
+      el.classList.remove("is-stopped", "is-waiting", "is-not-done");
       token.className = "token";
       token.style.transition = "none"; move(0); void token.offsetWidth; token.style.transition = "";
       fill.style.width = "0px";
@@ -84,6 +84,12 @@
         return [
           { text: "Allowed. ", tone: "ok", strong: false },
           { text: plain || ("Passed all " + labels.length + " gates.") }
+        ];
+      }
+      if (d.kind === "not_done") {
+        return [
+          { text: "Not done. ", tone: "not-done", strong: false },
+          { text: plain || "Could not complete request." }
         ];
       }
       if (d.kind === "wait") {
@@ -105,32 +111,99 @@
     }
     function paintFinal(d) {
       var isAllow = (d.kind === "allow");
-      var isBlock = !isAllow;
-      var hasStop = (d.stop >= 0 && d.stop < gates.length);
+      var isNotDone = (d.kind === "not_done");
+      var stopIdx = (d.stop >= 0 && d.stop < gates.length) ? d.stop : (isNotDone ? Math.min(7, gates.length - 1) : -1);
+      var hasStop = (stopIdx >= 0 && stopIdx < gates.length);
+
+      gates.forEach(function (g) { g.className = "gate"; });
+      el.classList.remove("is-stopped", "is-waiting", "is-not-done");
 
       if (isAllow) {
         gates.forEach(function (g) { g.classList.add("is-pass"); });
       } else if (hasStop) {
         gates.forEach(function (g, i) {
-          if (i < d.stop) g.classList.add("is-pass");
-          else if (i === d.stop) g.classList.add(d.kind === "wait" ? "is-wait" : "is-stop");
+          if (i < stopIdx) g.classList.add("is-pass");
+          else if (i === stopIdx) g.classList.add(isNotDone ? "is-not-done" : (d.kind === "wait" ? "is-wait" : "is-stop"));
           else g.classList.add("is-skip");
         });
-        el.classList.add(d.kind === "wait" ? "is-waiting" : "is-stopped");
+        el.classList.add(isNotDone ? "is-not-done" : (d.kind === "wait" ? "is-waiting" : "is-stopped"));
       } else {
         // Block without recorded layer: no gate highlighted
         gates.forEach(function (g) { g.classList.add("is-skip"); });
-        el.classList.add(d.kind === "wait" ? "is-waiting" : "is-stopped");
+        el.classList.add(isNotDone ? "is-not-done" : (d.kind === "wait" ? "is-waiting" : "is-stopped"));
       }
     }
     function show(d) {
       resetVisual(); paintFinal(d);
       var endX = Math.max(0, gatesEl.offsetWidth - 10);
-      token.classList.add("on", d.kind === "allow" ? "is-ok" : d.kind === "wait" ? "is-wait" : "is-stop");
+      var tokCls = d.kind === "allow" ? "is-ok" : d.kind === "not_done" ? "is-not-done" : d.kind === "wait" ? "is-wait" : "is-stop";
+      token.classList.add("on", tokCls);
       token.style.transition = "none";
-      var targetX = d.kind === "allow" ? endX : (d.stop >= 0 ? xOf(d.stop) : 0);
+      var stopIdx = (d.stop >= 0 && d.stop < gates.length) ? d.stop : (d.kind === "not_done" ? Math.min(7, gates.length - 1) : -1);
+      var targetX = d.kind === "allow" ? endX : (stopIdx >= 0 ? xOf(stopIdx) : 0);
       move(targetX);
       void token.offsetWidth; token.style.transition = "";
+      setCaption(captionFor(d));
+    }
+    function syncLive(state) {
+      state = state || {};
+      runId++;
+      var completed = Array.isArray(state.completedGates) ? state.completedGates : [];
+      var activeGate = (typeof state.activeGate === "number") ? state.activeGate : -1;
+      var waiting = Boolean(state.waiting);
+
+      var completedMap = {};
+      var maxCompleted = -1;
+      completed.forEach(function (idx) {
+        if (typeof idx === "number" && idx >= 0 && idx < gates.length) {
+          completedMap[idx] = true;
+          if (idx > maxCompleted) maxCompleted = idx;
+        }
+      });
+
+      el.classList.remove("is-stopped", "is-waiting", "is-not-done");
+      if (waiting) el.classList.add("is-waiting");
+
+      gates.forEach(function (g, i) {
+        g.className = "gate";
+        if (i === activeGate) {
+          g.classList.add(waiting ? "is-wait" : "is-running");
+        } else if (completedMap[i] || (activeGate >= 0 && i < activeGate)) {
+          g.classList.add("is-pass");
+        }
+      });
+
+      token.className = "token";
+      if (activeGate >= 0 && activeGate < gates.length) {
+        token.classList.add("on");
+        if (waiting) token.classList.add("is-wait");
+        move(xOf(activeGate));
+      } else if (maxCompleted >= 0 && maxCompleted < gates.length) {
+        token.classList.add("on");
+        move(xOf(maxCompleted));
+      } else {
+        token.style.transition = "none";
+        move(0);
+        void token.offsetWidth;
+        token.style.transition = "";
+        fill.style.width = "0px";
+      }
+
+      if (state.captionParts) {
+        setCaption(state.captionParts);
+      } else if (state.caption) {
+        setCaption([{ text: String(state.caption) }]);
+      }
+    }
+    function settle(d) {
+      d = d || {};
+      runId++;
+      paintFinal(d);
+      token.className = "token on " + (d.kind === "allow" ? "is-ok" : d.kind === "not_done" ? "is-not-done" : d.kind === "wait" ? "is-wait" : "is-stop");
+      var endX = Math.max(0, gatesEl.offsetWidth - 10);
+      var stopIdx = (d.stop >= 0 && d.stop < gates.length) ? d.stop : (d.kind === "not_done" ? Math.min(7, gates.length - 1) : -1);
+      var targetX = d.kind === "allow" ? endX : (stopIdx >= 0 ? xOf(stopIdx) : 0);
+      move(targetX);
       setCaption(captionFor(d));
     }
     async function play(d, o) {
@@ -181,7 +254,7 @@
     function idle() { runId++; resetVisual(); setCaption([{ text: opts.idle || "Ready." }]); }
     window.addEventListener("resize", function () {
       if (token.classList.contains("on") && el.isConnected) {
-        var cur = gates.findIndex(function (g) { return g.classList.contains("is-stop") || g.classList.contains("is-wait"); });
+        var cur = gates.findIndex(function (g) { return g.classList.contains("is-stop") || g.classList.contains("is-wait") || g.classList.contains("is-not-done") || g.classList.contains("is-running"); });
         token.style.transition = "none";
         if (cur >= 0) {
           move(xOf(cur));
@@ -194,7 +267,7 @@
     });
     var defaultLabels = ["Detection", "Intent lock", "Model", "Role", "Parameters", "Rate limit", "Approval", "Device (simulated)", "Output scan"];
     setLabels(opts.labels || defaultLabels);
-    return { el: el, play: play, show: show, setLabels: setLabels, idle: idle };
+    return { el: el, play: play, show: show, syncLive: syncLive, settle: settle, setLabels: setLabels, setCaption: setCaption, idle: idle };
   }
 
   window.AegisGateLine = {

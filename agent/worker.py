@@ -425,6 +425,7 @@ def _write_rejection_outbox(outbox_file: Path, message: str):
 
 def _process_direct_tool(req: dict, emit, outbox_file: Path):
     username = req.get("username", "guest")
+    req_id = req.get("id", "")
     if security.quarantine.is_quarantined(username):
         msg = f"Account '{username}' is in containment lockdown (quarantined). Admin release required."
         for s in ("detection", "intent", "llm", "rbac", "rate_limit", "approval", "hardware", "output_scan"):
@@ -434,6 +435,8 @@ def _process_direct_tool(req: dict, emit, outbox_file: Path):
             "error": msg,
             "final": True,
             "reply": f"Request blocked: {msg}",
+            "request_id": req_id,
+            "stopped_at": "detection",
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }
         with open(outbox_file, "a", encoding="utf-8") as f:
@@ -479,6 +482,7 @@ def _process_direct_tool(req: dict, emit, outbox_file: Path):
             "error": reason,
             "final": True,
             "reply": f"Request blocked by policy: {reason}",
+            "request_id": req_id,
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }
         with open(outbox_file, "a", encoding="utf-8") as f:
@@ -494,6 +498,25 @@ def _process_direct_tool(req: dict, emit, outbox_file: Path):
         expected_args = TOOL_SCHEMAS.get(tool_name, set())
         clean_args = {k: v for k, v in tool_args.items() if k in expected_args}
         tool_res = AVAILABLE_FUNCTIONS[tool_name](**clean_args)
+        if isinstance(tool_res, dict) and tool_res.get("status") == "failed":
+            err = tool_res.get("error", "Hardware command failed or not acknowledged")
+            emit("hardware", "error", {"error": err, "tool": tool_name})
+            emit("output_scan", "skip", {"reason": "Hardware failure"})
+            final = {
+                "decision": "ERROR",
+                "error": err,
+                "final": True,
+                "reply": tool_res.get("text") or err,
+                "request_id": req_id,
+                "stopped_at": "hardware",
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "tool_called": tool_name,
+                "tool_result": tool_res,
+            }
+            with open(outbox_file, "a", encoding="utf-8") as f:
+                f.write(json.dumps(final) + "\n")
+                f.flush()
+            return
         emit("hardware", "pass", {"result": str(tool_res), "tool": tool_name})
     except Exception as e:
         emit("hardware", "error", {"error": str(e), "tool": tool_name})
@@ -503,6 +526,8 @@ def _process_direct_tool(req: dict, emit, outbox_file: Path):
             "error": str(e),
             "final": True,
             "reply": f"Execution error: {e}",
+            "request_id": req_id,
+            "stopped_at": "hardware",
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }
         with open(outbox_file, "a", encoding="utf-8") as f:
@@ -518,6 +543,7 @@ def _process_direct_tool(req: dict, emit, outbox_file: Path):
         "error": None,
         "final": True,
         "reply": f"Executed {tool_name} successfully: {tool_res}",
+        "request_id": req_id,
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "tool_called": tool_name,
         "tool_result": tool_res,
@@ -853,6 +879,7 @@ def run_worker():
                     "status": status,
                     "timestamp": datetime.now(timezone.utc).isoformat(),
                     "owner": req.get("username", "guest"),
+                    "request_id": req_id,
                 }
                 with open(outbox_file, "a", encoding="utf-8") as f:
                     f.write(json.dumps(step) + "\n")
@@ -876,6 +903,8 @@ def run_worker():
                         "error": res.error,
                         "final": True,
                         "reply": res.reply,
+                        "request_id": req_id,
+                        "stopped_at": res.stopped_at,
                         "timestamp": datetime.now(timezone.utc).isoformat(),
                         "tool_called": res.tool_called,
                         "tool_result": res.tool_result,
@@ -891,6 +920,7 @@ def run_worker():
                     "error": str(e),
                     "final": True,
                     "reply": f"Worker encountered an internal error: {e}",
+                    "request_id": req_id,
                     "timestamp": datetime.now(timezone.utc).isoformat(),
                 }
                 with open(outbox_file, "a", encoding="utf-8") as f:

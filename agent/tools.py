@@ -121,8 +121,10 @@ def _default_weather_fetch(url: str) -> dict:
         headers={"User-Agent": "AegisAgent/1.0", "Accept": "application/json"}
     )
     with _no_redirect_opener.open(req, timeout=5.0) as resp:
-        # Response size capped at 100 KB
-        raw_bytes = resp.read(102400)
+        # Response size capped at 100 KB: read 102401 bytes so anything > 100 KB is rejected
+        raw_bytes = resp.read(102401)
+        if len(raw_bytes) > 102400:
+            raise ValueError("Weather service response exceeded 100 KB cap")
         return json.loads(raw_bytes.decode("utf-8", errors="replace"))
 
 def _fetch_weather_json(url: str) -> dict:
@@ -164,46 +166,85 @@ class NoteNotFoundError(FileNotFoundError, ValueError):
 
 
 
+UNREACHABLE_DEVICE_MSG = "The device could not be reached. Nothing was changed."
+
+
 def _dispatch_command(command: str, action_name: str, fake_log: str) -> dict:
-
     mode = security.policy_loader.POLICY.get("hardware", {}).get("mode", "fake")
-
     bridge = security.hardware.get_bridge()
 
-    is_online = bridge.is_device_online()
+    is_online = False
+    result = None
+    raw_err: str | None = None
+    raised_exc = False
 
-    result = bridge.publish(command)
+    try:
+        is_online = bool(bridge.is_device_online())
+        result = bridge.publish(command)
+    except Exception as e:
+        raised_exc = True
+        raw_err = str(e) or type(e).__name__
+        result = None
 
-    if result.ok:
-
+    ok = bool(getattr(result, "ok", False)) if not raised_exc else False
+    if ok:
         if mode == "fake":
-
             print(fake_log)
-
         else:
-
             print(f"[TOOL] {action_name} -> sent to device")
 
         hw_online = True if mode != "fake" else is_online
         return {"status": "success", "action": action_name, "hardware_connected": hw_online}
 
-    else:
+    if raw_err is None:
+        res_err = getattr(result, "error", None) if result is not None else None
+        if res_err is None and isinstance(result, dict):
+            res_err = result.get("error")
+        raw_err = str(res_err) if res_err else "hardware unreachable"
 
-        print(f"[TOOL] {action_name} FAILED: {result.error}")
+    # Ensure failed hardware actuation is always recorded in the tamper-evident audit log
+    try:
+        from security.logger import log_event, log_hardware_command
 
-        return {
+        builtin_types = (
+            security.hardware.FakeBridge,
+            security.hardware.HardwareBridge,
+            security.hardware.SerialHardwareBridge,
+        )
+        try:
+            from security.virtual_home import VirtualBridge
+            builtin_types = builtin_types + (VirtualBridge,)
+        except Exception:
+            pass
 
-            "status": "failed",
+        if raised_exc or not isinstance(bridge, builtin_types):
+            log_hardware_command(command, False, raw_err)
+        log_event(
+            "hardware_unreachable",
+            {
+                "command": command,
+                "action": action_name,
+                "error": raw_err,
+                "message": UNREACHABLE_DEVICE_MSG,
+            },
+        )
+    except Exception:
+        pass
 
-            "error": result.error,
-
-            "action": action_name,
-
-            "hardware_connected": False,
-
-            "note": "ESP32 board disconnected. To see physical hardware actuation, connect ESP32 to USB or MQTT.",
-
-        }
+    print(f"[TOOL] {action_name} FAILED: {raw_err}")
+    err_str = (
+        f"{UNREACHABLE_DEVICE_MSG} ({raw_err})"
+        if (raw_err and UNREACHABLE_DEVICE_MSG not in raw_err)
+        else UNREACHABLE_DEVICE_MSG
+    )
+    return {
+        "status": "failed",
+        "error": err_str,
+        "text": UNREACHABLE_DEVICE_MSG,
+        "action": action_name,
+        "hardware_connected": False,
+        "note": "ESP32 board disconnected. To see physical hardware actuation, connect ESP32 to USB or MQTT.",
+    }
 
 
 
@@ -251,61 +292,50 @@ def turn_light_on(blink_count: int = 1) -> dict:
 
     bridge = security.hardware.get_bridge()
 
-    is_online = bridge.is_device_online()
-
-
-
     if count > 1:
-
         action_name = f"light_blink_{count}x"
-
         cmd = "light_on"
-
         fake_log = f"[TOOL] turn_light_on(blink_count={count}) called -> LED would blink {count} times"
-
-
-
-        # Physical LED blinking loop across hardware transport
-
-        def _blink_worker():
-            for _ in range(count):
-                if _SEQUENCE_ABORT_EVENT.is_set():
-                    try:
-                        bridge.publish("light_off")
-                    except Exception:
-                        pass
-                    break
-                bridge.publish("light_on")
-                time.sleep(0.35)
-                if _SEQUENCE_ABORT_EVENT.is_set():
-                    try:
-                        bridge.publish("light_off")
-                    except Exception:
-                        pass
-                    break
-                bridge.publish("light_off")
-                time.sleep(0.25)
-
-
-
-        threading.Thread(target=_blink_worker, daemon=True).start()
-
     else:
-
         action_name = "light_on"
-
         cmd = "light_on"
-
         fake_log = "[TOOL] turn_light_on() called -> LED would turn ON"
 
-
-
     res = _dispatch_command(cmd, action_name, fake_log)
-
     res["blink_count"] = count
 
     if res.get("status") == "success":
         res["hardware_connected"] = True
+        if count > 1:
+            # Physical LED blinking loop across hardware transport (only started after verified actuation)
+            def _blink_worker():
+                for _ in range(count):
+                    if _SEQUENCE_ABORT_EVENT.is_set() or security.hardware._bridge_instance is not bridge:
+                        if _SEQUENCE_ABORT_EVENT.is_set() and security.hardware._bridge_instance is bridge:
+                            try:
+                                bridge.publish("light_off")
+                            except Exception:
+                                pass
+                        break
+                    try:
+                        bridge.publish("light_on")
+                    except Exception:
+                        break
+                    time.sleep(0.35)
+                    if _SEQUENCE_ABORT_EVENT.is_set() or security.hardware._bridge_instance is not bridge:
+                        if _SEQUENCE_ABORT_EVENT.is_set() and security.hardware._bridge_instance is bridge:
+                            try:
+                                bridge.publish("light_off")
+                            except Exception:
+                                pass
+                        break
+                    try:
+                        bridge.publish("light_off")
+                    except Exception:
+                        break
+                    time.sleep(0.25)
+
+            threading.Thread(target=_blink_worker, daemon=True).start()
     else:
         res["hardware_connected"] = False
 
@@ -348,6 +378,17 @@ def read_temperature(location: str | None = None) -> dict:
             "condition": "Fair / Clear",
             "location": f"{target_city} (simulated)",
             "source": "simulated_telemetry",
+        }
+
+    # 1b. Offline weather switch: AEGIS_WEATHER_ONLINE=0 disables all external weather calls
+    weather_online = os.environ.get("AEGIS_WEATHER_ONLINE", "1").strip().lower()
+    if weather_online in ("0", "false", "off", "no"):
+        msg = "Live weather is turned off."
+        return {
+            "status": "error",
+            "error": msg,
+            "text": msg,
+            "location": target_city,
         }
 
     # 2. City parameter validation BEFORE any network call
@@ -420,7 +461,7 @@ def read_temperature(location: str | None = None) -> dict:
     current = fc_data.get("current", {}) if isinstance(fc_data, dict) else {}
     temp_c = current.get("temperature_2m")
     humidity = current.get("relative_humidity_2m")
-    wcode = current.get("weather_code", 0)
+    raw_wcode = current.get("weather_code")
 
     if temp_c is None:
         msg = "The weather service could not be reached right now."
@@ -431,7 +472,14 @@ def read_temperature(location: str | None = None) -> dict:
             "location": validated_city,
         }
 
-    weather_desc = WMO_CODE_MAP.get(wcode, "Clear sky")
+    if isinstance(raw_wcode, bool) or raw_wcode is None:
+        weather_desc = "Unknown conditions"
+    else:
+        try:
+            weather_desc = WMO_CODE_MAP.get(int(raw_wcode), "Unknown conditions")
+        except (TypeError, ValueError):
+            weather_desc = "Unknown conditions"
+
     output_text = f"{matched_city}, {region_country}: {temp_c} C, humidity {humidity}%, {weather_desc}. Live data from Open-Meteo."
 
     return {
@@ -477,40 +525,30 @@ def activate_alarm(duration_seconds: int = 5) -> dict:
 
     bridge = security.hardware.get_bridge()
 
-    is_online = bridge.is_device_online()
-
     action_name = f"alarm_activated_{duration}s" if duration != 5 else "alarm_activated"
-
     cmd = "alarm_on"
-
     fake_log = f"[TOOL] activate_alarm(duration={duration}s) called -> BUZZER would sound for {duration} seconds"
 
-
-
-    if duration > 3:
-
-        def _alarm_worker():
-            elapsed = 0
-            while elapsed < duration:
-                if _SEQUENCE_ABORT_EVENT.is_set():
-                    break
-                bridge.publish("alarm_on")
-                chunk = min(2.5, duration - elapsed)
-                time.sleep(chunk)
-                elapsed += chunk
-
-
-
-        threading.Thread(target=_alarm_worker, daemon=True).start()
-
-
-
     res = _dispatch_command(cmd, action_name, fake_log)
-
     res["duration_seconds"] = duration
 
     if res.get("status") == "success":
         res["hardware_connected"] = True
+        if duration > 3:
+            def _alarm_worker():
+                elapsed = 0
+                while elapsed < duration:
+                    if _SEQUENCE_ABORT_EVENT.is_set() or security.hardware._bridge_instance is not bridge:
+                        break
+                    try:
+                        bridge.publish("alarm_on")
+                    except Exception:
+                        break
+                    chunk = min(2.5, duration - elapsed)
+                    time.sleep(chunk)
+                    elapsed += chunk
+
+            threading.Thread(target=_alarm_worker, daemon=True).start()
     else:
         res["hardware_connected"] = False
 

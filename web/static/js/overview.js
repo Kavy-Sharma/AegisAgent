@@ -23,7 +23,9 @@
   var pageSize = 8;
   var lastTouch = 0;
   var timer = null;
-  var stageLabels = (window.AegisDecisionMap && window.AegisDecisionMap.getGateLabels(false)) || ["Detection", "Intent lock", "Model", "Role", "Parameters", "Rate limit", "Approval", "Device (simulated)", "Output scan"];
+  var envName = (document.body && document.body.dataset ? document.body.dataset.env : "smart_home") || "smart_home";
+  var hwStatus = (document.body && document.body.dataset ? document.body.dataset.hwStatus : "virtual") || "virtual";
+  var stageLabels = (window.AegisDecisionMap && window.AegisDecisionMap.getGateLabels(envName === "office", hwStatus)) || ["Detection", "Intent lock", "Model", "Role", "Parameters", "Rate limit", "Approval", "Device (simulated)", "Output scan"];
 
   function railPlay(d) {
     if (headTitle && d) {

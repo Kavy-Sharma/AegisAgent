@@ -226,7 +226,10 @@ Edit `.env`:
 ```ini
 AEGIS_MQTT_USER=aegis_gateway
 AEGIS_MQTT_PASS=<CHOOSE-A-STRONG-PASSWORD>
+AEGIS_DEFAULT_CITY=Jodhpur
+AEGIS_WEATHER_ONLINE=1
 ```
+Set `AEGIS_WEATHER_ONLINE=0` to disable outbound Open-Meteo lookups (`read_temperature` replies `"Live weather is turned off."`).
 
 ---
 

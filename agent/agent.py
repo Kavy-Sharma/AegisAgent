@@ -24,6 +24,8 @@ import argparse
 
 from dataclasses import dataclass
 
+import json
+
 import re
 
 import sys
@@ -250,6 +252,13 @@ def synthesize_conversational_reply(
     is_hindi = bool(re.search(r"[\u0900-\u097F]", user_prompt or ""))
 
     if isinstance(tool_result, dict) and tool_result.get("status") == "failed":
+        if tool_result.get("text"):
+            plain = str(tool_result["text"]).strip()
+            if is_hindi:
+                return f"विफल: {plain}"
+            if plain.lower().startswith("failed"):
+                return plain
+            return f"Failed: {plain}"
         err = tool_result.get("error", "Hardware command failed")
         if is_hindi:
             return f"विफल: {err}।"
@@ -336,7 +345,63 @@ def get_default_role() -> str:
 
 
 
-_CURRENT_USER_TEXT: str = ""
+def _extract_raw_city_override(user_text: str, current_location: Any) -> Any:
+    """
+    If user_text names a weather/temperature location that fails city validation,
+    preserve that raw substring locally per turn instead of sharing global state.
+    """
+    if not user_text:
+        return current_location
+    m_loc = re.search(
+        r"(?:weather|temperature|temp)\s+(?:in|for|at)\s+(.+)",
+        user_text,
+        re.IGNORECASE,
+    )
+    if m_loc:
+        prompt_loc = m_loc.group(1).strip("?.! ")
+        if prompt_loc:
+            from agent.tools import validate_city_name
+            if not validate_city_name(prompt_loc)[0]:
+                return prompt_loc
+    return current_location
+
+
+def _extract_text_tool_calls(content: str) -> list[dict[str, Any]] | None:
+    """
+    Parses JSON tool calls written as plain text by smaller local models
+    (supports nested dicts in parameters/arguments via JSONDecoder.raw_decode).
+    Only registered tools in AVAILABLE_FUNCTIONS and security.registry are extracted.
+    """
+    if not content or "{" not in content:
+        return None
+    decoder = json.JSONDecoder()
+    extracted: list[dict[str, Any]] = []
+    idx = 0
+    length = len(content)
+    while idx < length:
+        brace = content.find("{", idx)
+        if brace == -1:
+            break
+        try:
+            obj, end = decoder.raw_decode(content, brace)
+        except json.JSONDecodeError:
+            idx = brace + 1
+            continue
+        if isinstance(obj, dict):
+            fn = obj.get("name")
+            if (
+                isinstance(fn, str)
+                and fn in AVAILABLE_FUNCTIONS
+                and security.registry.get_tool(fn) is not None
+            ):
+                raw_args = obj.get("parameters")
+                if raw_args is None:
+                    raw_args = obj.get("arguments")
+                args = raw_args if isinstance(raw_args, dict) else {}
+                extracted.append({"function": {"name": fn, "arguments": args}})
+        idx = max(brace + 1, end)
+    return extracted or None
+
 
 def run_turn(
 
@@ -368,9 +433,6 @@ def run_turn(
     """
 
     start_turn_time = time.perf_counter()
-
-    global _CURRENT_USER_TEXT
-    _CURRENT_USER_TEXT = text
 
     if not request_id:
 
@@ -655,6 +717,8 @@ def run_turn(
 
             error=str(e),
 
+            stopped_at="llm",
+
         ))
 
 
@@ -667,17 +731,8 @@ def run_turn(
 
     if not tool_calls:
         content = (message.get("content") or "").strip()
-        if content and ("read_temperature" in content or "turn_light" in content or "activate_alarm" in content or "unlock_door" in content or "read_note" in content):
-            m_json = re.search(r'\{[^{}]*"name"\s*:\s*"(\w+)"[^{}]*\}', content)
-            if m_json:
-                try:
-                    parsed_call = json.loads(m_json.group(0))
-                    fn = parsed_call.get("name")
-                    args = parsed_call.get("parameters") or parsed_call.get("arguments") or {}
-                    if fn in AVAILABLE_FUNCTIONS:
-                        tool_calls = [{"function": {"name": fn, "arguments": args}}]
-                except Exception:
-                    pass
+        if content:
+            tool_calls = _extract_text_tool_calls(content)
 
     if not tool_calls:
 
@@ -1050,7 +1105,8 @@ def run_turn(
 
         clean_args = {k: v for k, v in function_args.items() if k in expected_args}
 
-
+        if function_name == "read_temperature":
+            clean_args["location"] = _extract_raw_city_override(text, clean_args.get("location"))
 
         try:
 
@@ -1067,6 +1123,7 @@ def run_turn(
                     tool_called=function_name,
                     tool_result=tool_result,
                     error=err,
+                    stopped_at="hardware",
                 ))
 
             _emit("hardware", "pass", {"tool": function_name, "result": str(tool_result)})
@@ -1094,6 +1151,8 @@ def run_turn(
                 tool_called=function_name,
 
                 error=str(e),
+
+                stopped_at="hardware",
 
             ))
 

@@ -31,8 +31,9 @@
   var scenarios = [];
   var selectedIndex = 0;
   var isRunning = false;
-  var isOffice = false;
-  var stageLabels = ["Detection", "Intent lock", "Model", "Role", "Parameters", "Rate limit", "Approval", "Device (simulated)", "Output scan"];
+  var isOffice = (document.body && document.body.dataset ? document.body.dataset.env === "office" : false);
+  var hwStatus = (document.body && document.body.dataset ? (document.body.dataset.hwStatus || "virtual") : "virtual");
+  var stageLabels = (DM.getGateLabels && DM.getGateLabels(isOffice, hwStatus)) || ["Detection", "Intent lock", "Model", "Role", "Parameters", "Rate limit", "Approval", "Device (simulated)", "Output scan"];
 
   var tally = { runs: 0, open: 0, held: 0 };
   var runHistory = [];
@@ -371,9 +372,10 @@
       if (res && res.scenarios) {
         scenarios = res.scenarios;
         isOffice = (res.environment === "office");
-        stageLabels = (DM.getGateLabels && DM.getGateLabels(isOffice)) || stageLabels;
+        hwStatus = res.hardware_status || (document.body && document.body.dataset ? document.body.dataset.hwStatus : "virtual") || "virtual";
+        stageLabels = (DM.getGateLabels && DM.getGateLabels(isOffice, hwStatus)) || stageLabels;
 
-        if (railA) railA.setLabels([isOffice ? "Tool" : "Device (simulated)"]);
+        if (railA) railA.setLabels([isOffice ? "Tool" : (hwStatus !== "virtual" ? "Device" : "Device (simulated)")]);
         if (railB) railB.setLabels(stageLabels);
 
         sbNodesA = renderSandbox(document.getElementById("sandbox-without"));
@@ -393,7 +395,7 @@
     if (hostA && GL.createRail) {
       railA = GL.createRail(hostA, {
         harm: true,
-        labels: ["Device (simulated)"],
+        labels: [isOffice ? "Tool" : (hwStatus !== "virtual" ? "Device" : "Device (simulated)")],
         idle: "Ready to run.",
         captionOverride: function () {
           return [

@@ -87,8 +87,11 @@ def get_gate_index(layer: Optional[str]) -> int:
     return -1
 
 
-def get_stage_labels(env_name: str = "smart_home") -> list[str]:
-    """Returns the gate labels for the given environment."""
+def get_stage_labels(env_name: str = "smart_home", hardware_status: str = "virtual") -> list[str]:
+    """Returns the gate labels for the given environment and hardware state."""
     if env_name == "office":
         return list(STAGE_LABELS_OFFICE)
-    return list(STAGE_LABELS_SMART_HOME)
+    labels = list(STAGE_LABELS_SMART_HOME)
+    if hardware_status != "virtual":
+        labels[7] = "Device"
+    return labels
