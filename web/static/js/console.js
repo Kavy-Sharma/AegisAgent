@@ -516,6 +516,35 @@
     });
   }
 
+  function initNewSessionButton() {
+    var isRealAdmin = document.body && document.body.dataset && document.body.dataset.realRole === "admin";
+    var barRight = document.getElementById("console-bar-right") || document.getElementById("console-bar");
+    if (!isRealAdmin || !barRight || document.getElementById("new-session-btn")) return;
+
+    var btn = document.createElement("button");
+    btn.type = "button";
+    btn.id = "new-session-btn";
+    btn.className = "btn btn-sm";
+    btn.textContent = "New session";
+
+    btn.addEventListener("click", function () {
+      if (typeof api === "undefined" || !api.newSession) return;
+      btn.disabled = true;
+      api.newSession()
+        .then(function () {
+          window.location.reload();
+        })
+        .catch(function (err) {
+          btn.disabled = false;
+          if (window.app && window.app.showToast) {
+            window.app.showToast("New session failed", (err && err.message) || "Switch back to Admin to reset session.", "danger", 4500);
+          }
+        });
+    });
+
+    barRight.appendChild(btn);
+  }
+
   function init() {
     stageLabels = resolveStageLabels();
     window.addEventListener("aegis:health", function (ev) {
@@ -524,6 +553,7 @@
         stageLabels = resolveStageLabels(detail.environment, detail.hardware_status);
       }
     });
+    initNewSessionButton();
     initSuggestions();
     initForm();
   }

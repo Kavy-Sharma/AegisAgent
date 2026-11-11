@@ -10,19 +10,21 @@
       <p>Ask the agent for something. Every request is checked before any tool runs, and you can see exactly where it stopped.</p>
     </div>
 
-    <div class="console-bar">
+    <div class="console-bar" id="console-bar">
       <span class="mono">Role: {{ session.get('role', 'guest') }}</span>
-      <span class="muted" id="console-hw-label">
-        {% if active_env == 'office' %}
-        Office sandbox (simulation)
-        {% elif hardware_status == 'connected' %}
-        Hardware connected
-        {% elif hardware_status == 'unreachable' %}
-        Hardware unreachable
-        {% else %}
-        Virtual Home (simulation)
-        {% endif %}
-      </span>
+      <div class="top-r" id="console-bar-right">
+        <span class="muted" id="console-hw-label">
+          {% if active_env == 'office' %}
+          Office sandbox (simulation)
+          {% elif hardware_status == 'connected' %}
+          Hardware connected
+          {% elif hardware_status == 'unreachable' %}
+          Hardware unreachable
+          {% else %}
+          Virtual Home (simulation)
+          {% endif %}
+        </span>
+      </div>
     </div>
 
     <!-- Suggested Prompt Chips -->
