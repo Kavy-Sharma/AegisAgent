@@ -2,7 +2,8 @@
 
 **Branch:** `web-ui`  
 **Date:** 2026-10-31  
-**Auditor:** Security Audit Team  
+Note: written before UI v2 and the USB hot-plug / hardware mode changes; numbers below are from that date.  
+**Auditor:** internal self-review (not an independent audit)  
 **Scope:** Full codebase audit covering Authentication, Session Management, multi-layer Execution Pipeline, Hardware Bridging, Microcontroller Firmware, Audit Chain Integrity, Aura Voice input, and Detection Robustness.
 
 ---
@@ -11,7 +12,7 @@
 
 The AegisAgent codebase implements a multi-stage security gateway between user input and IoT hardware actuation. The core mechanisms include SHA-256 HMAC request signing, canonical approval request hashing, audit log tamper detection across concurrent multi-process logging, prompt injection detection, and role-based access control (RBAC).
 
-Phase B remediation has systematically resolved identified vulnerabilities, hardened input validation and error handling across all web endpoints, enforced hardware truth contracts, isolated rate limiting per user, bounded disk and memory utilization, and implemented external anchor verification for the hash-chained audit log.
+Phase B remediation addressed the issues found in this self-review, hardened input validation and error handling across all web endpoints, enforced hardware truth contracts, isolated rate limiting per user, bounded disk and memory utilization, and implemented external anchor verification for the hash-chained audit log.
 
 ```mermaid
 flowchart TD

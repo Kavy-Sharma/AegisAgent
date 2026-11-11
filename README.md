@@ -1,47 +1,65 @@
 # AegisAgent
 
-AegisAgent is a security gateway positioned between a local LLM agent (**Ollama**) and **IoT Hardware (ESP32)**. It protects physical smart-home hardware from malicious prompt injections, unauthorized role privilege escalation, rate-limit abuse, and unapproved critical actions.
+AegisAgent is a security gateway between a local LLM agent (Ollama) and tools/devices. It adds action-layer checks against prompt injection (OWASP LLM01) and excessive agency (LLM06).
 
 ---
 
 ## 🛡️ Architecture & Security Pipeline
 
-```
+```text
 [ User Input / Local Client ]
             │
             ▼
 ┌───────────────────────────┐
-│  Prompt Injection Engine  │ ──► Multi-View Normalizer (NFKC, Zero-Width Strip, Base64)
-│    (DetectionEngine)      │ ──► Rule-Based Detector (INJ-001..INJ-011, Noisy-OR)
-└─────────────┬─────────────┘ ──► Multi-Turn Context (Cumulative Suspicion & Split Payload)
-              │
-              ▼
-┌───────────────────────────┐
-│        Intent Lock        │ ──► Bounds Permitted Actions to Declared User Intent Scope
-│    (security/intent.py)   │ ──► Blocks Tool Execution Outside Scope Post-RBAC
+│ 1. Detection              │ ──► Multi-View Normalizer (NFKC, Zero-Width Strip, Base64)
+│    (DetectionEngine)      │ ──► Rule-Based Detector (INJ-001..INJ-011, Noisy-OR) + Context
 └─────────────┬─────────────┘
               │
               ▼
 ┌───────────────────────────┐
-│     Ollama LLM Agent      │ ──► Model Tool Calling (llama3.1)
+│ 2. Intent Lock            │ ──► Extracts User Intent Scope Before Model Call
+│    (security/intent.py)   │ ──► Prepares Permitted Tool Boundaries
 └─────────────┬─────────────┘
               │
               ▼
 ┌───────────────────────────┐
-│     Security Gateway      │ ──► 1. Tool Existence & Schema Check
-│        (gateway.py)       │ ──► 2. Role-Based Access Control (RBAC: guest / admin)
-└─────────────┬─────────────┘ ──► 3. Sliding-Window Rate Limiter
-              │               ──► 4. Human-in-the-Loop Approval (One-Time Request Hash)
-              ▼
-┌───────────────────────────┐
-│  Hardware Bridge / Broker │ ──► Hardware Bridge (default: auto -> USB ESP32 or Virtual Home)
-│     (security/hardware)   │ ──► Command Allowlist Check & 3s Door Auto-Relock
-└─────────────┬─────────────┘ ──► Physical Attack Blocked LED Trigger (2s Debounce)
+│ 3. (LLM)                  │ ──► Local Model Tool Calling (Ollama, e.g. llama3.1)
+└─────────────┬─────────────┘
               │
               ▼
 ┌───────────────────────────┐
-│        Output Scan        │ ──► Inspects Untrusted Tool Outputs (e.g. read_note)
-│     (agent/agent.py)      │ ──► Blocks Indirect Prompt Injections Before User Reply
+│ 4. RBAC + Intent Check    │ ──► Role-Based Access Control (guest / admin)
+│    (gateway / intent.py)  │ ──► Blocks Tool Execution Outside Declared User Intent Scope
+└─────────────┬─────────────┘
+              │
+              ▼
+┌───────────────────────────┐
+│ 5. Parameter Guard        │ ──► Schema & Value Constraints (path_safe, url_allowlist, sql_readonly)
+│ (security/param_guard.py) │ ──► Rejects Unsafe Arguments Before Rate Limiting
+└─────────────┬─────────────┘
+              │
+              ▼
+┌───────────────────────────┐
+│ 6. Rate Limit             │ ──► Sliding-Window Rate Limiter
+│    (rate_limiter.py)      │
+└─────────────┬─────────────┘
+              │
+              ▼
+┌───────────────────────────┐
+│ 7. Approval               │ ──► Human-in-the-Loop Authorization for HIGH-Risk Tools
+│    (approval.py)          │ ──► One-Time SHA-256 Request Hash (Fail-Closed on Timeout/Deny)
+└─────────────┬─────────────┘
+              │
+              ▼
+┌───────────────────────────┐
+│ 8. Device / Tool Bridge   │ ──► Smart Home (USB ESP32 / MQTT / Virtual Home) or OfficeSandbox
+│    (hardware / office)    │ ──► Allowlist Check, Auto-Relock & Block LED Debounce
+└─────────────┬─────────────┘
+              │
+              ▼
+┌───────────────────────────┐
+│ 9. Output Scan            │ ──► Inspects Untrusted Tool Outputs (e.g. read_note, read_file)
+│    (agent/agent.py)       │ ──► Blocks Indirect Prompt Injections Before User Reply
 └─────────────┬─────────────┘
               │
               ▼
@@ -64,7 +82,23 @@ AegisAgent is a security gateway positioned between a local LLM agent (**Ollama*
 - [x] **Phase 7** — Authenticated MQTT Hardware Bridge, ESP32 Sketch & Physical Attack LED (`security/hardware.py`, `esp32/`, `mosquitto/`)
 - [x] **Phase 8** — Web Dashboard Interface & Audit Log Page
 - [x] **Phase 9** — Attack Lab simulation & full pipeline benchmark (done)
+- [x] **UI v2** — Refreshed Console/Overview layout, Admin-to-Guest role simulator, and smart-home test controls
+- [x] **Aura Voice** — Voice interface with push-to-talk speech recognition
+- [x] **Live Weather (Open-Meteo)** — Outbound Open-Meteo integration for `read_temperature` (`AEGIS_WEATHER_ONLINE`)
+- [x] **Environment Switch** — Admin-supervised restart switch between `smart_home` and `office`
+- [x] **Hardware Mode Switch** — USB ESP32 hot-plug detection, Virtual Home fallback labels, and signed mode switch
 - [ ] **Phase 10** — Final Project Technical Report
+
+---
+
+## 📸 Screenshots
+
+![Overview](docs/screenshots/overview.jpeg)
+![Approval card with parameters (alarm 5s)](docs/screenshots/console-approval.jpeg)
+![Attack Lab](docs/screenshots/attack-lab.jpeg)
+![Audit Log](docs/screenshots/audit.jpeg)
+![Aura Voice](docs/screenshots/voice.jpeg)
+![Office Console](docs/screenshots/office-console.jpeg)
 
 ---
 
@@ -123,7 +157,7 @@ AegisAgent supports two distinct runtime environments:
    - In-memory simulated storage via `OfficeSandbox`: no real outbound emails are sent, no real filesystem files or external websites are touched, and no real database connections are established.
 
 ### Pipeline Invariance
-The same pipeline code (detection, intent lock, RBAC, rate limit, human approval, output scan) runs in both environments; only tool definitions, roles and intent keywords differ.
+The same nine-gate sequence (**Detection -> Intent lock -> (LLM) -> RBAC + intent check -> Parameter guard -> Rate limit -> Approval -> Device/Tool bridge -> Output scan**, backed by the hash-chained audit logger below) runs in both environments; only tool definitions, roles, parameter rules, and intent keywords differ.
 
 ### Parameter Guard
 A dedicated declarative parameter validation stage (`param_guard`) executes after RBAC and Intent Lock, and strictly before Rate Limiting and Operator Approval:
@@ -255,7 +289,7 @@ python -m agent.agent --role admin
 
 ## 🛠️ Testing & Harness Scripts
 
-### 1. Run Complete Automated Test Suite (341 tests)
+### 1. Run Complete Automated Test Suite (399 tests)
 ```bash
 pytest -v
 ```
@@ -324,7 +358,7 @@ Runs 80 total cases (40 attacks across 6 threat categories + honeypots, and 40 b
 
 ## 📁 Repository Structure
 
-```
+```text
 AegisAgent/
 ├── agent/
 │   ├── agent.py               # Main Agent CLI, Pipeline Dispatch & Ollama Integration
@@ -348,6 +382,7 @@ AegisAgent/
 │   ├── health.py              # Subsystem Health Checks
 │   ├── intent.py              # Intent Lock Scope Calculator
 │   ├── logger.py              # SHA-256 Tamper-Evident Audit Logger
+│   ├── param_guard.py         # Declarative Parameter Guard (Path, URL, SQL)
 │   ├── policy_loader.py       # policy.yaml Configuration Loader
 │   ├── quarantine.py          # Session Quarantine on Repeated Attacks
 │   ├── rate_limiter.py        # Sliding-Window Rate Limiter
@@ -460,3 +495,8 @@ AegisAgent/
 15. **Intent Lock keyword brittleness**: The Intent Lock is a keyword list; it blocks unknown phrasing (causing false positives on natural paraphrasing), and short words ("on", "off", "read") can match the wrong intent. Not tuned on this test set; planned improvement for the major project.
 16. **Virtual Home simulation vs. physical device**: In Virtual Home mode, 'door unlocked' means the simulation changed, not a physical device.
 17. **Weather service cloud call**: Weather answers call the Open-Meteo web service; the city name is sent to it. Everything else stays local.
+18. Automatic fallback to Virtual Home when no USB device is present is labeled in the UI but is not logged as an audit event; only the manual mode switch is logged.
+19. Virtual mode is not sticky: with no USB attached, plugging in an ESP32 later switches commands to real hardware.
+20. The hardware mode switch is an admin control-plane action (signed, audited); it does not pass through the 9 gates.
+21. A stalled ESP32 can hold the single worker for up to about 8.5 s per command; a mode-switch API call can time out (504) while the request stays queued.
+22. Attack Lab clips are AI-generated.
