@@ -1880,7 +1880,7 @@ def api_attack_lab_run():
             "quarantined": True,
         }), 423
 
-    role = session.get("role", "admin")
+    role = session.get("role", "guest")
     req_id = "lab_" + secrets.token_hex(12)
     session_id = f"lab_{secrets.token_hex(8)}"
     ts = time.time()
@@ -2558,6 +2558,58 @@ def api_approvals_decide():
 
 # 5. Direct Hardware Telemetry & Actuation
 
+_ACTUATE_ARG_SPECS = {
+    "turn_light_on": {"blink_count": (1, 10)},
+    "activate_alarm": {"duration_seconds": (1, 30)},
+}
+
+
+def _read_virtual_home_state() -> dict:
+    """Reads virtual_home_state.json safely for status display."""
+    default_state = {
+        "light": "off",
+        "light_on": False,
+        "door": "locked",
+        "door_locked": True,
+        "alarm": "off",
+        "alarm_on": False,
+        "last_command": None,
+        "updated_at": None,
+    }
+    state_file = _get_data_dir() / "virtual_home_state.json"
+    if not state_file.exists():
+        return default_state
+    try:
+        loaded = json.loads(state_file.read_text(encoding="utf-8"))
+        if isinstance(loaded, dict):
+            default_state.update(loaded)
+    except Exception:
+        pass
+    return default_state
+
+
+def _validate_actuate_args(command: str, tool_name: str, raw_args):
+    """Validates optional scalar arguments for manual hardware actuation."""
+    if raw_args is None:
+        return {}, None
+    if not isinstance(raw_args, dict):
+        return None, "Field 'args' must be a JSON object"
+    if not raw_args:
+        return {}, None
+    allowed = _ACTUATE_ARG_SPECS.get(tool_name)
+    if not allowed:
+        return None, f"Command '{command}' does not accept extra arguments"
+    clean = {}
+    for k, v in raw_args.items():
+        if k not in allowed:
+            return None, f"Unsupported argument '{k}' for command '{command}'"
+        lo, hi = allowed[k]
+        if isinstance(v, bool) or not isinstance(v, int) or v < lo or v > hi:
+            return None, f"Argument '{k}' must be an integer between {lo} and {hi}"
+        clean[k] = v
+    return clean, None
+
+
 @api_bp.route("/hardware/status", methods=["GET"])
 
 @role_required("guest")
@@ -2577,21 +2629,33 @@ def api_hardware_status():
     if transport == "usb_serial":
         bridge_type = "SerialHardwareBridge"
         hardware_mode = "usb"
+        hw_status = "connected" if is_online else "unreachable"
     elif transport == "mqtt":
         bridge_type = "HardwareBridge"
         hardware_mode = "mqtt"
+        hw_status = "connected" if is_online else "unreachable"
     elif transport == "fake":
         bridge_type = "FakeBridge"
         hardware_mode = "virtual"
+        hw_status = "virtual"
     elif transport == "virtual":
         bridge_type = "VirtualBridge"
         hardware_mode = "virtual"
+        hw_status = "virtual"
         is_online = True
     else:
-        hardware_mode = "mqtt"
+        hardware_mode, hw_status = _derive_hardware_state(dev)
+        if hw_status == "virtual":
+            bridge_type = "VirtualBridge"
+            is_online = True
+
+    simulated = (hardware_mode == "virtual")
+    device_state = _read_virtual_home_state() if simulated else None
 
     return jsonify({
         "hardware_mode": hardware_mode,
+        "hardware_status": hw_status,
+        "simulated": simulated,
         "online": is_online,
 
         "bridge_type": bridge_type,
@@ -2605,6 +2669,8 @@ def api_hardware_status():
         "device_id": dev.get("device_id"),
 
         "last_seen": dev.get("last_seen"),
+
+        "device_state": device_state,
 
     })
 
@@ -2652,6 +2718,10 @@ def api_hardware_actuate():
     if security.registry.get_tool(tool_name) is None or tool_name not in security.registry.list_tools():
         return jsonify({"error": f"Tool '{tool_name}' is not in policy registry"}), 400
 
+    clean_args, arg_err = _validate_actuate_args(command, tool_name, data.get("args"))
+    if arg_err:
+        return jsonify({"error": arg_err}), 400
+
     t0 = time.time()
 
     health = security.health.get_system_health()
@@ -2676,8 +2746,6 @@ def api_hardware_actuate():
 
 
 
-    tool_name = HARDWARE_COMMANDS[command]
-
     risk = security.registry.risk(tool_name)
     if risk is None:
         return jsonify({"error": "Tool has no risk level in policy"}), 400
@@ -2690,15 +2758,17 @@ def api_hardware_actuate():
 
     req_id = "req_" + secrets.token_hex(12)
 
+    tool_payload = {"name": tool_name, "args": clean_args} if clean_args else tool_name
+
     payload = {
 
         "id": req_id,
 
         "kind": "direct_tool",
 
-        "tool": tool_name,
+        "tool": tool_payload,
 
-        "role": session.get("role", "admin"),
+        "role": session.get("role", "guest"),
 
         "username": session.get("username", "admin"),
 
@@ -2780,11 +2850,15 @@ def api_hardware_actuate():
 
 
 
-        # LOW tools: wait up to 5s for result
+        # LOW tools: wait for outbox result (extend for serial stalls and multi-blink sequences)
+
+        wait_budget = 9.0
+        if clean_args and isinstance(clean_args.get("blink_count"), int):
+            wait_budget = min(20.0, 9.0 + max(0, clean_args["blink_count"] - 1) * 1.5)
 
         outbox_file = _get_data_dir() / "chat" / "outbox" / f"{req_id}.jsonl"
 
-        deadline = time.time() + 5.0
+        deadline = time.time() + wait_budget
 
         final_res = None
 
@@ -2823,6 +2897,9 @@ def api_hardware_actuate():
         latency_ms = round((time.time() - t0) * 1000, 1)
 
         if final_res and final_res.get("decision") == "ALLOW":
+            fresh_dev = security.health.get_system_health().get("device", {})
+            hw_mode, _ = _derive_hardware_state(fresh_dev)
+            dev_state = _read_virtual_home_state() if hw_mode == "virtual" else None
 
             return jsonify({
 
@@ -2830,9 +2907,17 @@ def api_hardware_actuate():
 
                 "command": command,
 
+                "args": clean_args,
+
                 "latency_ms": latency_ms,
 
-                "message": f"Command '{command}' successfully delivered to hardware ({latency_ms}ms)",
+                "device_state": dev_state,
+
+                "message": (
+                    f"Command '{command}' executed in Virtual Home (simulation), {latency_ms}ms"
+                    if hw_mode == "virtual"
+                    else f"Command '{command}' acknowledged by hardware, {latency_ms}ms"
+                ),
 
             })
 
@@ -2864,6 +2949,101 @@ def api_hardware_actuate():
         err_id = secrets.token_hex(4)
         security.logger.log_event("hardware_actuate_error", {"error_id": err_id, "error": str(e), "command": command})
         return jsonify({"ok": False, "error": "Failed to submit hardware actuation", "error_id": err_id}), 500
+
+
+@api_bp.route("/hardware/mode", methods=["POST"])
+@role_required("admin")
+def api_hardware_mode():
+    """Explicit admin switch between Virtual Home simulation and auto USB detection."""
+    username = session.get("username", "")
+    if security.quarantine.is_quarantined(username):
+        return jsonify({
+            "error": "Account quarantined: in containment lockdown. Admin override required.",
+            "quarantined": True,
+            "status": "blocked",
+        }), 423
+
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "Request body must be a valid JSON object"}), 400
+
+    target_mode = data.get("mode")
+    if target_mode not in ("virtual", "auto"):
+        return jsonify({"error": "Field 'mode' must be 'virtual' or 'auto'"}), 400
+
+    health = security.health.get_system_health()
+    if not bool(health.get("worker", {}).get("alive", False)):
+        return jsonify({
+            "ok": False,
+            "error": "Hardware gateway worker is offline. Start worker to switch hardware mode.",
+        }), 503
+
+    req_id = "req_" + secrets.token_hex(12)
+    payload = {
+        "id": req_id,
+        "kind": "hardware_mode",
+        "mode": target_mode,
+        "role": session.get("role", "guest"),
+        "username": username or "admin",
+        "session_id": "hardware_mode_switch",
+        "ts": time.time(),
+        "nonce": secrets.token_hex(16),
+    }
+    payload["signature"] = security.signing.sign(payload)
+
+    inbox_dir = _get_data_dir() / "chat" / "inbox"
+    inbox_dir.mkdir(parents=True, exist_ok=True)
+    inbox_file = inbox_dir / f"{req_id}.json"
+    tmp_file = inbox_dir / f"{req_id}.tmp.{secrets.token_hex(4)}"
+
+    try:
+        with open(tmp_file, "w", encoding="utf-8") as f:
+            f.write(json.dumps(payload, indent=2))
+            f.flush()
+            try:
+                os.fsync(f.fileno())
+            except Exception:
+                pass
+        os.replace(tmp_file, inbox_file)
+
+        outbox_file = _get_data_dir() / "chat" / "outbox" / f"{req_id}.jsonl"
+        deadline = time.time() + 10.0
+        final_res = None
+        while time.time() < deadline:
+            if outbox_file.exists():
+                try:
+                    for line in outbox_file.read_text(encoding="utf-8").splitlines():
+                        row = json.loads(line)
+                        if row.get("final") is True:
+                            final_res = row
+                            break
+                except Exception:
+                    pass
+                if final_res:
+                    break
+            time.sleep(0.05)
+
+        if not final_res:
+            return jsonify({"ok": False, "error": "Hardware worker did not respond in time"}), 504
+        if final_res.get("decision") != "ALLOW":
+            return jsonify({"ok": False, "error": final_res.get("error") or "Switch rejected"}), 400
+
+        fresh_dev = security.health.get_system_health().get("device", {})
+        hw_mode, hw_status = _derive_hardware_state(fresh_dev)
+        return jsonify({
+            "ok": True,
+            "mode": target_mode,
+            "hardware_mode": hw_mode,
+            "hardware_status": hw_status,
+            "simulated": hw_mode == "virtual",
+            "online": hw_status != "unreachable",
+            "port": final_res.get("port") or fresh_dev.get("port"),
+            "device_state": _read_virtual_home_state() if hw_mode == "virtual" else None,
+        })
+    except Exception as e:
+        err_id = secrets.token_hex(4)
+        security.logger.log_event("hardware_mode_error", {"error_id": err_id, "error": str(e), "mode": target_mode})
+        return jsonify({"ok": False, "error": "Failed to switch hardware mode", "error_id": err_id}), 500
 
 
 

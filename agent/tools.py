@@ -251,10 +251,29 @@ def _dispatch_command(command: str, action_name: str, fake_log: str) -> dict:
 
 
 _SEQUENCE_ABORT_EVENT = threading.Event()
+_SEQ_LOCK = threading.Lock()
+_BLINK_SEQ_ID = 0
+_ALARM_SEQ_ID = 0
+
+
+def _next_blink_seq() -> int:
+    global _BLINK_SEQ_ID
+    with _SEQ_LOCK:
+        _BLINK_SEQ_ID += 1
+        return _BLINK_SEQ_ID
+
+
+def _next_alarm_seq() -> int:
+    global _ALARM_SEQ_ID
+    with _SEQ_LOCK:
+        _ALARM_SEQ_ID += 1
+        return _ALARM_SEQ_ID
 
 
 def abort_hardware_sequences():
     """Immediately halts all in-progress hardware blink sequences and alarm workers."""
+    _next_blink_seq()
+    _next_alarm_seq()
     _SEQUENCE_ABORT_EVENT.set()
     try:
         bridge = security.hardware.get_bridge()
@@ -301,6 +320,7 @@ def turn_light_on(blink_count: int = 1) -> dict:
         cmd = "light_on"
         fake_log = "[TOOL] turn_light_on() called -> LED would turn ON"
 
+    seq_id = _next_blink_seq()
     res = _dispatch_command(cmd, action_name, fake_log)
     res["blink_count"] = count
 
@@ -308,9 +328,9 @@ def turn_light_on(blink_count: int = 1) -> dict:
         res["hardware_connected"] = True
         if count > 1:
             # Physical LED blinking loop across hardware transport (only started after verified actuation)
-            def _blink_worker():
+            def _blink_worker(my_seq=seq_id):
                 for _ in range(count):
-                    if _SEQUENCE_ABORT_EVENT.is_set() or security.hardware._bridge_instance is not bridge:
+                    if _SEQUENCE_ABORT_EVENT.is_set() or security.hardware._bridge_instance is not bridge or my_seq != _BLINK_SEQ_ID:
                         if _SEQUENCE_ABORT_EVENT.is_set() and security.hardware._bridge_instance is bridge:
                             try:
                                 bridge.publish("light_off")
@@ -318,11 +338,13 @@ def turn_light_on(blink_count: int = 1) -> dict:
                                 pass
                         break
                     try:
-                        bridge.publish("light_on")
+                        r_on = bridge.publish("light_on")
+                        if hasattr(r_on, "ok") and not r_on.ok:
+                            break
                     except Exception:
                         break
                     time.sleep(0.35)
-                    if _SEQUENCE_ABORT_EVENT.is_set() or security.hardware._bridge_instance is not bridge:
+                    if _SEQUENCE_ABORT_EVENT.is_set() or security.hardware._bridge_instance is not bridge or my_seq != _BLINK_SEQ_ID:
                         if _SEQUENCE_ABORT_EVENT.is_set() and security.hardware._bridge_instance is bridge:
                             try:
                                 bridge.publish("light_off")
@@ -330,7 +352,9 @@ def turn_light_on(blink_count: int = 1) -> dict:
                                 pass
                         break
                     try:
-                        bridge.publish("light_off")
+                        r_off = bridge.publish("light_off")
+                        if hasattr(r_off, "ok") and not r_off.ok:
+                            break
                     except Exception:
                         break
                     time.sleep(0.25)
@@ -349,6 +373,7 @@ def turn_light_off() -> dict:
 
     """Turns the LED light off."""
 
+    _next_blink_seq()
     return _dispatch_command("light_off", "light_off", "[TOOL] turn_light_off() called -> LED would turn OFF")
 
 
@@ -529,19 +554,22 @@ def activate_alarm(duration_seconds: int = 5) -> dict:
     cmd = "alarm_on"
     fake_log = f"[TOOL] activate_alarm(duration={duration}s) called -> BUZZER would sound for {duration} seconds"
 
+    alarm_seq = _next_alarm_seq()
     res = _dispatch_command(cmd, action_name, fake_log)
     res["duration_seconds"] = duration
 
     if res.get("status") == "success":
         res["hardware_connected"] = True
         if duration > 3:
-            def _alarm_worker():
+            def _alarm_worker(my_seq=alarm_seq):
                 elapsed = 0
                 while elapsed < duration:
-                    if _SEQUENCE_ABORT_EVENT.is_set() or security.hardware._bridge_instance is not bridge:
+                    if _SEQUENCE_ABORT_EVENT.is_set() or security.hardware._bridge_instance is not bridge or my_seq != _ALARM_SEQ_ID:
                         break
                     try:
-                        bridge.publish("alarm_on")
+                        r_alm = bridge.publish("alarm_on")
+                        if hasattr(r_alm, "ok") and not r_alm.ok:
+                            break
                     except Exception:
                         break
                     chunk = min(2.5, duration - elapsed)

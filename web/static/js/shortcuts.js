@@ -55,7 +55,7 @@
 
     // 4. '/': Focus chat composer input
     if (e.key === "/" && !e.ctrlKey && !e.altKey && !e.metaKey) {
-      var composerInput = document.getElementById("chat-textarea");
+      var composerInput = document.getElementById("ask") || document.getElementById("chat-textarea");
       if (composerInput) {
         e.preventDefault();
         composerInput.focus();

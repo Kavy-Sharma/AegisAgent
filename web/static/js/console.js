@@ -297,7 +297,7 @@
           }
           lastTickMs = now;
 
-          if (waitBudgetMs > MODEL_TIMEOUT_MS || (postApprovalStartMs && (now - postApprovalStartMs > 20000))) {
+          if (waitBudgetMs > MODEL_TIMEOUT_MS || (postApprovalStartMs && (now - postApprovalStartMs > 25000))) {
             failWithTimeout("No answer from the model. Try again.", "Timed out waiting for response.");
             return;
           }
@@ -442,6 +442,9 @@
               say: say,
               why: why
             });
+            if (isNotDone || dec === "ERROR") {
+              showRetryButton(host, text);
+            }
             scrollThreadToBottom();
           }
         } catch (pollErr) {

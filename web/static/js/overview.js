@@ -327,28 +327,181 @@
     }
   }
 
-  function initSandboxControls() {
-    var doorBtn = document.getElementById("toggle-door-btn");
-    if (doorBtn) {
-      doorBtn.addEventListener("click", function () {
-        if (typeof api !== "undefined" && api.post) {
-          api.post("/api/hardware/actuate", { command: "TOGGLE_DOOR" })
-            .then(function () { if (typeof showToast === "function") showToast("Door Action", "Front door command dispatched.", "info"); })
-            .catch(function () {});
+  function setSandboxFeedback(kind, text, linkHref, linkLabel) {
+    var fb = document.getElementById("sandbox-feedback");
+    if (!fb) return;
+    fb.className = "sandbox-feedback";
+    if (kind === "ok") fb.classList.add("is-ok");
+    else if (kind === "wait") fb.classList.add("is-wait");
+    else if (kind === "bad") fb.classList.add("is-bad");
+    while (fb.firstChild) fb.removeChild(fb.firstChild);
+    fb.appendChild(document.createTextNode(text));
+    if (linkHref && linkLabel) {
+      var a = document.createElement("a");
+      a.className = "sandbox-feedback-link";
+      a.href = linkHref;
+      a.textContent = linkLabel;
+      fb.appendChild(a);
+    }
+  }
+
+  function applyHardwareStatusUI(st) {
+    if (!st) return;
+    var summaryEl = document.getElementById("sandbox-details-summary");
+    var statusBar = document.getElementById("hw-status-bar");
+    var envName = (statusBar && statusBar.dataset && statusBar.dataset.env) || "smart_home";
+    var hwStatus = st.hardware_status || (st.simulated || st.hardware_mode === "virtual" ? "virtual" : (st.online ? "connected" : "unreachable"));
+
+    if (summaryEl && envName !== "office") {
+      summaryEl.textContent = hwStatus === "virtual" ? "Virtual Home controls (testing)" : "Hardware controls (testing)";
+    }
+
+    var pill = document.getElementById("hw-conn-pill");
+    if (pill) {
+      pill.className = "hw-state-badge";
+      if (hwStatus === "virtual") {
+        pill.textContent = "Virtual Home (simulation)";
+      } else if (hwStatus === "connected") {
+        pill.classList.add("is-ok");
+        var portTxt = st.port && st.port !== "virtual" && st.port !== "unknown" ? " · " + st.port : "";
+        pill.textContent = (st.hardware_mode === "usb" ? "USB Serial" : "Hardware") + portTxt + " (online)";
+      } else {
+        pill.classList.add("is-bad");
+        var offPort = st.port && st.port !== "virtual" && st.port !== "unknown" ? " · " + st.port : "";
+        pill.textContent = (st.hardware_mode === "usb" ? "USB Serial" : "Hardware") + offPort + " (unreachable)";
+      }
+    }
+
+    var chips = document.getElementById("hw-state-chips");
+    if (chips) {
+      if (st.simulated && st.device_state) {
+        chips.classList.remove("is-hidden");
+        var lightEl = document.getElementById("hw-state-light");
+        if (lightEl) {
+          var lOn = !!st.device_state.light_on;
+          lightEl.textContent = "Light: " + (lOn ? "On" : "Off");
+          lightEl.className = "hw-state-badge" + (lOn ? " is-ok" : "");
         }
+        var doorEl = document.getElementById("hw-state-door");
+        if (doorEl) {
+          var dOpen = st.device_state.door_locked === false || st.device_state.door === "unlocked";
+          doorEl.textContent = "Door: " + (dOpen ? "Unlocked" : "Locked");
+          doorEl.className = "hw-state-badge" + (dOpen ? " is-warn" : "");
+        }
+        var alarmEl = document.getElementById("hw-state-alarm");
+        if (alarmEl) {
+          var aOn = !!st.device_state.alarm_on;
+          alarmEl.textContent = "Alarm: " + (aOn ? "Sounding" : "Off");
+          alarmEl.className = "hw-state-badge" + (aOn ? " is-bad" : "");
+        }
+      } else {
+        chips.classList.add("is-hidden");
+      }
+    }
+
+    var useVirtBtn = document.getElementById("hw-use-virtual-btn");
+    if (useVirtBtn) {
+      useVirtBtn.classList.toggle("is-hidden", hwStatus === "virtual");
+    }
+    var detectUsbBtn = document.getElementById("hw-detect-usb-btn");
+    if (detectUsbBtn) {
+      detectUsbBtn.classList.toggle("is-hidden", hwStatus !== "virtual");
+    }
+  }
+
+  function refreshHardwareStatus() {
+    if (typeof api === "undefined" || !api.get) return Promise.resolve();
+    if (!document.getElementById("hw-status-bar")) return Promise.resolve();
+    return api.get("/api/hardware/status")
+      .then(applyHardwareStatusUI)
+      .catch(function () {});
+  }
+
+  function initSandboxControls() {
+    var detailsEl = document.getElementById("sandbox-details");
+    if (detailsEl) {
+      var hwButtons = detailsEl.querySelectorAll("[data-hw-cmd]");
+      Array.prototype.forEach.call(hwButtons, function (btn) {
+        btn.addEventListener("click", function () {
+          if (typeof api === "undefined" || !api.post) return;
+          var cmd = btn.getAttribute("data-hw-cmd");
+          var body = { command: cmd };
+          var blinkRaw = btn.getAttribute("data-blink-count");
+          var durRaw = btn.getAttribute("data-duration-seconds");
+          if (blinkRaw) {
+            body.args = { blink_count: parseInt(blinkRaw, 10) };
+          } else if (durRaw) {
+            body.args = { duration_seconds: parseInt(durRaw, 10) };
+          }
+
+          btn.disabled = true;
+          api.post("/api/hardware/actuate", body)
+            .then(function (res) {
+              btn.disabled = false;
+              if (res && res.status === "pending_approval") {
+                var waitMsg = "Approval required for '" + cmd + "' (" + (res.request_id || "pending") + "). ";
+                setSandboxFeedback("wait", waitMsg, "/approvals", "Review in Approvals \u2192");
+                if (typeof showToast === "function") showToast("Approval Required", res.message || waitMsg, "warn");
+              } else {
+                var okMsg = (res && res.message) || ("Command '" + cmd + "' executed.");
+                setSandboxFeedback("ok", okMsg);
+                if (res && res.device_state) {
+                  applyHardwareStatusUI({ simulated: true, hardware_mode: "virtual", hardware_status: "virtual", device_state: res.device_state });
+                } else {
+                  refreshHardwareStatus();
+                }
+                if (typeof showToast === "function") showToast("Hardware Action", okMsg, "info");
+              }
+            })
+            .catch(function (err) {
+              btn.disabled = false;
+              var errMsg = (err && err.message) || "Hardware actuation failed.";
+              setSandboxFeedback("bad", errMsg);
+              if (typeof showToast === "function") showToast("Action Failed", errMsg, "error");
+            });
+        });
       });
     }
 
-    var alarmBtn = document.getElementById("toggle-alarm-btn");
-    if (alarmBtn) {
-      alarmBtn.addEventListener("click", function () {
-        if (typeof api !== "undefined" && api.post) {
-          api.post("/api/hardware/actuate", { command: "TOGGLE_ALARM" })
-            .then(function () { if (typeof showToast === "function") showToast("Alarm Action", "Security alarm command dispatched.", "warn"); })
-            .catch(function () {});
-        }
+    var refreshBtn = document.getElementById("hw-refresh-btn");
+    if (refreshBtn) {
+      refreshBtn.addEventListener("click", function () {
+        refreshBtn.disabled = true;
+        refreshHardwareStatus().then(function () {
+          refreshBtn.disabled = false;
+          setSandboxFeedback("ok", "Device status refreshed.");
+        });
       });
     }
+
+    ["hw-use-virtual-btn", "hw-detect-usb-btn"].forEach(function (btnId) {
+      var modeBtn = document.getElementById(btnId);
+      if (!modeBtn) return;
+      modeBtn.addEventListener("click", function () {
+        if (typeof api === "undefined" || !api.post) return;
+        var mode = modeBtn.getAttribute("data-hw-mode") || "virtual";
+        modeBtn.disabled = true;
+        api.post("/api/hardware/mode", { mode: mode })
+          .then(function (res) {
+            modeBtn.disabled = false;
+            applyHardwareStatusUI(res);
+            if (typeof window.__aegisRefreshHealth === "function") window.__aegisRefreshHealth();
+            var msg = (res && res.hardware_status === "connected")
+              ? ("Connected to USB hardware on " + (res.port || "USB") + ".")
+              : (res && res.hardware_status === "virtual"
+                ? (mode === "auto" ? "No USB hardware detected; running Virtual Home (simulation)." : "Switched to Virtual Home (simulation).")
+                : "Hardware status updated.");
+            setSandboxFeedback("ok", msg);
+            if (typeof showToast === "function") showToast("Hardware Mode", msg, "info");
+          })
+          .catch(function (err) {
+            modeBtn.disabled = false;
+            var errMsg = (err && err.message) || "Could not switch hardware mode.";
+            setSandboxFeedback("bad", errMsg);
+            if (typeof showToast === "function") showToast("Mode Switch Failed", errMsg, "error");
+          });
+      });
+    });
 
     var resetBtn = document.getElementById("reset-sandbox-btn");
     if (resetBtn) {
@@ -360,6 +513,11 @@
         }
       });
     }
+
+    window.addEventListener("aegis:health", function () {
+      refreshHardwareStatus();
+    });
+    refreshHardwareStatus();
   }
 
   function loadData() {

@@ -17,6 +17,7 @@
     var btn = document.getElementById("sim-chip");
     var dropdown = document.getElementById("env-dropdown");
     var switchBtn = document.getElementById("btn-env-switch");
+    var hwSwitchBtn = document.getElementById("btn-hw-mode-switch");
     var currentLabel = document.getElementById("env-current-label");
     var confirmModal = document.getElementById("env-confirm-modal");
     var confirmDesc = document.getElementById("env-confirm-desc");
@@ -73,15 +74,54 @@
       var d = ev && ev.detail;
       if (!d) return;
       var envName = d.environment || "smart_home";
+      var hwStatus = d.hardware_status || (
+        (d.hardware_mode === "virtual" || (d.device && d.device.transport === "virtual"))
+          ? "virtual"
+          : (d.device && (d.device.status === "online" || d.device.connected) ? "connected" : "unreachable")
+      );
       var nextTarget = (envName === "office") ? "smart_home" : "office";
       if (currentLabel) {
-        currentLabel.textContent = (envName === "office") ? "Office sandbox (office)" : "Virtual Home (smart_home)";
+        currentLabel.textContent = (envName === "office")
+          ? "Office sandbox (office)"
+          : (hwStatus === "connected" ? "USB Hardware (smart_home)" : (hwStatus === "unreachable" ? "Hardware unreachable (smart_home)" : "Virtual Home (smart_home)"));
+      }
+      if (hwSwitchBtn) {
+        if (envName === "office") {
+          hwSwitchBtn.classList.add("is-hidden");
+        } else {
+          hwSwitchBtn.classList.remove("is-hidden");
+          var nextHw = (hwStatus === "virtual") ? "auto" : "virtual";
+          hwSwitchBtn.setAttribute("data-hw-target", nextHw);
+          hwSwitchBtn.textContent = (nextHw === "auto") ? "Detect USB hardware" : "Use Virtual Home (simulation)";
+        }
       }
       if (switchBtn) {
         switchBtn.setAttribute("data-target-env", nextTarget);
         switchBtn.textContent = (nextTarget === "office") ? "Switch to Office" : "Switch to Smart Home";
       }
     });
+
+    if (hwSwitchBtn) {
+      hwSwitchBtn.addEventListener("click", function () {
+        var targetMode = hwSwitchBtn.getAttribute("data-hw-target") || "virtual";
+        if (typeof api === "undefined" || !api.post) return;
+        hwSwitchBtn.disabled = true;
+        closeMenu();
+        api.post("/api/hardware/mode", { mode: targetMode })
+          .then(function (res) {
+            hwSwitchBtn.disabled = false;
+            var label = (res && res.hardware_status === "connected")
+              ? ("Connected to USB hardware (" + (res.port || "USB") + ").")
+              : "Switched to Virtual Home (simulation).";
+            showNotice("Hardware Mode", label, "info");
+            if (typeof window.__aegisRefreshHealth === "function") window.__aegisRefreshHealth();
+          })
+          .catch(function (err) {
+            hwSwitchBtn.disabled = false;
+            showNotice("Hardware Switch Failed", (err && err.message) || "Could not switch hardware mode.", "danger");
+          });
+      });
+    }
 
     function showNotice(title, msg, kind) {
       if (window.app && window.app.showToast) {
@@ -325,6 +365,7 @@
         .catch(function () {});
     }
 
+    window.__aegisRefreshHealth = updateHealth;
     updateHealth();
     setInterval(updateHealth, 5000);
   }

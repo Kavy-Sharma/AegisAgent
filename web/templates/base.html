@@ -48,6 +48,9 @@
               <div class="user-dropdown-subhead">Environment</div>
               <div class="env-dropdown-current" id="env-current-label">{% if active_env == 'office' %}Office sandbox (office){% else %}Virtual Home (smart_home){% endif %}</div>
             </div>
+            <button type="button" class="btn full-width{% if active_env == 'office' %} is-hidden{% endif %}" id="btn-hw-mode-switch" role="menuitem" data-hw-target="{% if hardware_status == 'virtual' %}auto{% else %}virtual{% endif %}">
+              {% if hardware_status == 'virtual' %}Detect USB hardware{% else %}Use Virtual Home (simulation){% endif %}
+            </button>
             <button type="button" class="btn full-width" id="btn-env-switch" role="menuitem" data-target-env="{% if active_env == 'office' %}smart_home{% else %}office{% endif %}">
               {% if active_env == 'office' %}Switch to Smart Home{% else %}Switch to Office{% endif %}
             </button>
@@ -73,6 +76,19 @@
             <div class="user-dropdown-header">
               <div class="user-dropdown-name">Signed in as {{ session.get('username', 'User') }} ({{ session.get('role', 'guest') }})</div>
             </div>
+
+            {% if session.get('real_role') == 'admin' %}
+            <div class="user-dropdown-section">
+              <div class="user-dropdown-subhead">Demo role</div>
+              <div class="health-text-line">
+                <span>Active role</span>
+                <span id="current-sim-role">{{ session.get('role', 'admin') }}</span>
+              </div>
+              <button type="button" class="btn full-width" id="role-toggle-btn">
+                {% if session.get('role') == 'admin' %}Switch to Guest mode{% else %}Switch back to Admin{% endif %}
+              </button>
+            </div>
+            {% endif %}
 
             <div class="user-dropdown-footer">
               <form action="/logout" method="POST">

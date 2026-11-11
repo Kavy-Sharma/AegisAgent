@@ -124,14 +124,76 @@
         <button type="button" class="btn btn-sm" id="reset-sandbox-btn">Reset Sandbox</button>
       </div>
       {% else %}
-      <div class="sandbox-control-card">
-        <span>Front Door</span>
-        <button type="button" class="btn btn-sm" id="toggle-door-btn">Toggle Door</button>
+      <div class="hw-status-bar" id="hw-status-bar" data-env="{{ active_env or 'smart_home' }}">
+        <div class="hw-telemetry-group">
+          <span class="hw-state-badge" id="hw-conn-pill">{% if hardware_status == 'connected' %}Hardware connected{% elif hardware_status == 'unreachable' %}Hardware unreachable{% else %}Virtual Home (simulation){% endif %}</span>
+          <div class="hw-state-chips{% if hardware_status != 'virtual' %} is-hidden{% endif %}" id="hw-state-chips">
+            <span class="hw-state-badge" id="hw-state-light">Light: Off</span>
+            <span class="hw-state-badge" id="hw-state-door">Door: Locked</span>
+            <span class="hw-state-badge" id="hw-state-alarm">Alarm: Off</span>
+          </div>
+        </div>
+        <div class="hw-actions-group">
+          {% if session.get('role') == 'admin' %}
+          <button type="button" class="btn btn-sm{% if hardware_status == 'virtual' %} is-hidden{% endif %}" id="hw-use-virtual-btn" data-hw-mode="virtual">Use Virtual Home</button>
+          <button type="button" class="btn btn-sm{% if hardware_status != 'virtual' %} is-hidden{% endif %}" id="hw-detect-usb-btn" data-hw-mode="auto">Detect USB</button>
+          {% endif %}
+          <button type="button" class="btn btn-sm" id="hw-refresh-btn">Refresh status</button>
+        </div>
       </div>
-      <div class="sandbox-control-card">
-        <span>Security Alarm</span>
-        <button type="button" class="btn btn-sm" id="toggle-alarm-btn">Toggle Alarm</button>
+
+      {% if session.get('role') != 'admin' %}
+      <p class="sandbox-role-note">Admin role is required to actuate smart home devices (current role: {{ session.get('role', 'guest') }}).</p>
+      {% endif %}
+
+      <div class="sandbox-controls-grid sandbox-smart-home-grid">
+        <div class="sandbox-control-card sandbox-control-stack">
+          <div class="sandbox-card-head">
+            <span class="sandbox-card-title">Smart Light</span>
+            <span class="sandbox-risk-tag risk-low">LOW</span>
+          </div>
+          <div class="sandbox-btn-row">
+            <button type="button" class="btn btn-sm" id="ctrl-light-on-btn" data-hw-cmd="light_on"{% if session.get('role') != 'admin' %} disabled{% endif %}>Light ON</button>
+            <button type="button" class="btn btn-sm" id="ctrl-light-off-btn" data-hw-cmd="light_off"{% if session.get('role') != 'admin' %} disabled{% endif %}>Light OFF</button>
+          </div>
+        </div>
+
+        <div class="sandbox-control-card sandbox-control-stack">
+          <div class="sandbox-card-head">
+            <span class="sandbox-card-title">Blink Patterns</span>
+            <span class="sandbox-risk-tag risk-low">LOW</span>
+          </div>
+          <div class="sandbox-btn-row">
+            <button type="button" class="btn btn-sm" id="ctrl-blink-2-btn" data-hw-cmd="light_on" data-blink-count="2"{% if session.get('role') != 'admin' %} disabled{% endif %}>Blink 2&times;</button>
+            <button type="button" class="btn btn-sm" id="ctrl-blink-4-btn" data-hw-cmd="light_on" data-blink-count="4"{% if session.get('role') != 'admin' %} disabled{% endif %}>Blink 4&times;</button>
+            <button type="button" class="btn btn-sm" id="ctrl-blink-8-btn" data-hw-cmd="light_on" data-blink-count="8"{% if session.get('role') != 'admin' %} disabled{% endif %}>Blink 8&times;</button>
+          </div>
+        </div>
+
+        <div class="sandbox-control-card sandbox-control-stack">
+          <div class="sandbox-card-head">
+            <span class="sandbox-card-title">Front Door</span>
+            <span class="sandbox-risk-tag risk-high">Approval</span>
+          </div>
+          <div class="sandbox-btn-row">
+            <button type="button" class="btn btn-sm" id="ctrl-unlock-door-btn" data-hw-cmd="unlock_door"{% if session.get('role') != 'admin' %} disabled{% endif %}>Unlock Door</button>
+          </div>
+        </div>
+
+        <div class="sandbox-control-card sandbox-control-stack">
+          <div class="sandbox-card-head">
+            <span class="sandbox-card-title">Security Alarm</span>
+            <span class="sandbox-risk-tag risk-high">Approval</span>
+          </div>
+          <div class="sandbox-btn-row">
+            <button type="button" class="btn btn-sm" id="ctrl-alarm-3s-btn" data-hw-cmd="alarm_on" data-duration-seconds="3"{% if session.get('role') != 'admin' %} disabled{% endif %}>Alarm 3s</button>
+            <button type="button" class="btn btn-sm" id="ctrl-alarm-5s-btn" data-hw-cmd="alarm_on" data-duration-seconds="5"{% if session.get('role') != 'admin' %} disabled{% endif %}>Alarm 5s</button>
+            <button type="button" class="btn btn-sm" id="ctrl-alarm-10s-btn" data-hw-cmd="alarm_on" data-duration-seconds="10"{% if session.get('role') != 'admin' %} disabled{% endif %}>Alarm 10s</button>
+          </div>
+        </div>
       </div>
+
+      <div class="sandbox-feedback is-hidden" id="sandbox-feedback" role="status" aria-live="polite"></div>
       {% endif %}
     </div>
   </details>

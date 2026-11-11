@@ -111,6 +111,7 @@ class DeviceStatusSubscriber:
                 current["broker_connected"] = bool(self.broker_connected)
                 current["simulated"] = False
                 if active_bridge:
+                    current["device_id"] = str(getattr(active_bridge, "device_id", "esp32-01"))
                     if hasattr(active_bridge, "transport"):
                         current["transport"] = str(active_bridge.transport)
                     if hasattr(active_bridge, "port"):
@@ -285,12 +286,36 @@ class WorkerHeartbeatThread(threading.Thread):
             hw_cfg = security.policy_loader.POLICY.get("hardware", {})
             mode = hw_cfg.get("mode", "auto")
             if mode in ("auto", "serial"):
+                prev_transport = None
+                st_file = self.data_dir / "device_status.json"
+                if st_file.exists():
+                    try:
+                        prev_transport = json.loads(st_file.read_text(encoding="utf-8")).get("transport")
+                    except Exception:
+                        pass
+
                 bridge = security.hardware.get_bridge()
                 if isinstance(bridge, security.hardware.SerialHardwareBridge) and hasattr(bridge, "is_device_online"):
                     is_on = bridge.is_device_online()
-                    if hasattr(self, "subscriber") and self.subscriber:
-                        self.subscriber.broker_connected = True
-                        self.subscriber._write_device_status(is_online=is_on)
+                    if not is_on and mode == "auto":
+                        bridge = security.hardware.get_bridge()
+                    if isinstance(bridge, security.hardware.SerialHardwareBridge):
+                        if hasattr(self, "subscriber") and self.subscriber:
+                            self.subscriber.broker_connected = True
+                            self.subscriber._write_device_status(is_online=is_on)
+                        if prev_transport == "virtual":
+                            print(
+                                f"[WORKER] USB Serial hardware hot-detected "
+                                f"(port={getattr(bridge, 'port', 'unknown')}, online={is_on})"
+                            )
+                        return
+
+                if getattr(bridge, "transport", None) == "virtual" and hasattr(self, "subscriber") and self.subscriber:
+                    is_on = bridge.is_device_online() if hasattr(bridge, "is_device_online") else True
+                    self.subscriber.broker_connected = False
+                    self.subscriber._write_device_status(is_online=is_on)
+                    if prev_transport and prev_transport != "virtual":
+                        print("[WORKER] USB hardware disconnected -> reverted to Virtual Home (simulation)")
         except Exception:
             pass
 
@@ -553,6 +578,89 @@ def _process_direct_tool(req: dict, emit, outbox_file: Path):
         f.flush()
 
 
+def _process_hardware_mode(req: dict, outbox_file: Path, device_subscriber: DeviceStatusSubscriber | None = None):
+    """Switches active hardware transport between 'virtual' (simulation) and 'auto' (USB scan)."""
+    req_id = req.get("id", "")
+    role = req.get("role", "guest")
+    username = req.get("username", "guest")
+    target = str(req.get("mode", "")).strip().lower()
+
+    if role != "admin" or target not in ("virtual", "auto"):
+        err_msg = "Admin role required" if role != "admin" else f"Invalid hardware mode '{target}'"
+        final = {
+            "decision": "BLOCK",
+            "error": err_msg,
+            "final": True,
+            "reply": err_msg,
+            "request_id": req_id,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+        with open(outbox_file, "a", encoding="utf-8") as f:
+            f.write(json.dumps(final) + "\n")
+            f.flush()
+        return
+
+    old_bridge = getattr(security.hardware, "_bridge_instance", None)
+    from_transport = getattr(old_bridge, "transport", "unknown") if old_bridge else "none"
+    if isinstance(old_bridge, security.hardware.SerialHardwareBridge) and getattr(old_bridge, "_serial", None):
+        try:
+            old_bridge._serial.close()
+        except Exception:
+            pass
+        old_bridge._serial = None
+
+    if target == "virtual":
+        usb_ports = security.hardware.find_usb_serial_ports()
+        if not usb_ports:
+            # Keep auto hot-plug active when no USB cable is currently attached
+            security.hardware.set_bridge(None)
+            bridge = security.hardware.get_bridge()
+        else:
+            from security.virtual_home import VirtualBridge
+            bridge = VirtualBridge()
+            security.hardware.set_bridge(bridge)
+        is_on = bridge.is_device_online() if hasattr(bridge, "is_device_online") else True
+        if device_subscriber:
+            device_subscriber.broker_connected = False
+            device_subscriber._write_device_status(is_online=is_on)
+    else:
+        security.hardware.set_bridge(None)
+        bridge = security.hardware.get_bridge()
+        is_on = bridge.is_device_online() if hasattr(bridge, "is_device_online") else False
+        if device_subscriber:
+            device_subscriber.broker_connected = getattr(bridge, "transport", None) != "virtual"
+            device_subscriber._write_device_status(is_online=is_on)
+
+    to_transport = getattr(bridge, "transport", "virtual")
+    hw_port = getattr(bridge, "port", "virtual")
+    security.logger.log_event(
+        "hardware_mode_switch",
+        {
+            "username": username,
+            "from": from_transport,
+            "to": target,
+            "transport": to_transport,
+            "port": hw_port,
+            "online": bool(is_on),
+        },
+    )
+
+    final = {
+        "decision": "ALLOW",
+        "error": None,
+        "final": True,
+        "mode": target,
+        "transport": to_transport,
+        "port": hw_port,
+        "online": bool(is_on),
+        "request_id": req_id,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+    with open(outbox_file, "a", encoding="utf-8") as f:
+        f.write(json.dumps(final) + "\n")
+        f.flush()
+
+
 def _process_attack_lab(req: dict, emit, outbox_file: Path):
     import security.attack_lab
     scenario_id = req.get("scenario_id", "")
@@ -779,7 +887,7 @@ def run_worker():
 
             # Validate kind
             kind = req.get("kind", "chat")
-            is_kind_valid = kind in ("chat", "direct_tool", "attack_lab")
+            is_kind_valid = kind in ("chat", "direct_tool", "attack_lab", "hardware_mode")
 
             # Validate role defined in policy.yaml
             valid_roles = set(security.policy_loader.POLICY.get("roles", {}).keys())
@@ -890,6 +998,8 @@ def run_worker():
             try:
                 if kind == "direct_tool":
                     _process_direct_tool(req, emit, outbox_file)
+                elif kind == "hardware_mode":
+                    _process_hardware_mode(req, outbox_file, device_subscriber)
                 elif kind == "attack_lab":
                     _process_attack_lab(req, emit, outbox_file)
                 else:

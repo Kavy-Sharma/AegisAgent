@@ -896,6 +896,7 @@ class SerialHardwareBridge:
 
         self.device_online = False
         self._ping_acked_this_session = (self.port_setting == "COM_FAKE")
+        self._missed_pings = 0
         self._lock = threading.RLock()
 
 
@@ -961,57 +962,11 @@ class SerialHardwareBridge:
 
 
     def _detect_port(self) -> str | None:
-
-
-
-        try:
-
-
-
-            import serial.tools.list_ports
-
-
-
-            ports = list(serial.tools.list_ports.comports())
-
-
-
-            for p in ports:
-
-
-
-                desc = (p.description or "").lower()
-
-
-
-                hwid = (p.hwid or "").lower()
-
-
-
-                if any(k in desc or k in hwid for k in ["cp21", "ch34", "ch91", "ftdi", "usb to uart", "esp32", "silicon labs", "usb serial", "usb-serial", "pl2303", "usb single serial"]):
-
-
-
-                    self._detected_desc = p.description
-
-
-
-                    return p.device
-
-
-
-
-
-
-
-        except Exception:
-
-
-
-            pass
-
-
-
+        matches = _match_usb_serial_ports()
+        if matches:
+            dev, desc = matches[0]
+            self._detected_desc = desc
+            return dev
         return None
 
 
@@ -1198,121 +1153,71 @@ class SerialHardwareBridge:
 
         with self._lock:
 
-
-
             now = time.time()
+            cache_ttl = 5.0 if self.device_online else 2.0
 
-
-
-            if now - self._last_ping_time < 3.0:
-
-
-
+            if now - self._last_ping_time < cache_ttl:
                 return self.device_online
-
-
 
             if not self._serial or not getattr(self._serial, "is_open", False):
 
-
-
                 if not self._try_connect():
-
-
-
                     self.device_online = False
-
-
-
+                    self._missed_pings = 0
                     self._last_ping_time = now
-
-
-
                     return False
-
-
 
             try:
 
-
+                # Allow newly-opened USB serial devices (e.g. ESP32 DTR/RTS reset) to boot before ping
+                if getattr(self, "_last_opened_at", 0.0) and (time.time() - self._last_opened_at < 1.4):
+                    time.sleep(max(0.05, 1.4 - (time.time() - self._last_opened_at)))
 
                 try:
-
-
-
                     self._serial.reset_input_buffer()
-
-
-
                 except Exception:
-
-
-
                     pass
-
-
 
                 self._serial.write(b"ping\n")
 
-
-
                 t0 = time.time()
-
-
-
+                deadline = t0 + 6.0
+                max_deadline = t0 + 8.0
                 ack_found = False
+                raw_buf = ""
 
-
-
-                while time.time() - t0 < 0.8:
-
-
-
+                while time.time() < deadline:
                     if self._serial.in_waiting:
-
-
-
                         chunk = self._serial.read(self._serial.in_waiting).decode("utf-8", errors="ignore")
-
-
-
-                        if any(k in chunk for k in ("STATUS:online", "ping_ack", "EVENT:", "USB_RECV:")):
+                        raw_buf += chunk
+                        if any(k in raw_buf for k in ("STATUS:online", "ping_ack", "EVENT:", "USB_RECV:")):
                             ack_found = True
-
-
-
-
-
-
-
                             break
-
-
+                        if "MQTT " in raw_buf and deadline < max_deadline:
+                            deadline = max(deadline, min(max_deadline, time.time() + 3.0))
 
                     time.sleep(0.02)
 
-
-
-                self.device_online = ack_found
-
-
+                if ack_found:
+                    self._missed_pings = 0
+                    self.device_online = True
+                    self._ping_acked_this_session = True
+                else:
+                    curr_port = self._detected_port or self.port_setting
+                    port_present = bool(curr_port and curr_port in find_usb_serial_ports())
+                    if self.device_online and port_present and getattr(self, "_missed_pings", 0) < 1:
+                        self._missed_pings = getattr(self, "_missed_pings", 0) + 1
+                    else:
+                        self._missed_pings = getattr(self, "_missed_pings", 0) + 1
+                        self.device_online = False
 
                 self._last_ping_time = now
-
-
-
                 return self.device_online
-
-
 
             except Exception:
 
-
-
                 self.device_online = False
-
-
-
+                self._missed_pings = getattr(self, "_missed_pings", 0) + 1
                 self._last_ping_time = now
 
 
@@ -1417,15 +1322,19 @@ class SerialHardwareBridge:
                         pass
                     self._serial.write(b"ping\n")
                     t_ping = time.time()
+                    ping_deadline = t_ping + 6.0
+                    ping_max = t_ping + 8.0
                     p_ack = False
                     p_buf = ""
-                    while time.time() - t_ping < 0.8:
+                    while time.time() < ping_deadline:
                         if self._serial.in_waiting:
                             chunk = self._serial.read(self._serial.in_waiting).decode("utf-8", errors="ignore")
                             p_buf += chunk
                             if "EVENT: ping_ack" in p_buf or "ping_ack" in p_buf:
                                 p_ack = True
                                 break
+                            if "MQTT " in p_buf and ping_deadline < ping_max:
+                                ping_deadline = max(ping_deadline, min(ping_max, time.time() + 3.0))
                         time.sleep(0.02)
                     if not p_ack:
                         self.device_online = False
@@ -1475,56 +1384,29 @@ class SerialHardwareBridge:
 
 
                 t0 = time.time()
-
-
-
+                ack_deadline = t0 + 6.5
+                ack_max = t0 + 8.5
                 ack_found = False
-
-
-
                 raw_buffer = ""
 
-
-
-                while time.time() - t0 < 0.8:
-
-
-
+                while time.time() < ack_deadline:
                     if self._serial.in_waiting:
-
-
-
                         chunk = self._serial.read(self._serial.in_waiting).decode("utf-8", errors="ignore")
-
-
-
                         raw_buffer += chunk
-
                         if expected_ack and _serial_ack_ok(raw_buffer, expected_ack):
                             ack_found = True
                             break
-
+                        if "MQTT " in raw_buffer and ack_deadline < ack_max:
+                            ack_deadline = max(ack_deadline, min(ack_max, time.time() + 3.0))
                     time.sleep(0.02)
 
-
-
                 if not ack_found:
-
-
-
                     self.device_online = False
-
-
-
                     logger.log_hardware_command(command, False, "no ACK from device")
-
-
-
                     return HardwareCommandResult(ok=False, error="no ACK from device")
 
-
-
                 self.device_online = True
+                self._missed_pings = 0
                 if command == "ping":
                     self._ping_acked_this_session = True
                 logger.log_hardware_command(command, True, None)
@@ -1575,29 +1457,53 @@ class SerialHardwareBridge:
 
 
 
+def _match_usb_serial_ports(hw_cfg: dict | None = None) -> list[tuple[str, str]]:
+    """Returns matching [(device, description), ...] for known ESP32/USB-UART adapters."""
+    if hw_cfg is None:
+        hw_cfg = policy_loader.POLICY.get("hardware", {})
+    try:
+        import serial.tools.list_ports
+
+        ports = list(serial.tools.list_ports.comports())
+        vid_pids = [str(v).lower() for v in hw_cfg.get("vid_pid", []) if v]
+        usb_hints = [
+            "cp21", "ch34", "ch91", "ftdi", "usb to uart", "esp32",
+            "silicon labs", "usb serial", "usb-serial", "pl2303", "usb single serial",
+        ] + vid_pids
+        matched = []
+        for p in ports:
+            desc = (p.description or "").lower()
+            hwid = (p.hwid or "").lower()
+            vid = getattr(p, "vid", None)
+            pid = getattr(p, "pid", None)
+            vp_str = f"{vid:04x}:{pid:04x}" if isinstance(vid, int) and isinstance(pid, int) else ""
+            if any(k in desc or k in hwid or (vp_str and k == vp_str) for k in usb_hints):
+                matched.append((p.device, p.description or "USB Serial ESP32 Device"))
+        return matched
+    except Exception:
+        return []
+
+
+def find_usb_serial_ports(hw_cfg: dict | None = None) -> list[str]:
+    """Returns matching ESP32/USB-UART COM device names."""
+    return [dev for dev, _ in _match_usb_serial_ports(hw_cfg)]
+
+
 _bridge_instance = None
 
-
+_bridge_explicit = False
 
 _get_bridge_lock = threading.Lock()
 
 
-
 def get_bridge():
-
-
-
-    global _bridge_instance
-
-
+    global _bridge_instance, _bridge_explicit
 
     with _get_bridge_lock:
-        if _bridge_instance is not None:
+        if _bridge_explicit and _bridge_instance is not None:
             return _bridge_instance
 
         hw_cfg = policy_loader.POLICY.get("hardware", {})
-
-
 
         mode = hw_cfg.get("mode", "auto")
 
@@ -1662,131 +1568,59 @@ def get_bridge():
 
             needs_detect = False
 
-
-
             if _bridge_instance is None:
-
-
-
                 needs_detect = True
-
-
-
             elif isinstance(_bridge_instance, HardwareBridge) and not _bridge_instance.is_device_online():
-
-
-
                 needs_detect = True
-
-
-
-            elif isinstance(_bridge_instance, SerialHardwareBridge) and not getattr(_bridge_instance, "device_online", False):
-
-
-
+            elif isinstance(_bridge_instance, SerialHardwareBridge):
                 needs_detect = True
-
-
+            elif getattr(_bridge_instance, "transport", None) == "virtual":
+                needs_detect = True
 
             if needs_detect:
-
-
-
                 try:
-
-
-
-                    import serial.tools.list_ports
-
-
-
-                    ports = list(serial.tools.list_ports.comports())
-
-
-
-                    usb_ports = [
-
-
-
-                        p.device for p in ports
-
-
-
-                        if any(k in (p.description or "").lower() or k in (p.hwid or "").lower()
-
-
-
-                               for k in ["cp21", "ch34", "ch91", "ftdi", "usb to uart", "esp32", "silicon labs", "usb serial", "usb-serial", "pl2303", "usb single serial"])
-
-
-
-                    ]
-
-
+                    usb_ports = find_usb_serial_ports(hw_cfg)
 
                     if usb_ports:
-
-
-
                         curr_port = getattr(_bridge_instance, "_detected_port", None) or getattr(_bridge_instance, "port_setting", None)
-
-
-
                         if not isinstance(_bridge_instance, SerialHardwareBridge) or curr_port != usb_ports[0]:
-
-
-
+                            if isinstance(_bridge_instance, SerialHardwareBridge) and getattr(_bridge_instance, "_serial", None):
+                                try:
+                                    _bridge_instance._serial.close()
+                                except Exception:
+                                    pass
+                                _bridge_instance._serial = None
                             _bridge_instance = SerialHardwareBridge(port=usb_ports[0])
-
-
-
+                    elif isinstance(_bridge_instance, SerialHardwareBridge):
+                        # USB cable disconnected -> close stale handle and revert to Virtual Home simulation
+                        if getattr(_bridge_instance, "_serial", None):
+                            try:
+                                _bridge_instance._serial.close()
+                            except Exception:
+                                pass
+                            _bridge_instance._serial = None
+                        _bridge_instance = None
                 except Exception:
-
-
-
                     pass
-
-
 
             if _bridge_instance is None:
                 from security.virtual_home import VirtualBridge
                 _bridge_instance = VirtualBridge()
 
-
-
             return _bridge_instance
-
-
 
         else:
-
-
-
             if _bridge_instance is None:
-
-
-
                 _bridge_instance = HardwareBridge()
-
-
-
             return _bridge_instance
-
 
 
 def set_bridge(bridge):
-
-
-
-    global _bridge_instance
-
-
+    global _bridge_instance, _bridge_explicit
 
     with _get_bridge_lock:
-
-
-
         _bridge_instance = bridge
+        _bridge_explicit = bridge is not None
 
 
 
