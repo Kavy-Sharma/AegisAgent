@@ -708,9 +708,7 @@ main { padding-block: 40px 72px; }
 
 /* ---------- console ---------- */
 body:has(#view-console) {
-  height: 100vh;
-  max-height: 100vh;
-  overflow: hidden;
+  min-height: 100vh;
   display: flex;
   flex-direction: column;
 }
@@ -719,30 +717,24 @@ body:has(#view-console) header.top {
 }
 body:has(#view-console) main {
   flex: 1 1 auto;
-  min-height: 0;
-  height: auto;
-  padding-block: 8px 16px;
+  padding-block: 16px 24px;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
 }
 #view-console {
   flex: 1 1 auto;
-  min-height: 0;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
 }
 .console {
   max-width: 860px;
   width: 100%;
   margin: 0 auto;
-  height: 100%;
+  flex: 1 1 auto;
   display: flex;
   flex-direction: column;
   gap: 12px;
-  min-height: 0;
-  padding-bottom: 24px;
+  padding-bottom: 16px;
 }
 #view-console .hero {
   margin-bottom: 0;
@@ -760,13 +752,13 @@ body:has(#view-console) main {
 .console-bar { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; flex-shrink: 0; }
 .thread {
   flex: 1 1 auto;
-  min-height: 0;
-  overflow-y: auto;
-  overflow-x: hidden;
   padding: 6px 4px 12px;
   display: flex;
   flex-direction: column;
   gap: 14px;
+}
+.thread > * {
+  scroll-margin-bottom: 88px;
 }
 .msg { display: grid; gap: 10px; max-width: 100%; animation: msgin .35s var(--ease); }
 @keyframes msgin { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
@@ -782,7 +774,7 @@ body:has(#view-console) main {
 .bar { height: 4px; background: var(--line); border-radius: 4px; overflow: hidden; }
 .bar i { display: block; height: 100%; width: calc(var(--p, 1) * 100%); background: var(--wait); transition: width 1s linear; }
 .suggest { display: flex; flex-wrap: wrap; gap: 8px; flex-shrink: 0; }
-.compose { display: flex; gap: 10px; position: static; flex-shrink: 0; margin: 0; padding: 8px; background: var(--surface); border: 1px solid var(--line-strong); border-radius: var(--r-lg); box-shadow: var(--shadow); }
+.compose { display: flex; gap: 10px; position: sticky; bottom: 0; z-index: 20; margin: 0; padding: 8px; background: var(--surface); border: 1px solid var(--line-strong); border-radius: var(--r-lg); box-shadow: var(--shadow); }
 .compose input { flex: 1; min-width: 0; border: 0; background: none; padding: 0 10px; font: inherit; color: var(--ink); outline: none; }
 .compose:focus-within { border-color: var(--accent); }
 .compose input::placeholder { color: var(--ink-3); }
@@ -2432,4 +2424,30 @@ body:has(.login-layout) {
   opacity: 0;
   transform: translateY(6px);
   transition: opacity .22s var(--ease), transform .22s var(--ease);
+}
+
+/* ---------- Quarantine release banner ---------- */
+.quarantine-banner-slot {
+  position: sticky;
+  top: calc(60px + env(safe-area-inset-top, 0px));
+  z-index: 40;
+  padding-top: 12px;
+  flex-shrink: 0;
+}
+.quarantine-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  border-radius: var(--r-md);
+  background: var(--stop-soft);
+  border: 1px solid var(--stop);
+  color: var(--ink);
+  font-size: .875rem;
+  font-weight: 600;
+}
+.quarantine-banner-text {
+  color: var(--ink);
 }

@@ -42,9 +42,17 @@
   }
 
   function scrollThreadToBottom() {
-    var thread = document.getElementById("chat-thread");
-    if (!thread) return;
-    thread.scrollTop = thread.scrollHeight;
+    var raf = window.requestAnimationFrame || function (cb) { return setTimeout(cb, 0); };
+    raf(function () {
+      raf(function () {
+        var thread = document.getElementById("chat-thread");
+        if (!thread) return;
+        var last = thread.lastElementChild;
+        if (last && typeof last.scrollIntoView === "function") {
+          last.scrollIntoView({ block: "end" });
+        }
+      });
+    });
   }
 
   function addMessage(node) {
@@ -181,6 +189,9 @@
     text = (text || "").trim();
     if (!text || isTurnRunning) return;
 
+    var askInput = document.getElementById("ask");
+    if (askInput) askInput.value = "";
+
     stageLabels = resolveStageLabels();
     setTurnRunning(true);
     addMessage(h("div", { class: "msg user", text: text }));
@@ -199,6 +210,7 @@
     });
 
     if (typeof api === "undefined" || !api.post) {
+      if (askInput) askInput.value = text;
       setTurnRunning(false);
       return;
     }
@@ -226,6 +238,7 @@
       var sendRes = await api.post("/api/console/send", { text: text });
       var reqId = sendRes && (sendRes.request_id || sendRes.id || sendRes.req_id);
       if (!sendRes || !reqId) {
+        if (askInput) askInput.value = text;
         var errSay = (sendRes && sendRes.error) ? sendRes.error : "Something went wrong. Try again.";
         rail.settle({
           kind: "stop",
@@ -233,6 +246,7 @@
           say: errSay,
           why: errSay
         });
+        scrollThreadToBottom();
         showRetryButton(host, text);
         setTurnRunning(false);
         return;
@@ -284,6 +298,7 @@
           say: msg || "No answer from the model. Try again.",
           why: why || "Timed out waiting for response."
         });
+        scrollThreadToBottom();
         showRetryButton(host, text);
       }
 
@@ -442,10 +457,10 @@
               say: say,
               why: why
             });
+            scrollThreadToBottom();
             if (isNotDone || dec === "ERROR") {
               showRetryButton(host, text);
             }
-            scrollThreadToBottom();
           }
         } catch (pollErr) {
           consecutivePollErrors++;
@@ -463,6 +478,7 @@
 
     } catch (err) {
       console.warn("Console send error:", err);
+      if (askInput) askInput.value = text;
       stopTimers();
       var errMsg = (err && err.data && err.data.error) || "Something went wrong. Try again.";
       rail.settle({
@@ -471,6 +487,7 @@
         say: errMsg,
         why: errMsg
       });
+      scrollThreadToBottom();
       showRetryButton(host, text);
       setTurnRunning(false);
     }
@@ -483,10 +500,7 @@
     if (!container) return;
     container.querySelectorAll(".chip").forEach(function (btn) {
       btn.addEventListener("click", function () {
-        var text = btn.textContent;
-        var askInput = document.getElementById("ask");
-        if (askInput) askInput.value = text;
-        handleSend(text);
+        handleSend(btn.textContent);
       });
     });
   }
@@ -498,9 +512,7 @@
 
     form.addEventListener("submit", function (ev) {
       ev.preventDefault();
-      var text = askInput.value;
-      askInput.value = "";
-      handleSend(text);
+      handleSend(askInput.value);
     });
   }
 

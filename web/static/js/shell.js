@@ -292,6 +292,85 @@
   }
 
   function initHealthPolling() {
+    var defaultAskPlaceholder = null;
+    function updateAskPlaceholder(quarantined) {
+      var askInput = document.getElementById("ask");
+      if (!askInput) return;
+      if (defaultAskPlaceholder === null) {
+        defaultAskPlaceholder = askInput.placeholder || "Ask the agent to do something\u2026";
+      }
+      askInput.placeholder = quarantined
+        ? "Account locked. Release quarantine to continue."
+        : defaultAskPlaceholder;
+    }
+
+    function renderQuarantineBanner(quarantined) {
+      var slot = document.getElementById("quarantine-banner-slot");
+      var isRealAdmin = document.body && document.body.dataset && document.body.dataset.realRole === "admin";
+      if (!slot || !isRealAdmin) return;
+
+      if (!quarantined) {
+        slot.replaceChildren();
+        slot.classList.add("is-hidden");
+        return;
+      }
+
+      if (slot.querySelector("#release-quarantine-btn")) {
+        slot.classList.remove("is-hidden");
+        return;
+      }
+
+      var box = document.createElement("div");
+      box.className = "quarantine-banner";
+
+      var msg = document.createElement("span");
+      msg.className = "quarantine-banner-text";
+      msg.textContent = "Account quarantined after 3 blocked injection attempts.";
+
+      var btn = document.createElement("button");
+      btn.type = "button";
+      btn.id = "release-quarantine-btn";
+      btn.className = "btn danger btn-sm";
+      btn.textContent = "Release quarantine";
+
+      btn.addEventListener("click", function () {
+        if (typeof api === "undefined" || !api.releaseQuarantine) return;
+        btn.disabled = true;
+        btn.textContent = "Releasing...";
+        api.releaseQuarantine()
+          .then(function () {
+            if (typeof api.newSession === "function") {
+              return api.newSession().catch(function () {});
+            }
+          })
+          .then(function () {
+            slot.replaceChildren();
+            slot.classList.add("is-hidden");
+            if (window.app && window.app.showToast) {
+              window.app.showToast("Quarantine released", "Account lock cleared.", "ok", 4500);
+            }
+            updateHealth();
+            if (document.getElementById("chat-thread")) {
+              window.location.reload();
+            }
+          })
+          .catch(function (err) {
+            btn.disabled = false;
+            btn.textContent = "Release quarantine";
+            var errMsg = (err && err.message) || "Failed to release quarantine.";
+            msg.textContent = errMsg;
+            if (window.app && window.app.showToast) {
+              window.app.showToast("Release failed", errMsg, "danger", 4500);
+            }
+          });
+      });
+
+      box.appendChild(msg);
+      box.appendChild(btn);
+      slot.replaceChildren(box);
+      slot.classList.remove("is-hidden");
+    }
+
     function updateHealth() {
       if (window.__aegisRestarting) return;
       if (typeof api === "undefined" || !api.get) return;
@@ -357,6 +436,9 @@
           if (consoleHwEl) {
             consoleHwEl.textContent = chipText;
           }
+
+          renderQuarantineBanner(Boolean(health.quarantined));
+          updateAskPlaceholder(Boolean(health.quarantined));
 
           try {
             window.dispatchEvent(new CustomEvent("aegis:health", { detail: health }));

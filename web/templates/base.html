@@ -16,7 +16,7 @@
   {% block head_extra %}{% endblock %}
   {% block extra_css %}{% endblock %}
 </head>
-<body data-role="{{ session.get('role', 'guest') }}" data-username="{{ session.get('username', '') }}" data-env="{{ active_env or 'smart_home' }}" data-hw-status="{{ hardware_status or 'virtual' }}">
+<body data-role="{{ session.get('role', 'guest') }}" data-real-role="{{ session.get('real_role', '') }}" data-username="{{ session.get('username', '') }}" data-env="{{ active_env or 'smart_home' }}" data-hw-status="{{ hardware_status or 'virtual' }}">
 
   <!-- Top Navigation Bar -->
   <header class="top">
@@ -101,6 +101,10 @@
       </div>
     </div>
   </header>
+
+  {% if session.get('real_role') == 'admin' %}
+  <div class="wrap quarantine-banner-slot is-hidden" id="quarantine-banner-slot" role="region" aria-label="Quarantine notice"></div>
+  {% endif %}
 
   <!-- Main Content -->
   <main class="wrap">
