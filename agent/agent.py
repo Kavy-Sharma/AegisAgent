@@ -557,29 +557,31 @@ def run_turn(
 
     if verdict.decision == "BLOCK":
 
-        count = security.quarantine.record_injection_attempt(quarantine_key)
+        if detected_rule_ids:
 
-        if count >= 3:
+            count = security.quarantine.record_injection_attempt(quarantine_key)
 
-            quarantine_msg = f"[SESSION QUARANTINED] Suspended after {count} consecutive prompt injection attacks. Admin release required."
+            if count >= 3:
 
-            _emit("detection", "block", {"reason": quarantine_msg, "quarantined": True})
+                quarantine_msg = f"[SESSION QUARANTINED] Suspended after {count} consecutive prompt injection attacks. Admin release required."
 
-            for s in ("intent", "llm", "rbac", "param_guard", "rate_limit", "approval", "hardware", "output_scan"):
+                _emit("detection", "block", {"reason": quarantine_msg, "quarantined": True})
 
-                _emit(s, "skip", {"reason": "Session quarantined"})
+                for s in ("intent", "llm", "rbac", "param_guard", "rate_limit", "approval", "hardware", "output_scan"):
 
-            return _finalize(TurnResult(
+                    _emit(s, "skip", {"reason": "Session quarantined"})
 
-                reply=quarantine_msg,
+                return _finalize(TurnResult(
 
-                decision="BLOCK",
+                    reply=quarantine_msg,
 
-                error=quarantine_msg,
+                    decision="BLOCK",
 
-                stopped_at="detection",
+                    error=quarantine_msg,
 
-            ))
+                    stopped_at="detection",
+
+                ))
 
         top_reason = "Prompt injection detected"
 
