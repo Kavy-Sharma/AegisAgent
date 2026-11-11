@@ -44,10 +44,9 @@
 
     items.forEach(function (p) {
       var reqId = p.request_id;
-      var tool = p.tool || "action";
-      var role = p.role || "admin";
-      var remaining = Math.max(0, Math.round(p.remaining_seconds != null ? p.remaining_seconds : 60));
+      var tool = String(p.tool || "action");
       var total = p.timeout_seconds || 60;
+      var remaining = Math.max(0, Math.round(p.expires_in_seconds != null ? p.expires_in_seconds : total));
       countdownMap[reqId] = { rem: remaining, total: total };
 
       var barFill = h("i");
@@ -62,12 +61,25 @@
 
       var plainDesc = p.plain_summary || ("Operation '" + tool.replace(/_/g, " ") + "' held for supervisor confirmation.");
 
+      var rawArgs = (p.args && typeof p.args === "object" && !Array.isArray(p.args)) ? p.args : {};
+      var argKeys = Object.keys(rawArgs).slice(0, 6);
+      var argLines = argKeys.length
+        ? argKeys.map(function (k) {
+            var v = rawArgs[k];
+            var vStr = (v !== null && typeof v === "object") ? JSON.stringify(v) : String(v == null ? "" : v);
+            if (vStr.length > 60) vStr = vStr.slice(0, 60);
+            return h("div", { class: "mono", text: k + ": " + vStr });
+          })
+        : [h("div", { class: "mono", text: "No parameters" })];
+      var argsBox = h("div", null, argLines);
+
       var card = h("div", { class: "approve", id: "approve-card-" + reqId },
         h("div", { class: "flex justify-between items-center" },
-          h("h3", { text: tool + " · " + role }),
+          h("h3", { text: tool.replace(/_/g, " ") }),
           timerText
         ),
         h("p", { text: plainDesc }),
+        argsBox,
         bar,
         h("div", { class: "btns" },
           h("button", {
@@ -89,10 +101,11 @@
 
   async function decideRequest(p, approved) {
     var card = document.getElementById("approve-card-" + p.request_id);
+    var btns = card ? Array.prototype.slice.call(card.querySelectorAll("button")) : [];
+    btns.forEach(function (b) { b.disabled = true; });
     if (card) {
-      clear(card).append(h("p", {
-        text: approved ? "Approved. Command dispatched to pipeline." : "Denied. Request terminated."
-      }));
+      var prevErr = document.getElementById("err-" + p.request_id);
+      if (prevErr) prevErr.remove();
     }
 
     if (typeof api !== "undefined" && api.post) {
@@ -102,10 +115,24 @@
           request_hash: p.request_hash,
           approved: approved
         });
+        if (card) {
+          clear(card).append(h("p", {
+            text: approved ? "Approved. Sent to the pipeline." : "Denied."
+          }));
+        }
         setTimeout(poll, 300);
       } catch (err) {
         console.warn("Decide error:", err);
+        btns.forEach(function (b) { b.disabled = false; });
+        if (card) {
+          card.append(h("p", {
+            id: "err-" + p.request_id,
+            text: "Decision failed. Try again."
+          }));
+        }
       }
+    } else {
+      btns.forEach(function (b) { b.disabled = false; });
     }
   }
 
