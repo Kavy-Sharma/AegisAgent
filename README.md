@@ -500,3 +500,8 @@ AegisAgent/
 20. The hardware mode switch is an admin control-plane action (signed, audited); it does not pass through the 9 gates.
 21. A stalled ESP32 can hold the single worker for up to about 8.5 s per command; a mode-switch API call can time out (504) while the request stays queued.
 22. Attack Lab clips are AI-generated.
+23. A quarantined admin can release their own lock from an admin session; a real guest cannot release.
+24. After an injection, multi-turn memory can block safe prompts for up to 5 messages. The New session button resets it.
+25. A slow multi-turn attack that only trips the context detector is still blocked, but it no longer counts toward quarantine.
+26. The key name hardware_connected in tool results means "dispatch succeeded", not "real device".
+27. The first reply after startup can take 80-90 s on a CPU-only machine (measured: cold 94 s, warm 8 s). The worker may show Online while the model is still loading.

@@ -37,7 +37,7 @@ if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
 import ollama
-from agent.agent import AVAILABLE_FUNCTIONS, MODEL, TOOL_SCHEMAS, TurnResult, run_turn
+from agent.agent import AVAILABLE_FUNCTIONS, MODEL, TOOL_SCHEMAS, TOOLS, TurnResult, run_turn
 import security.gateway
 import security.hardware
 import security.logger
@@ -798,24 +798,29 @@ def run_worker():
     print(f" Polling: {inbox_dir}")
     print("=" * 60)
 
+    # Start Heartbeat Daemon Thread
+    hb_thread = WorkerHeartbeatThread(data_dir, started_at_iso)
+    hb_thread.ollama_ok = False
+    hb_thread.model_warm = False
+    hb_thread.write_heartbeat()
+    hb_thread.start()
+
     # Warm up Ollama model
-    ollama_ok = False
-    model_warm = False
     print("[WORKER] Warming up Ollama model...")
     try:
-        ollama.chat(model=MODEL, messages=[{"role": "user", "content": "hi"}], keep_alive="30m")
-        ollama_ok = True
-        model_warm = True
+        ollama.chat(
+            model=MODEL,
+            messages=[{"role": "user", "content": "hi"}],
+            tools=TOOLS,
+            options={"num_predict": 8},
+            keep_alive="30m",
+        )
+        hb_thread.ollama_ok = True
+        hb_thread.model_warm = True
         print("[WORKER] Model warmed up and ready.")
     except Exception as e:
         print(f"[WORKER] Notice: Ollama not reachable on start ({e}). Continuing.")
-
-    # Start Heartbeat Daemon Thread
-    hb_thread = WorkerHeartbeatThread(data_dir, started_at_iso)
-    hb_thread.ollama_ok = ollama_ok
-    hb_thread.model_warm = model_warm
     hb_thread.write_heartbeat()
-    hb_thread.start()
 
     # Load seen nonces
     seen_nonces_list = _load_seen_nonces(data_dir)
