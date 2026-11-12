@@ -292,18 +292,6 @@
   }
 
   function initHealthPolling() {
-    var defaultAskPlaceholder = null;
-    function updateAskPlaceholder(quarantined) {
-      var askInput = document.getElementById("ask");
-      if (!askInput) return;
-      if (defaultAskPlaceholder === null) {
-        defaultAskPlaceholder = askInput.placeholder || "Ask the agent to do something\u2026";
-      }
-      askInput.placeholder = quarantined
-        ? "Account locked. Release quarantine to continue."
-        : defaultAskPlaceholder;
-    }
-
     function renderQuarantineBanner(quarantined) {
       var slot = document.getElementById("quarantine-banner-slot");
       var isRealAdmin = document.body && document.body.dataset && document.body.dataset.realRole === "admin";
@@ -438,7 +426,7 @@
           }
 
           renderQuarantineBanner(Boolean(health.quarantined));
-          updateAskPlaceholder(Boolean(health.quarantined));
+          window.__aegisLastHealth = health;
 
           try {
             window.dispatchEvent(new CustomEvent("aegis:health", { detail: health }));

@@ -483,6 +483,7 @@ main { padding-block: 40px 72px; }
 .chips { display: flex; gap: 6px; flex-wrap: wrap; }
 .chip { border: 1px solid var(--line); background: var(--surface); padding: 5px 12px; border-radius: 999px; font-size: .8125rem; font-weight: 600; color: var(--ink-2); transition: background .15s, border-color .15s; }
 .chip:hover { border-color: var(--line-strong); }
+.chip:disabled, .chip[aria-disabled="true"] { opacity: .45; cursor: not-allowed; pointer-events: none; }
 .chip[aria-pressed="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
 .feed { list-style: none; margin: 0; padding: 0; border: 1px solid var(--line); border-radius: var(--r-lg); background: var(--surface); overflow: hidden; }
 .feed li + li { border-top: 1px solid var(--line); }

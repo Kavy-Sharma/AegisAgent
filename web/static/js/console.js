@@ -29,16 +29,42 @@
   var stageLabels = resolveStageLabels();
   var ICON_SHIELD = ["M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"];
   var isTurnRunning = false;
+  var isAccountLocked = false;
+  var defaultAskPlaceholder = null;
   var currentApprovalCountdown = null;
   var MODEL_TIMEOUT_MS = 90000;
   var POLL_INTERVAL_MS = 400;
 
-  function setTurnRunning(running) {
-    isTurnRunning = running;
+  function syncComposerState() {
+    var disabled = isTurnRunning || isAccountLocked;
     var sendBtn = document.getElementById("send-btn");
     var askInput = document.getElementById("ask");
-    if (sendBtn) sendBtn.disabled = running;
-    if (askInput) askInput.disabled = running;
+    if (sendBtn) sendBtn.disabled = disabled;
+    if (askInput) {
+      if (defaultAskPlaceholder === null) {
+        defaultAskPlaceholder = askInput.placeholder || "Ask the agent to do something\u2026";
+      }
+      askInput.disabled = disabled;
+      askInput.placeholder = isAccountLocked
+        ? "Account locked. Release quarantine to continue."
+        : defaultAskPlaceholder;
+    }
+    var chipsContainer = document.getElementById("suggest-chips");
+    if (chipsContainer) {
+      chipsContainer.querySelectorAll(".chip").forEach(function (btn) {
+        btn.disabled = disabled;
+      });
+    }
+  }
+
+  function setTurnRunning(running) {
+    isTurnRunning = running;
+    syncComposerState();
+  }
+
+  function setAccountLocked(locked) {
+    isAccountLocked = Boolean(locked);
+    syncComposerState();
   }
 
   function scrollThreadToBottom() {
@@ -187,7 +213,7 @@
 
   async function handleSend(text) {
     text = (text || "").trim();
-    if (!text || isTurnRunning) return;
+    if (!text || isTurnRunning || isAccountLocked) return;
 
     var askInput = document.getElementById("ask");
     if (askInput) askInput.value = "";
@@ -500,6 +526,7 @@
     if (!container) return;
     container.querySelectorAll(".chip").forEach(function (btn) {
       btn.addEventListener("click", function () {
+        if (isAccountLocked || isTurnRunning || btn.disabled) return;
         handleSend(btn.textContent);
       });
     });
@@ -512,6 +539,7 @@
 
     form.addEventListener("submit", function (ev) {
       ev.preventDefault();
+      if (isAccountLocked || isTurnRunning) return;
       handleSend(askInput.value);
     });
   }
@@ -551,8 +579,16 @@
       var detail = ev && ev.detail;
       if (detail) {
         stageLabels = resolveStageLabels(detail.environment, detail.hardware_status);
+        setAccountLocked(Boolean(detail.quarantined));
       }
     });
+    if (window.__aegisLastHealth) {
+      stageLabels = resolveStageLabels(
+        window.__aegisLastHealth.environment,
+        window.__aegisLastHealth.hardware_status
+      );
+      setAccountLocked(Boolean(window.__aegisLastHealth.quarantined));
+    }
     initNewSessionButton();
     initSuggestions();
     initForm();
